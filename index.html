@@ -1407,7 +1407,7 @@ function PasswordModal({ onSuccess, onClose }) {
 }
 
 // ============ Sync Modal (Real-time) ============
-function SyncModal({ data, syncStatus, lastSyncTime, onClose, onImport }) {
+function SyncModal({ data, syncStatus, lastSyncTime, setLastSyncTime, onClose, onImport }) {
   const [status, setStatus] = useState({ type: '', msg: '' });
   const [busy, setBusy] = useState(false);
   const fileInputRef = useRef(null);
@@ -1849,6 +1849,7 @@ function App() {
           data={data}
           syncStatus={syncStatus}
           lastSyncTime={lastSyncTime}
+          setLastSyncTime={setLastSyncTime}
           onClose={() => setShowSyncModal(false)}
           onImport={handleImportData}
         />

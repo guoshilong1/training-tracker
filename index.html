@@ -91,6 +91,7 @@ const GH_COMMENT_URL = (id) => `https://api.github.com/repos/${GH_OWNER}/${GH_RE
 
 let _ghCommentId = null;
 let _ghCommentUpdatedAt = '';
+let _ghEtag = '';
 let _isRemoteUpdate = false;
 let _ghSaveTimer = null;
 let _ghConnected = false;
@@ -112,14 +113,20 @@ function initGitHubSync() {
 
 async function ghFetchData() {
   try {
-    const url = `${GH_COMMENTS_URL}?per_page=5&sort=created&direction=desc&_t=${Date.now()}`;
+    const url = `${GH_COMMENTS_URL}?per_page=1&sort=created&direction=desc&_t=${Date.now()}`;
+    const headers = {
+      'Authorization': `token ${GH_TOKEN}`,
+      'Accept': 'application/vnd.github.v3+json'
+    };
+    if (_ghEtag) headers['If-None-Match'] = _ghEtag;
     const res = await fetch(url, {
-      headers: {
-        'Authorization': `token ${GH_TOKEN}`,
-        'Accept': 'application/vnd.github.v3+json'
-      },
+      headers: headers,
       cache: 'no-cache'
     });
+    // Capture ETag for next request — 304 means no change, super fast
+    const etag = res.headers.get('etag');
+    if (etag) _ghEtag = etag;
+    if (res.status === 304) return null; // Not modified — skip parsing
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const comments = await res.json();
     if (!comments || comments.length === 0) {
@@ -169,7 +176,7 @@ async function ghPushData(data, ts) {
     // Re-read latest data from localStorage — remote sync may have merged new data
     const latestData = loadData();
     await _ghDoPush(latestData, ts);
-  }, 1000);
+  }, 400); // 400ms debounce (was 1000ms)
   return true;
 }
 
@@ -200,6 +207,7 @@ async function _ghDoPush(data, ts) {
       if (res.ok) {
         const json = await res.json();
         _ghCommentUpdatedAt = json.updated_at;
+        _ghEtag = ''; // Reset ETag so next poll fetches fresh data
         console.log('[GitHub] Pushed data (updated comment), id:', _ghCommentId);
         _ghPushing = false;
         return true;
@@ -226,6 +234,7 @@ async function _ghDoPush(data, ts) {
         const json = await res.json();
         _ghCommentId = json.id;
         _ghCommentUpdatedAt = json.updated_at;
+        _ghEtag = ''; // Reset ETag so next poll fetches fresh data
         console.log('[GitHub] Pushed data (new comment), id:', _ghCommentId);
         _ghPushing = false;
         return true;
@@ -1684,7 +1693,7 @@ function App() {
       setSyncStatus(status);
     });
 
-    // After 3s, mark GitHub as ready and push local data if it has content
+    // After 1.5s, mark GitHub as ready and push local data if it has content
     // (remote data should have been fetched and merged by now)
     const initTimer = setTimeout(() => {
       ghReady.current = true;
@@ -1695,12 +1704,12 @@ function App() {
         ghPushData(localData, ts);
         setLastSyncTime(ts);
       }
-    }, 3000);
+    }, 1500);
 
-    // Poll remote data every 3s (near real-time sync)
+    // Poll remote data every 1.5s (near real-time sync, ETag makes 304s ultra-fast)
     const pollTimer = setInterval(() => {
       ghFetchData();
-    }, 3000);
+    }, 1500);
 
     return () => {
       clearTimeout(initTimer);

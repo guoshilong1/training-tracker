@@ -49,7 +49,7 @@ function loadData() {
     if (raw) return JSON.parse(raw);
   } catch(e) {}
   // First-time: return empty — will be populated by cloud sync
-  return { trainees: [] };
+  return { trainees: [], _deletedIds: [] };
 }
 
 function seedStoreRoster() {
@@ -236,11 +236,11 @@ async function _ghDoPush(localData, ts) {
     const remoteData = await _ghFetchRaw();
     let dataToPush = localData;
     if (remoteData && remoteData.trainees && localData.trainees) {
-      const merged = mergeTrainees(localData.trainees, remoteData.trainees);
-      dataToPush = { trainees: merged, _updatedAt: ts || Date.now() };
+      const mergedResult = mergeTrainees(localData.trainees, remoteData.trainees, localData._deletedIds, remoteData._deletedIds);
+      dataToPush = { trainees: mergedResult.trainees, _deletedIds: mergedResult.deletedIds, _updatedAt: ts || Date.now() };
       // Save merged data locally so we don't lose remote entries
       saveData(dataToPush);
-      console.log('[GitHub] Merged before push: local', localData.trainees.length, '+ remote', remoteData.trainees.length, '→', merged.length);
+      console.log('[GitHub] Merged before push: local', localData.trainees.length, '+ remote', remoteData.trainees.length, '→', mergedResult.trainees.length);
     }
 
     const payload = Object.assign({}, dataToPush, { _updatedAt: ts || Date.now() });
@@ -343,9 +343,16 @@ function ghOnPushStatus(cb) {
 }
 
 // Merge trainees at progress-day level (prevents data loss from concurrent edits)
-function mergeTrainees(localTrainees, remoteTrainees) {
-  const localMap = new Map(localTrainees.map(t => [t.id, t]));
-  const remoteMap = new Map(remoteTrainees.map(t => [t.id, t]));
+function mergeTrainees(localTrainees, remoteTrainees, localDeletedIds, remoteDeletedIds) {
+  // Union of all deleted IDs — once deleted, stays deleted across all devices
+  const deletedIds = new Set([...(localDeletedIds || []), ...(remoteDeletedIds || [])]);
+
+  // Filter out deleted trainees from both sides BEFORE merging
+  const localFiltered = localTrainees.filter(t => !deletedIds.has(t.id));
+  const remoteFiltered = remoteTrainees.filter(t => !deletedIds.has(t.id));
+
+  const localMap = new Map(localFiltered.map(t => [t.id, t]));
+  const remoteMap = new Map(remoteFiltered.map(t => [t.id, t]));
   const result = [];
   const allIds = new Set([...localMap.keys(), ...remoteMap.keys()]);
   for (const id of allIds) {
@@ -382,7 +389,7 @@ function mergeTrainees(localTrainees, remoteTrainees) {
     base.progress = mergedProgress;
     result.push(base);
   }
-  return result;
+  return { trainees: result, deletedIds: [...deletedIds] };
 }
 
 function genId() {
@@ -1757,8 +1764,8 @@ function App() {
       // Always merge when remote data changed — no timestamp comparison (immune to clock skew)
       isRemoteUpdate.current = true;
       setData(prevData => {
-        const merged = mergeTrainees(prevData.trainees, remoteData.trainees || []);
-        const newData = { trainees: merged, _updatedAt: remoteTs };
+        const mergedResult = mergeTrainees(prevData.trainees, remoteData.trainees || [], prevData._deletedIds, remoteData._deletedIds);
+        const newData = { trainees: mergedResult.trainees, _deletedIds: mergedResult.deletedIds, _updatedAt: remoteTs };
         saveData(newData);
         return newData;
       });
@@ -1837,7 +1844,8 @@ function App() {
   const handleDeleteTrainee = (id) => {
     setData(d => ({
       ...d,
-      trainees: d.trainees.filter(t => t.id !== id)
+      trainees: d.trainees.filter(t => t.id !== id),
+      _deletedIds: [...new Set([...(d._deletedIds || []), id])]
     }));
     if (selectedId === id) setSelectedId(null);
   };
@@ -1851,7 +1859,8 @@ function App() {
 
   const handleImportData = (imported) => {
     const stamped = {
-      trainees: (imported.trainees || []).map(t => ({ ...t, _updatedAt: t._updatedAt || Date.now() }))
+      trainees: (imported.trainees || []).map(t => ({ ...t, _updatedAt: t._updatedAt || Date.now() })),
+      _deletedIds: imported._deletedIds || []
     };
     setData(stamped);
     setSelectedId(stamped.trainees.length > 0 ? stamped.trainees[0].id : null);

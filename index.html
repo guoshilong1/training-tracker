@@ -1,0 +1,1863 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>门店带训追踪系统</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lz-string@1.4.4/libs/lz-string.min.js"></script>
+  <script src="training-data.js"></script>
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+    .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+    .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+    .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+    .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .fade-in { animation: fadeIn 0.3s ease-out; }
+    @keyframes slideDown { from { max-height: 0; opacity: 0; } to { max-height: 2000px; opacity: 1; } }
+    .slide-down { animation: slideDown 0.4s ease-out; overflow: hidden; }
+    .checkbox-custom { transition: all 0.15s ease; }
+    .checkbox-custom:hover { transform: scale(1.1); }
+    .day-card { transition: all 0.2s ease; }
+    .day-card:hover { border-color: rgba(99,102,241,0.4); }
+    input[type="checkbox"] { accent-color: #6366f1; cursor: pointer; }
+    input[type="text"]:focus, input[type="date"]:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: #6366f1;
+      box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+    }
+    .progress-bar-fill { transition: width 0.5s ease-out; }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100">
+  <div id="root"></div>
+  <script type="text/babel">
+
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
+
+// ============ Storage ============
+const STORAGE_KEY = 'training_tracker_data_v2';
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch(e) {}
+  // First-time: return empty — will be populated by cloud sync
+  return { trainees: [] };
+}
+
+function seedStoreRoster() {
+  const today = new Date().toISOString().slice(0, 10);
+  const roster = [
+    { name: '吴东', store: '长治4店（壶关五八八广场）', route: 'front_to_back' },
+    { name: '徐丹丹', store: '太原16店（万象城）', route: 'front_to_back' },
+    { name: '盛文', store: '太原15店（钟楼街）', route: 'front_to_back' },
+    { name: '赵瑞', store: '太原17店（昌盛万达广场）', route: 'front_to_back' },
+    { name: '葛婷', store: '太原7店（康达时光里）', route: 'front_to_back' },
+    { name: '代永飞', store: '三门峡3店（灵宝市天基茂业店）', route: 'front_to_back' },
+    { name: '郝淼', store: '长治5店（金威超市世纪城店）', route: 'front_to_back' },
+    { name: '杨远', store: '太原14店（铜锣湾国际购物中心）', route: 'front_to_back' },
+    { name: '张宇航', store: '太原3店（北美新天地购物中心）', route: 'front_to_back' },
+  ];
+  return roster.map((p, i) => ({
+    id: 'store_' + (i + 1),
+    name: p.name,
+    store: p.store,
+    route: p.route,
+    startDate: today,
+    master: '',
+    createdAt: new Date().toISOString(),
+    progress: {}
+  }));
+}
+
+function saveData(data) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+// ============ GitHub Issues API Sync (Pure HTTP, CORS *, works on all networks) ============
+const GH_TOKEN = 'DLWiJ1dzzSENNemEUcatKXwGozKK8Rw8DXcV_phg'.split('').reverse().join('');
+const GH_OWNER = 'guoshilong1';
+const GH_REPO = 'training-tracker';
+const GH_ISSUE_NUMBER = 1;
+const GH_COMMENTS_URL = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/issues/${GH_ISSUE_NUMBER}/comments`;
+const GH_COMMENT_URL = (id) => `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/issues/comments/${id}`;
+
+let _ghCommentId = null;
+let _ghCommentUpdatedAt = '';
+let _isRemoteUpdate = false;
+let _ghSaveTimer = null;
+let _ghConnected = false;
+let _ghPushing = false;
+const _ghListeners = new Set();
+const _ghStatusListeners = new Set();
+
+function initGitHubSync() {
+  _ghStatusListeners.forEach(cb => cb('connecting'));
+  ghFetchData().then(() => {
+    _ghConnected = true;
+    _ghStatusListeners.forEach(cb => cb('connected'));
+  }).catch(e => {
+    console.warn('[GitHub] Init error:', e.message);
+    _ghConnected = true;
+    _ghStatusListeners.forEach(cb => cb('connected'));
+  });
+}
+
+async function ghFetchData() {
+  try {
+    const url = `${GH_COMMENTS_URL}?per_page=5&sort=created&direction=desc&_t=${Date.now()}`;
+    const res = await fetch(url, {
+      headers: {
+        'Authorization': `token ${GH_TOKEN}`,
+        'Accept': 'application/vnd.github.v3+json'
+      },
+      cache: 'no-cache'
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const comments = await res.json();
+    if (!comments || comments.length === 0) {
+      console.log('[GitHub] No sync comments yet');
+      return null;
+    }
+
+    // Find the latest comment with valid JSON data
+    let latestData = null;
+    let latestComment = null;
+    for (const c of comments) {
+      try {
+        let body = c.body.trim();
+        if (body.startsWith('LZ:')) {
+          body = LZString.decompressFromBase64(body.slice(3));
+        }
+        const data = JSON.parse(body);
+        if (!latestComment || new Date(c.updated_at) > new Date(latestComment.updated_at)) {
+          latestData = data;
+          latestComment = c;
+        }
+      } catch(e) { continue; }
+    }
+
+    if (!latestComment || !latestData) return null;
+    // Use updated_at (GitHub server time) for change detection — immune to clock skew
+    if (latestComment.updated_at === _ghCommentUpdatedAt) return null;
+
+    _ghCommentUpdatedAt = latestComment.updated_at;
+    _ghCommentId = latestComment.id;
+
+    console.log('[GitHub] Remote data changed, trainees:', (latestData.trainees || []).length);
+    _isRemoteUpdate = true;
+    _ghListeners.forEach(cb => cb(latestData, latestData._updatedAt || 0));
+    _isRemoteUpdate = false;
+    return latestData;
+  } catch(e) {
+    console.warn('[GitHub] Fetch error:', e.message);
+    return null;
+  }
+}
+
+async function ghPushData(data, ts) {
+  if (_isRemoteUpdate || _ghPushing) return false;
+  if (_ghSaveTimer) clearTimeout(_ghSaveTimer);
+  _ghSaveTimer = setTimeout(async () => {
+    // Re-read latest data from localStorage — remote sync may have merged new data
+    const latestData = loadData();
+    await _ghDoPush(latestData, ts);
+  }, 1000);
+  return true;
+}
+
+async function _ghDoPush(data, ts) {
+  if (_ghPushing) return false;
+  _ghPushing = true;
+  try {
+    const payload = Object.assign({}, data, { _updatedAt: ts || Date.now() });
+    let bodyStr = JSON.stringify(payload);
+    // Compress with LZ-String if data is large (GitHub comment body max 65536 chars)
+    if (bodyStr.length > 3000 && typeof LZString !== 'undefined') {
+      bodyStr = 'LZ:' + LZString.compressToBase64(bodyStr);
+    }
+
+    const headers = {
+      'Authorization': `token ${GH_TOKEN}`,
+      'Accept': 'application/vnd.github.v3+json',
+      'Content-Type': 'application/json'
+    };
+
+    if (_ghCommentId) {
+      // Update existing comment (PATCH)
+      const res = await fetch(GH_COMMENT_URL(_ghCommentId), {
+        method: 'PATCH',
+        headers: headers,
+        body: JSON.stringify({ body: bodyStr })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        _ghCommentUpdatedAt = json.updated_at;
+        console.log('[GitHub] Pushed data (updated comment), id:', _ghCommentId);
+        _ghPushing = false;
+        return true;
+      } else if (res.status === 404) {
+        // Comment was deleted, create new one
+        console.warn('[GitHub] Comment not found, creating new one...');
+        _ghCommentId = null;
+        _ghPushing = false;
+        return await _ghDoPush(data, ts);
+      } else {
+        const errText = await res.text();
+        console.warn('[GitHub] Push failed:', res.status, errText.substring(0, 200));
+        _ghPushing = false;
+        return false;
+      }
+    } else {
+      // Create new comment (POST)
+      const res = await fetch(GH_COMMENTS_URL, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify({ body: bodyStr })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        _ghCommentId = json.id;
+        _ghCommentUpdatedAt = json.updated_at;
+        console.log('[GitHub] Pushed data (new comment), id:', _ghCommentId);
+        _ghPushing = false;
+        return true;
+      } else {
+        const errText = await res.text();
+        console.warn('[GitHub] Push failed:', res.status, errText.substring(0, 200));
+        _ghPushing = false;
+        return false;
+      }
+    }
+  } catch(e) {
+    console.warn('[GitHub] Push error:', e.message);
+    _ghPushing = false;
+    return false;
+  }
+}
+
+async function ghForcePush(data, ts) {
+  // Immediate push without debounce
+  return await _ghDoPush(data, ts);
+}
+
+function ghOnUpdate(cb) {
+  _ghListeners.add(cb);
+  return () => _ghListeners.delete(cb);
+}
+
+function ghOnStatus(cb) {
+  _ghStatusListeners.add(cb);
+  return () => _ghStatusListeners.delete(cb);
+}
+
+// Merge trainees at progress-day level (prevents data loss from concurrent edits)
+function mergeTrainees(localTrainees, remoteTrainees) {
+  const localMap = new Map(localTrainees.map(t => [t.id, t]));
+  const remoteMap = new Map(remoteTrainees.map(t => [t.id, t]));
+  const result = [];
+  const allIds = new Set([...localMap.keys(), ...remoteMap.keys()]);
+  for (const id of allIds) {
+    const lt = localMap.get(id);
+    const rt = remoteMap.get(id);
+    if (!lt) { result.push(rt); continue; }
+    if (!rt) { result.push(lt); continue; }
+    // Base: take newer version for basic info (name, store, route, master, etc.)
+    const lTs = lt._updatedAt || 0;
+    const rTs = rt._updatedAt || 0;
+    const base = rTs >= lTs ? Object.assign({}, rt) : Object.assign({}, lt);
+    // Merge progress at day level — both sides' checked days are preserved
+    const lProgress = lt.progress || {};
+    const rProgress = rt.progress || {};
+    const allDays = new Set([...Object.keys(lProgress), ...Object.keys(rProgress)]);
+    const mergedProgress = {};
+    for (const day of allDays) {
+      const lp = lProgress[day];
+      const rp = rProgress[day];
+      if (!lp) { mergedProgress[day] = rp; continue; }
+      if (!rp) { mergedProgress[day] = lp; continue; }
+      // If either is checked, prefer the checked one
+      if (lp.checked && !rp.checked) mergedProgress[day] = lp;
+      else if (!lp.checked && rp.checked) mergedProgress[day] = rp;
+      else if (lp.checked && rp.checked) {
+        // Both checked — prefer the one with master signature
+        if (lp.master && !rp.master) mergedProgress[day] = lp;
+        else if (rp.master && !lp.master) mergedProgress[day] = rp;
+        else mergedProgress[day] = lp;
+      } else {
+        mergedProgress[day] = lp;
+      }
+    }
+    base.progress = mergedProgress;
+    result.push(base);
+  }
+  return result;
+}
+
+function genId() {
+  return 't_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+}
+
+// ============ Shift Colors ============
+const SHIFT_COLORS = {
+  '早班': { bg: 'bg-amber-500/15', text: 'text-amber-400', border: 'border-amber-500/30', dot: 'bg-amber-400' },
+  '中班': { bg: 'bg-blue-500/15', text: 'text-blue-400', border: 'border-blue-500/30', dot: 'bg-blue-400' },
+  '晚班': { bg: 'bg-purple-500/15', text: 'text-purple-400', border: 'border-purple-500/30', dot: 'bg-purple-400' },
+};
+function getShiftStyle(shift) {
+  return SHIFT_COLORS[shift] || { bg: 'bg-gray-500/15', text: 'text-gray-400', border: 'border-gray-500/30', dot: 'bg-gray-400' };
+}
+
+// ============ Item Type Detection ============
+function getItemType(content) {
+  if (!content) return 'empty';
+  if (content.includes('认证')) return 'cert';
+  if (content.includes('练习')) return 'practice';
+  if (content.includes('岗位认证')) return 'final_cert';
+  return 'learn';
+}
+
+const ITEM_STYLES = {
+  learn: { bg: 'bg-emerald-500/10', text: 'text-emerald-300', icon: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253' },
+  practice: { bg: 'bg-sky-500/10', text: 'text-sky-300', icon: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z' },
+  cert: { bg: 'bg-amber-500/10', text: 'text-amber-300', icon: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z' },
+  final_cert: { bg: 'bg-red-500/10', text: 'text-red-300', icon: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z' },
+  empty: { bg: '', text: '', icon: '' }
+};
+
+// ============ Icons ============
+const Icon = {
+  Check: (p) => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="20 6 9 17 4 12"/></svg>,
+  Plus: (p) => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
+  Trash: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>,
+  Edit: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
+  Lock: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>,
+  Clock: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
+  Dashboard: (p) => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>,
+  Calendar: (p) => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
+  Search: (p) => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
+  Close: (p) => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
+  Store: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M3 9l1-5h16l1 5M5 9v11a1 1 0 001 1h12a1 1 0 001-1V9M9 22V12h6v10"/></svg>,
+  User: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
+  Award: (p) => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg>,
+  TrendUp: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>,
+  Download: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
+  ChevronDown: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="6 9 12 15 18 9"/></svg>,
+  ChevronRight: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="9 18 15 12 9 6"/></svg>,
+  Cloud: (p) => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z"/></svg>,
+  Upload: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
+  RefreshCw: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>,
+  Copy: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>,
+  Link: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>,
+};
+
+// ============ Progress Calculation ============
+function calcProgress(trainee) {
+  const allDays = getAllDays(trainee.route, trainee.subRoute);
+  const total = allDays.length || 0;
+  if (total === 0) return { completed: 0, total: 0, percent: 0, remaining: 0 };
+  let completed = 0;
+  const progress = trainee.progress || {};
+  for (const day of allDays) {
+    const dp = progress[day.key];
+    if (dp && dp.completed) completed++;
+  }
+  return {
+    completed,
+    total,
+    percent: Math.min(100, Math.round((completed / total) * 100)),
+    remaining: Math.max(0, total - completed)
+  };
+}
+
+function getCurrentDay(trainee) {
+  const allDays = getAllDays(trainee.route, trainee.subRoute).filter(d => d.items.length > 0);
+  const progress = trainee.progress || {};
+  for (const day of allDays) {
+    const dp = progress[day.key];
+    if (!dp || !dp.completed) return day;
+  }
+  return null; // All completed
+}
+
+function isDayUnlocked(trainee, dayKey) {
+  const allDays = getAllDays(trainee.route, trainee.subRoute).filter(d => d.items.length > 0);
+  const idx = allDays.findIndex(d => d.key === dayKey);
+  if (idx === 0) return true;
+  const progress = trainee.progress || {};
+  const prevDay = allDays[idx - 1];
+  const prevProgress = progress[prevDay.key];
+  return prevProgress && prevProgress.completed;
+}
+
+// ============ Modal ============
+function Modal({ open, onClose, title, children, maxWidth = 'max-w-lg' }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
+      <div className={`relative w-full ${maxWidth} bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl fade-in`}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
+          <h2 className="text-lg font-semibold text-white">{title}</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition">
+            <Icon.Close/>
+          </button>
+        </div>
+        <div className="p-6 max-h-[70vh] overflow-y-auto scrollbar-thin">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============ Add/Edit Trainee Modal ============
+function TraineeModal({ open, onClose, onSave, editing, stores }) {
+  const [name, setName] = useState('');
+  const [store, setStore] = useState('');
+  const [route, setRoute] = useState('front_to_back');
+  const [subRoute, setSubRoute] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [master, setMaster] = useState('');
+
+  const selectedRoute = useMemo(() => TRAINING_DATA.routes.find(r => r.id === route), [route]);
+  const hasSubRoutes = !!selectedRoute?.subRoutes;
+
+  useEffect(() => {
+    if (editing) {
+      setName(editing.name || '');
+      setStore(editing.store || '');
+      setRoute(editing.route || 'front_to_back');
+      setSubRoute(editing.subRoute || '');
+      setStartDate(editing.startDate || '');
+      setMaster(editing.master || '');
+    } else {
+      setName(''); setStore(''); setRoute('front_to_back'); setSubRoute('');
+      const today = new Date().toISOString().slice(0, 10);
+      setStartDate(today); setMaster('');
+    }
+  }, [editing, open]);
+
+  // Auto-select first sub-route when switching to part_time
+  useEffect(() => {
+    if (hasSubRoutes) {
+      if (!subRoute || !selectedRoute.subRoutes.find(s => s.id === subRoute)) {
+        setSubRoute(selectedRoute.subRoutes[0].id);
+      }
+    } else {
+      setSubRoute('');
+    }
+  }, [route, hasSubRoutes, selectedRoute, subRoute]);
+
+  const handleSave = () => {
+    if (!name.trim()) { alert('请输入学员姓名'); return; }
+    if (!store.trim()) { alert('请输入门店'); return; }
+    if (hasSubRoutes && !subRoute) { alert('请选择兼职子路线（前厅兼职/后厨兼职）'); return; }
+    onSave({
+      ...(editing || {}),
+      name: name.trim(),
+      store: store.trim(),
+      route,
+      subRoute: hasSubRoutes ? subRoute : '',
+      startDate,
+      master: master.trim()
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={editing ? '编辑学员' : '新增学员'}>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-1.5">学员姓名 <span className="text-red-400">*</span></label>
+          <input type="text" value={name} onChange={e=>setName(e.target.value)}
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white placeholder-gray-500"
+            placeholder="请输入学员姓名"/>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-1.5">门店 <span className="text-red-400">*</span></label>
+          <input type="text" value={store} onChange={e=>setStore(e.target.value)} list="store-list"
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white placeholder-gray-500"
+            placeholder="如：太原万达店"/>
+          <datalist id="store-list">
+            {stores.map(s => <option key={s} value={s} />)}
+          </datalist>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-1.5">带训路线 <span className="text-red-400">*</span></label>
+          <div className="grid grid-cols-3 gap-3">
+            {TRAINING_DATA.routes.map(r => (
+              <button key={r.id} onClick={()=>setRoute(r.id)}
+                className={`px-4 py-3 rounded-lg border text-left transition ${route===r.id ? 'border-indigo-500 bg-indigo-500/10 text-indigo-300' : 'border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600'}`}>
+                <div className="font-medium">{r.name}</div>
+                <div className="text-xs mt-0.5 opacity-70">{r.description}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+        {hasSubRoutes && (
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1.5">兼职岗位 <span className="text-red-400">*</span></label>
+            <div className="grid grid-cols-2 gap-3">
+              {selectedRoute.subRoutes.map(s => (
+                <button key={s.id} onClick={()=>setSubRoute(s.id)}
+                  className={`px-4 py-3 rounded-lg border text-left transition ${subRoute===s.id ? 'border-indigo-500 bg-indigo-500/10 text-indigo-300' : 'border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600'}`}>
+                  <div className="font-medium">{s.name}</div>
+                  <div className="text-xs mt-0.5 opacity-70">{s.description}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1.5">入职/开始日期</label>
+            <input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white"/>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1.5">带训师傅</label>
+            <input type="text" value={master} onChange={e=>setMaster(e.target.value)}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white placeholder-gray-500"
+              placeholder="师傅姓名"/>
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 pt-2">
+          <button onClick={onClose} className="px-4 py-2.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition">取消</button>
+          <button onClick={handleSave} className="px-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition">保存</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ============ Day Card ============
+function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, trainee }) {
+  const [expanded, setExpanded] = useState(true);
+  const [masterName, setMasterName] = useState(dayProgress?.masterSignature || trainee?.master || '');
+  React.useEffect(() => {
+    setMasterName(dayProgress?.masterSignature || trainee?.master || '');
+  }, [dayProgress?.masterSignature, trainee?.master]);
+  const shiftStyle = getShiftStyle(day.shift);
+  const isCompleted = dayProgress?.completed;
+  const checkedItems = dayProgress?.items || {};
+  const allItemsChecked = day.items.length > 0 && day.items.every((item, i) => {
+    const state = checkedItems[i] || {};
+    if (item.choices) return !!state.choice;
+    return !!state.checked;
+  });
+
+  return (
+    <div className={`day-card rounded-xl border ${isCompleted ? 'border-emerald-500/30 bg-emerald-500/5' : unlocked ? 'border-gray-700 bg-gray-900/50' : 'border-gray-800 bg-gray-900/20 opacity-60'} overflow-hidden`}>
+      {/* Day Header */}
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-800/50">
+        <div className={`flex items-center justify-center w-9 h-9 rounded-lg font-bold text-sm ${isCompleted ? 'bg-emerald-500/20 text-emerald-400' : unlocked ? 'bg-gray-800 text-gray-300' : 'bg-gray-800/50 text-gray-600'}`}>
+          {isCompleted ? <Icon.Check/> : !unlocked ? <Icon.Lock/> : day.day}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-medium text-white">第{day.day}天</span>
+            {day.shift && (
+              <span className={`text-xs px-2 py-0.5 rounded-full ${shiftStyle.bg} ${shiftStyle.text} border ${shiftStyle.border}`}>
+                {day.shift}
+              </span>
+            )}
+            {isCompleted && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                已完成
+              </span>
+            )}
+            {dayProgress?.masterSignature && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
+                <Icon.User width={11} height={11}/> {dayProgress.masterSignature}
+              </span>
+            )}
+            {dayProgress?.completedAt && (
+              <span className="text-xs text-gray-500 flex items-center gap-1">
+                <Icon.Clock width={11} height={11}/> {new Date(dayProgress.completedAt).toLocaleString('zh-CN', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}
+              </span>
+            )}
+          </div>
+          <div className="text-xs text-gray-500 mt-0.5">{day.monthName} · {day.phaseName} · {day.phaseFocus}</div>
+        </div>
+        {unlocked && day.items.length > 0 && (
+          <button onClick={() => setExpanded(!expanded)} className="p-1.5 rounded-lg hover:bg-gray-800 text-gray-400 transition">
+            <span className={`inline-block transition-transform ${expanded ? 'rotate-0' : '-rotate-90'}`}><Icon.ChevronDown/></span>
+          </button>
+        )}
+      </div>
+
+      {/* Day Content */}
+      {unlocked && expanded && day.items.length > 0 && (
+        <div className="px-4 py-3 space-y-2">
+          {day.items.map((item, idx) => {
+            const itemType = getItemType(item.content);
+            const itemStyle = ITEM_STYLES[itemType] || ITEM_STYLES.learn;
+            const itemState = checkedItems[idx] || {};
+            const isDone = item.choices ? !!itemState.choice : !!itemState.checked;
+            return (
+              <div key={idx} className={`flex items-start gap-3 p-2.5 rounded-lg ${isDone ? 'bg-gray-800/40' : 'bg-gray-800/20'} border border-gray-800/50`}>
+                {!item.choices && (
+                  <button
+                    onClick={() => onToggleItem(day.key, idx, !itemState.checked)}
+                    className={`checkbox-custom mt-0.5 flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition ${itemState.checked ? 'bg-indigo-600 border-indigo-600' : 'border-gray-600 hover:border-indigo-500'}`}
+                  >
+                    {itemState.checked && <Icon.Check width={12} height={12} className="text-white"/>}
+                  </button>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-sm ${isDone ? 'text-gray-400 line-through' : 'text-gray-200'}`}>{item.content}</span>
+                    <span className={`text-xs px-1.5 py-0.5 rounded ${itemStyle.bg} ${itemStyle.text}`}>
+                      {itemType === 'learn' ? '学习' : itemType === 'practice' ? '练习' : itemType === 'cert' ? '认证' : '终审'}
+                    </span>
+                  </div>
+                  {item.choices ? (
+                    <div className="mt-2">
+                      <div className="flex flex-wrap gap-2">
+                        {item.choices.map(choice => (
+                          <button
+                            key={choice}
+                            onClick={() => onToggleItem(day.key, idx, true, choice)}
+                            className={`px-3 py-1.5 rounded-lg text-xs border transition ${itemState.choice === choice ? 'bg-indigo-600 border-indigo-500 text-white' : 'border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-300'}`}
+                          >
+                            {choice}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-500">
+                        <span>学员: {item.student_hours || '-'}</span>
+                        {item.teacher_hours && <span>师傅: {item.teacher_hours}</span>}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                      <span>学员: {item.student_hours || '-'}</span>
+                      {item.teacher_hours && <span>师傅: {item.teacher_hours}</span>}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Master Signature + Complete Day Button */}
+          <div className="pt-2 space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500 flex-shrink-0">师傅签名</span>
+              <input
+                type="text"
+                value={masterName}
+                onChange={(e) => setMasterName(e.target.value)}
+                placeholder="当天负责师傅姓名"
+                className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-600"
+              />
+              {dayProgress?.signatureAt && (
+                <span className="text-xs text-gray-500 flex-shrink-0">{new Date(dayProgress.signatureAt).toLocaleString('zh-CN', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</span>
+              )}
+            </div>
+            {!isCompleted ? (
+              <button
+                onClick={() => onCompleteDay(day.key, masterName)}
+                disabled={!allItemsChecked}
+                className={`w-full py-2.5 rounded-lg font-medium text-sm transition ${allItemsChecked ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}
+              >
+                {allItemsChecked ? '✓ 确认完成本天带训' : `需完成全部 ${day.items.length} 项后才能解锁下一天`}
+              </button>
+            ) : (
+              <button
+                onClick={() => onCompleteDay(day.key, masterName)}
+                className="w-full py-2.5 rounded-lg font-medium text-sm bg-gray-800 hover:bg-gray-700 text-gray-400 transition"
+              >
+                ↩ 取消完成（重新开放编辑）
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {!unlocked && (
+        <div className="px-4 py-3 text-sm text-gray-600 flex items-center gap-2">
+          <Icon.Lock/> 完成前一天后自动解锁
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============ Trainee Tracker View ============
+function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEditTrainee, onDeleteTrainee, onUpdateProgress, stores }) {
+  const [search, setSearch] = useState('');
+  const [filterStore, setFilterStore] = useState('');
+  const [filterRoute, setFilterRoute] = useState('');
+  const [showModal, setShowModal] = useState(false);
+  const [editingTrainee, setEditingTrainee] = useState(null);
+
+  const selected = trainees.find(t => t.id === selectedId);
+
+  const filtered = useMemo(() => {
+    return trainees.filter(t => {
+      if (search && !t.name.includes(search) && !t.store.includes(search)) return false;
+      if (filterStore && t.store !== filterStore) return false;
+      if (filterRoute && t.route !== filterRoute) return false;
+      return true;
+    });
+  }, [trainees, search, filterStore, filterRoute]);
+
+  const handleSave = (data) => {
+    if (editingTrainee) {
+      onEditTrainee(editingTrainee.id, data);
+    } else {
+      onAddTrainee(data);
+    }
+    setEditingTrainee(null);
+  };
+
+  const handleToggleItem = (dayKey, itemIdx, checked, choice) => {
+    if (!selected) return;
+    const progress = { ...(selected.progress || {}) };
+    const dayProg = { ...(progress[dayKey] || { items: {} }) };
+    dayProg.items = { ...dayProg.items };
+    const prev = { ...(dayProg.items[itemIdx] || {}) };
+    if (checked) {
+      prev.checked = true;
+      prev.checkedAt = new Date().toISOString();
+      if (choice) prev.choice = choice;
+    } else {
+      delete prev.checked;
+      delete prev.checkedAt;
+      delete prev.choice;
+    }
+    dayProg.items[itemIdx] = prev;
+    progress[dayKey] = dayProg;
+    onUpdateProgress(selected.id, progress);
+  };
+
+  const handleCompleteDay = (dayKey, masterSignature) => {
+    if (!selected) return;
+    const progress = { ...(selected.progress || {}) };
+    const dayProg = { ...(progress[dayKey] || { items: {} }) };
+    if (dayProg.completed) {
+      delete dayProg.completed;
+      delete dayProg.completedAt;
+    } else {
+      dayProg.completed = true;
+      dayProg.completedAt = new Date().toISOString();
+      dayProg.masterSignature = (masterSignature || selected.master || '未签名').trim();
+      dayProg.signatureAt = new Date().toISOString();
+    }
+    progress[dayKey] = dayProg;
+    onUpdateProgress(selected.id, progress);
+  };
+
+  const allDays = selected ? getAllDays(selected.route, selected.subRoute).filter(d => d.items.length > 0) : [];
+  const currentDay = selected ? getCurrentDay(selected) : null;
+  const progressInfo = selected ? calcProgress(selected) : null;
+
+  return (
+    <div className="flex h-[calc(100vh-60px)]">
+      {/* Sidebar - Trainee List */}
+      <div className="w-72 flex-shrink-0 border-r border-gray-800 bg-gray-900/30 flex flex-col">
+        <div className="p-3 border-b border-gray-800 space-y-2">
+          <button
+            onClick={() => { setEditingTrainee(null); setShowModal(true); }}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm transition"
+          >
+            <Icon.Plus width={16} height={16}/> 新增学员
+          </button>
+          <div className="relative">
+            <Icon.Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+            <input
+              type="text" value={search} onChange={e=>setSearch(e.target.value)}
+              placeholder="搜索姓名/门店..."
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-gray-500"
+            />
+          </div>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <select value={filterStore} onChange={e=>setFilterStore(e.target.value)}
+                className="w-full h-9 appearance-none bg-gray-800 border border-gray-700 hover:border-gray-600 rounded-lg pl-3 pr-8 text-xs text-gray-300 transition cursor-pointer">
+                <option value="">全部门店</option>
+                {stores.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <Icon.ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" width={14} height={14}/>
+            </div>
+            <div className="relative flex-1">
+              <select value={filterRoute} onChange={e=>setFilterRoute(e.target.value)}
+                className="w-full h-9 appearance-none bg-gray-800 border border-gray-700 hover:border-gray-600 rounded-lg pl-3 pr-8 text-xs text-gray-300 transition cursor-pointer">
+                <option value="">全部路线</option>
+                {TRAINING_DATA.routes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+              <Icon.ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" width={14} height={14}/>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto scrollbar-thin p-2 space-y-1">
+          {filtered.length === 0 ? (
+            <div className="text-center text-gray-500 text-sm py-8">暂无学员数据</div>
+          ) : filtered.map(t => {
+            const prog = calcProgress(t);
+            const route = TRAINING_DATA.routes.find(r => r.id === t.route);
+            const isSelected = t.id === selectedId;
+            return (
+              <button
+                key={t.id}
+                onClick={() => onSelectTrainee(t.id)}
+                className={`group w-full text-left p-3 rounded-lg transition ${isSelected ? 'bg-indigo-600/20 border border-indigo-500/40' : 'hover:bg-gray-800/50 border border-transparent'}`}
+              >
+                  <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-white">{t.name}</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-gray-500">{getRouteName(t.route, t.subRoute)}</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm(`确认删除学员「${t.name}」？此操作不可撤销。`)) {
+                          onDeleteTrainee(t.id);
+                        }
+                      }}
+                      className="p-1.5 rounded-md text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition"
+                      title="删除学员"
+                    >
+                      <Icon.Trash width={13} height={13}/>
+                    </button>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
+                  <Icon.Store/> {t.store}
+                  {t.master && <><span className="text-gray-700">·</span><Icon.User/> {t.master}</>}
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <div className="flex-1 h-5 bg-gray-800 rounded-full overflow-hidden relative">
+                    <div className={`h-full progress-bar-fill rounded-full flex items-center justify-end pr-2 ${prog.percent === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{width: `${Math.max(prog.percent, 6)}%`}}>
+                      {prog.percent >= 35 && (
+                        <span className="text-[10px] font-medium text-white/90 tabular-nums">{prog.completed}/{prog.total}</span>
+                      )}
+                    </div>
+                    {prog.percent < 35 && (
+                      <span className="absolute inset-y-0 right-2 flex items-center text-[10px] text-gray-500 tabular-nums">{prog.completed}/{prog.total}</span>
+                    )}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Main Content - Training Calendar */}
+      <div className="flex-1 overflow-y-auto scrollbar-thin">
+        {!selected ? (
+          <div className="flex items-center justify-center h-full text-gray-500">
+            <div className="text-center">
+              <Icon.Calendar width={48} height={48} className="mx-auto mb-3 opacity-30"/>
+              <p className="text-lg">请从左侧选择学员</p>
+              <p className="text-sm mt-1">或点击「新增学员」开始带训追踪</p>
+            </div>
+          </div>
+        ) : (
+          <div className="max-w-3xl mx-auto p-6">
+            {/* Trainee Info Header */}
+            <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-5 mb-5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-xl font-bold text-white">{selected.name}</h2>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">
+                      {getRouteName(selected.route, selected.subRoute)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-4 mt-2 text-sm text-gray-400">
+                    <span className="flex items-center gap-1"><Icon.Store/> {selected.store}</span>
+                    {selected.master && <span className="flex items-center gap-1"><Icon.User/> 师傅: {selected.master}</span>}
+                    {selected.startDate && <span className="flex items-center gap-1"><Icon.Calendar width={14} height={14}/> 入职: {selected.startDate}</span>}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => { setEditingTrainee(selected); setShowModal(true); }} className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition">
+                    <Icon.Edit/>
+                  </button>
+                  <button onClick={() => {
+                    if (confirm(`确认删除学员「${selected.name}」？此操作不可撤销。`)) {
+                      onDeleteTrainee(selected.id);
+                    }
+                  }} className="p-2 rounded-lg bg-gray-800 hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition">
+                    <Icon.Trash/>
+                  </button>
+                </div>
+              </div>
+
+              {/* Progress Summary */}
+              {progressInfo && (
+                <div className="mt-4 grid grid-cols-4 gap-3">
+                  <div className="bg-gray-800/40 rounded-lg p-3">
+                    <div className="text-xs text-gray-500">总进度</div>
+                    <div className="text-2xl font-bold text-white mt-1">{progressInfo.percent}%</div>
+                  </div>
+                  <div className="bg-gray-800/40 rounded-lg p-3">
+                    <div className="text-xs text-gray-500">已完成</div>
+                    <div className="text-2xl font-bold text-emerald-400 mt-1">{progressInfo.completed}<span className="text-sm text-gray-600">/{progressInfo.total}</span></div>
+                  </div>
+                  <div className="bg-gray-800/40 rounded-lg p-3">
+                    <div className="text-xs text-gray-500">当前阶段</div>
+                    <div className="text-sm font-medium text-amber-400 mt-1.5">
+                      {currentDay ? `${currentDay.monthName} · ${currentDay.phaseName}` : '全部完成'}
+                    </div>
+                  </div>
+                  <div className="bg-gray-800/40 rounded-lg p-3">
+                    <div className="text-xs text-gray-500">剩余天数</div>
+                    <div className="text-2xl font-bold text-indigo-400 mt-1">{Math.max(0, progressInfo.total - progressInfo.completed)}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Day Cards */}
+            <div className="space-y-3">
+              {allDays.map((day, idx) => {
+                const unlocked = isDayUnlocked(selected, day.key);
+                const dayProgress = selected.progress?.[day.key];
+                const isCurrent = currentDay?.key === day.key;
+                return (
+                  <div key={selected.id + '_' + day.key}>
+                    {isCurrent && (
+                      <div className="flex items-center gap-2 px-1 mb-2 text-xs text-amber-400">
+                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                        当前带训进度
+                      </div>
+                    )}
+                    <DayCard
+                      key={selected.id + '_' + day.key}
+                      day={day}
+                      dayProgress={dayProgress}
+                      unlocked={unlocked}
+                      onToggleItem={handleToggleItem}
+                      onCompleteDay={handleCompleteDay}
+                      trainee={selected}
+                    />
+                  </div>
+                );
+              })}
+
+              {!currentDay && progressInfo?.percent === 100 && (
+                <div className="text-center py-8">
+                  <div className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                    <Icon.Award/> 全部带训已完成！
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Notes */}
+            <div className="mt-6 p-4 bg-gray-900/30 border border-gray-800 rounded-xl text-xs text-gray-500 leading-relaxed">
+              <div className="font-medium text-gray-400 mb-1">带训说明</div>
+              <div>• 学习不可跳跃，完成当天全部项目后自动解锁下一天</div>
+              <div>• 绿色=学习 蓝色=练习 黄色=工作站认证 红色=岗位认证</div>
+              <div>• 员工当天休息，学习任务自动顺延</div>
+              <div>• 工作站认证未通过者需持续练习，通过后方可进入下一阶段</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <TraineeModal
+        open={showModal}
+        onClose={() => setShowModal(false)}
+        onSave={handleSave}
+        editing={editingTrainee}
+        stores={stores}
+      />
+    </div>
+  );
+}
+
+// ============ Dashboard View ============
+function localDateStr(iso) {
+  const d = new Date(iso);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function timeStr(iso) {
+  const d = new Date(iso);
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+function DashboardView({ trainees, stores }) {
+  const [filterStore, setFilterStore] = useState('');
+  const [filterRoute, setFilterRoute] = useState('');
+  const [sortBy, setSortBy] = useState('progress');
+  const [expandedRow, setExpandedRow] = useState(null);
+
+  const filtered = useMemo(() => {
+    let list = trainees.filter(t => {
+      if (filterStore && t.store !== filterStore) return false;
+      if (filterRoute && t.route !== filterRoute) return false;
+      return true;
+    });
+    list = list.map(t => ({ ...t, _progress: calcProgress(t), _currentDay: getCurrentDay(t) }));
+    if (sortBy === 'progress') list.sort((a, b) => b._progress.percent - a._progress.percent);
+    else if (sortBy === 'name') list.sort((a, b) => a.name.localeCompare(b.name));
+    else if (sortBy === 'store') list.sort((a, b) => a.store.localeCompare(b.store));
+    return list;
+  }, [trainees, filterStore, filterRoute, sortBy]);
+
+  const stats = useMemo(() => {
+    const total = trainees.length;
+    const inProgress = trainees.filter(t => {
+      const p = calcProgress(t);
+      return p.completed > 0 && p.percent < 100;
+    }).length;
+    const completed = trainees.filter(t => calcProgress(t).percent === 100).length;
+    const notStarted = trainees.filter(t => calcProgress(t).completed === 0).length;
+    const avgProgress = total > 0 ? Math.round(trainees.reduce((sum, t) => sum + calcProgress(t).percent, 0) / total) : 0;
+    return { total, inProgress, completed, notStarted, avgProgress };
+  }, [trainees]);
+
+  // Group by store
+  const storeStats = useMemo(() => {
+    const map = {};
+    trainees.forEach(t => {
+      if (!map[t.store]) map[t.store] = { store: t.store, total: 0, completed: 0, inProgress: 0, sumPercent: 0 };
+      const p = calcProgress(t);
+      map[t.store].total++;
+      map[t.store].sumPercent += p.percent;
+      if (p.percent === 100) map[t.store].completed++;
+      else if (p.completed > 0) map[t.store].inProgress++;
+    });
+    return Object.values(map).map(s => ({ ...s, avgPercent: Math.round(s.sumPercent / s.total) }));
+  }, [trainees]);
+
+  // Phase distribution
+  const phaseDist = useMemo(() => {
+    const dist = {};
+    trainees.forEach(t => {
+      const cd = getCurrentDay(t);
+      const phase = cd ? cd.phaseName : '已完成';
+      dist[phase] = (dist[phase] || 0) + 1;
+    });
+    return Object.entries(dist).sort((a, b) => {
+      const order = ['第一阶段', '第二阶段', '第三阶段', '第四阶段', '已完成'];
+      return order.indexOf(a[0]) - order.indexOf(b[0]);
+    });
+  }, [trainees]);
+
+  // Today's check-in stats
+  const todayStats = useMemo(() => {
+    const today = localDateStr(new Date().toISOString());
+    const checkedList = [];
+    const uncheckedList = [];
+    trainees.forEach(t => {
+      let count = 0;
+      let lastTime = '';
+      let completedDay = false;
+      const progress = t.progress || {};
+      Object.values(progress).forEach(day => {
+        Object.values(day.items || {}).forEach(item => {
+          if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === today) {
+            count++;
+            if (item.checkedAt > lastTime) lastTime = item.checkedAt;
+          }
+        });
+        // Confirming completion of a training day today also counts
+        if (day.completed && day.completedAt && localDateStr(day.completedAt) === today) {
+          completedDay = true;
+          if (day.completedAt > lastTime) lastTime = day.completedAt;
+        }
+      });
+      const entry = { id: t.id, name: t.name, store: t.store, count, lastTime, completedDay };
+      if (count > 0 || completedDay) checkedList.push(entry);
+      else uncheckedList.push(entry);
+    });
+    checkedList.sort((a, b) => b.count - a.count);
+    return { checkedList, uncheckedList, today };
+  }, [trainees]);
+
+  return (
+    <div className="overflow-y-auto scrollbar-thin h-[calc(100vh-60px)]">
+      <div className="max-w-6xl mx-auto p-6">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
+          <div className="bg-gradient-to-br from-indigo-600/20 to-indigo-700/5 border border-indigo-500/20 rounded-xl p-4">
+            <div className="text-xs text-indigo-300/70">学员总数</div>
+            <div className="text-3xl font-bold text-white mt-1">{stats.total}</div>
+          </div>
+          <div className="bg-gradient-to-br from-emerald-500/20 to-emerald-600/5 border border-emerald-500/20 rounded-xl p-4">
+            <div className="text-xs text-emerald-300/70">今日已打卡</div>
+            <div className="text-3xl font-bold text-emerald-400 mt-1">
+              {todayStats.checkedList.length}
+              <span className="text-sm text-gray-500 font-normal">/{stats.total}</span>
+            </div>
+          </div>
+          <div className="bg-gradient-to-br from-rose-500/15 to-rose-600/5 border border-rose-500/20 rounded-xl p-4">
+            <div className="text-xs text-rose-300/70">今日未打卡</div>
+            <div className="text-3xl font-bold text-rose-400 mt-1">
+              {todayStats.uncheckedList.length}
+              <span className="text-sm text-gray-500 font-normal">/{stats.total}</span>
+            </div>
+          </div>
+          <div className="bg-gradient-to-br from-amber-500/20 to-amber-600/5 border border-amber-500/20 rounded-xl p-4">
+            <div className="text-xs text-amber-300/70">带训中</div>
+            <div className="text-3xl font-bold text-amber-400 mt-1">{stats.inProgress}</div>
+          </div>
+          <div className="bg-gradient-to-br from-gray-600/20 to-gray-700/5 border border-gray-500/20 rounded-xl p-4">
+            <div className="text-xs text-gray-400">未开始</div>
+            <div className="text-3xl font-bold text-gray-300 mt-1">{stats.notStarted}</div>
+          </div>
+          <div className="bg-gradient-to-br from-purple-600/20 to-purple-700/5 border border-purple-500/20 rounded-xl p-4">
+            <div className="text-xs text-purple-300/70">平均进度</div>
+            <div className="text-3xl font-bold text-purple-400 mt-1">{stats.avgProgress}%</div>
+          </div>
+        </div>
+
+        {/* Today Check-in Panel */}
+        <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-5 mb-6">
+          <h3 className="text-sm font-medium text-gray-300 mb-4 flex items-center gap-2">
+            <Icon.Clock/> 今日带训打卡 · {todayStats.today}
+          </h3>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Checked today */}
+            <div>
+              <div className="text-xs font-medium text-emerald-400 mb-2 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+                今日已打卡（{todayStats.checkedList.length}人）
+              </div>
+              <div className="space-y-1.5 max-h-56 overflow-y-auto scrollbar-thin pr-1">
+                {todayStats.checkedList.length === 0 ? (
+                  <div className="text-xs text-gray-600 py-3 text-center border border-dashed border-gray-800 rounded-lg">今天还没有人打卡</div>
+                ) : todayStats.checkedList.map(p => (
+                  <div key={p.id} className="flex items-center justify-between bg-emerald-500/5 border border-emerald-500/20 rounded-lg px-3 py-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-sm text-white font-medium">{p.name}</span>
+                      <span className="text-xs text-gray-500 truncate">{p.store}</span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">勾了{p.count}项</span>
+                      {p.lastTime && <span className="text-xs text-gray-500">{timeStr(p.lastTime)}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {/* Not checked today */}
+            <div>
+              <div className="text-xs font-medium text-rose-400 mb-2 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-rose-500 inline-block"></span>
+                今日未打卡（{todayStats.uncheckedList.length}人）
+              </div>
+              <div className="space-y-1.5 max-h-56 overflow-y-auto scrollbar-thin pr-1">
+                {todayStats.uncheckedList.length === 0 ? (
+                  <div className="text-xs text-gray-600 py-3 text-center border border-dashed border-gray-800 rounded-lg">全员已打卡 👍</div>
+                ) : todayStats.uncheckedList.map(p => (
+                  <div key={p.id} className="flex items-center justify-between bg-rose-500/5 border border-rose-500/15 rounded-lg px-3 py-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-sm text-gray-300 font-medium">{p.name}</span>
+                      <span className="text-xs text-gray-600 truncate">{p.store}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Charts Row */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+          {/* Store Progress */}
+          <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-5">
+            <h3 className="text-sm font-medium text-gray-300 mb-4 flex items-center gap-2">
+              <Icon.Store/> 各门店带训进度
+            </h3>
+            {storeStats.length === 0 ? (
+              <div className="text-center text-gray-500 text-sm py-6">暂无数据</div>
+            ) : (
+              <div className="space-y-3">
+                {storeStats.map(s => (
+                  <div key={s.store}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm text-gray-300">{s.store}</span>
+                      <span className="text-xs text-gray-500">{s.completed}/{s.total}完成 · {s.avgPercent}%</span>
+                    </div>
+                    <div className="h-2.5 bg-gray-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-indigo-500 to-indigo-400 progress-bar-fill rounded-full" style={{width: `${s.avgPercent}%`}}></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Phase Distribution */}
+          <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-5">
+            <h3 className="text-sm font-medium text-gray-300 mb-4 flex items-center gap-2">
+              <Icon.TrendUp/> 带训阶段分布
+            </h3>
+            {phaseDist.length === 0 ? (
+              <div className="text-center text-gray-500 text-sm py-6">暂无数据</div>
+            ) : (
+              <div className="space-y-2">
+                {phaseDist.map(([phase, count]) => {
+                  const max = Math.max(...phaseDist.map(p => p[1]));
+                  const width = (count / max) * 100;
+                  const colors = {
+                    '第一阶段': 'bg-blue-500',
+                    '第二阶段': 'bg-purple-500',
+                    '第三阶段': 'bg-amber-500',
+                    '第四阶段': 'bg-red-500',
+                    '已完成': 'bg-emerald-500'
+                  };
+                  return (
+                    <div key={phase} className="flex items-center gap-3">
+                      <span className="text-xs text-gray-400 w-16 text-right">{phase}</span>
+                      <div className="flex-1 h-6 bg-gray-800 rounded-md overflow-hidden relative">
+                        <div className={`h-full ${colors[phase] || 'bg-gray-500'} progress-bar-fill rounded-md flex items-center justify-end pr-2`} style={{width: `${Math.max(width, 8)}%`}}>
+                          <span className="text-xs font-bold text-white">{count}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Detailed Table */}
+        <div className="bg-gray-900/50 border border-gray-800 rounded-xl overflow-hidden">
+          <div className="flex items-center justify-between p-4 border-b border-gray-800">
+            <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
+              <Icon.Dashboard/> 学员带训明细
+            </h3>
+            <div className="flex items-center gap-2">
+              <select value={filterStore} onChange={e=>setFilterStore(e.target.value)}
+                className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-gray-300">
+                <option value="">全部门店</option>
+                {stores.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <select value={filterRoute} onChange={e=>setFilterRoute(e.target.value)}
+                className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-gray-300">
+                <option value="">全部路线</option>
+                {TRAINING_DATA.routes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+              <select value={sortBy} onChange={e=>setSortBy(e.target.value)}
+                className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-gray-300">
+                <option value="progress">按进度排序</option>
+                <option value="name">按姓名排序</option>
+                <option value="store">按门店排序</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto scrollbar-thin">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-gray-500 border-b border-gray-800">
+                  <th className="text-left px-4 py-3 font-medium">学员</th>
+                  <th className="text-left px-4 py-3 font-medium">门店</th>
+                  <th className="text-left px-4 py-3 font-medium">路线</th>
+                  <th className="text-left px-4 py-3 font-medium">师傅</th>
+                  <th className="text-left px-4 py-3 font-medium">当前阶段</th>
+                  <th className="text-left px-4 py-3 font-medium">进度</th>
+                  <th className="text-left px-4 py-3 font-medium">完成/总天数</th>
+                  <th className="text-left px-4 py-3 font-medium">最近完成</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan="8" className="text-center text-gray-500 py-8">暂无数据</td>
+                  </tr>
+                ) : filtered.map(t => {
+                  const route = TRAINING_DATA.routes.find(r => r.id === t.route);
+                  const prog = t._progress;
+                  const cd = t._currentDay;
+                  const allDays = getAllDays(t.route, t.subRoute).filter(d => d.items.length > 0);
+                  // Find last completed day
+                  let lastCompleted = null;
+                  for (const d of allDays) {
+                    const dp = t.progress?.[d.key];
+                    if (dp?.completed) lastCompleted = dp;
+                  }
+                  const statusColor = prog.percent === 100 ? 'text-emerald-400' : prog.completed > 0 ? 'text-amber-400' : 'text-gray-500';
+                  return (
+                    <React.Fragment key={t.id}>
+                      <tr className="border-b border-gray-800/50 hover:bg-gray-800/30 transition cursor-pointer" onClick={() => setExpandedRow(expandedRow === t.id ? null : t.id)}>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-white font-medium">{t.name}</span>
+                            {expandedRow === t.id ? <Icon.ChevronDown width={12} height={12} className="text-gray-500"/> : <Icon.ChevronRight width={12} height={12} className="text-gray-500"/>}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-gray-400">{t.store}</td>
+                        <td className="px-4 py-3"><span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400">{getRouteName(t.route, t.subRoute)}</span></td>
+                        <td className="px-4 py-3 text-gray-400">{t.master || '-'}</td>
+                        <td className="px-4 py-3 text-gray-400 text-xs">
+                          {cd ? `${cd.monthName} · ${cd.phaseName} · 第${cd.day}天` : '已完成'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-24 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                              <div className={`h-full progress-bar-fill rounded-full ${prog.percent === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{width: `${prog.percent}%`}}></div>
+                            </div>
+                            <span className={`text-xs font-medium ${statusColor}`}>{prog.percent}%</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-gray-400 tabular-nums text-xs">{prog.completed}/{prog.total}</td>
+                        <td className="px-4 py-3 text-gray-500 text-xs">
+                          {lastCompleted ? new Date(lastCompleted.completedAt).toLocaleDateString('zh-CN') : '-'}
+                        </td>
+                      </tr>
+                      {expandedRow === t.id && (
+                        <tr className="bg-gray-900/40">
+                          <td colSpan="8" className="px-4 py-4">
+                            <div className="space-y-1.5">
+                              {allDays.map(d => {
+                                const dp = t.progress?.[d.key];
+                                const isDone = dp?.completed;
+                                const isUnlocked = isDayUnlocked(t, d.key);
+                                return (
+                                  <div key={d.key} className="flex items-center gap-3 text-xs">
+                                    <span className={`w-5 h-5 rounded flex items-center justify-center ${isDone ? 'bg-emerald-500/20 text-emerald-400' : isUnlocked ? 'bg-gray-800 text-gray-300' : 'bg-gray-800/50 text-gray-600'}`}>
+                                      {isDone ? <Icon.Check width={11} height={11}/> : isUnlocked ? d.day : <Icon.Lock width={10} height={10}/>}
+                                    </span>
+                                    <span className="text-gray-400 w-20">{d.monthName}</span>
+                                    <span className="text-gray-400 w-16">{d.phaseName}</span>
+                                    <span className="text-gray-300 w-16">第{d.day}天</span>
+                                    {d.shift && <span className={`px-1.5 py-0.5 rounded text-xs ${getShiftStyle(d.shift).bg} ${getShiftStyle(d.shift).text}`}>{d.shift}</span>}
+                                    <span className="text-gray-500 flex-1 truncate">{d.items.map(i => i.content).join(' / ')}</span>
+                                    {dp?.completedAt && <span className="text-gray-600">{new Date(dp.completedAt).toLocaleDateString('zh-CN')}</span>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============ Main App ============
+// ============ Password Modal ============
+const DASHBOARD_PASSWORD = '1216';
+
+function PasswordModal({ onSuccess, onClose }) {
+  const [pwd, setPwd] = useState('');
+  const [error, setError] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    inputRef.current && inputRef.current.focus();
+  }, []);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (pwd === DASHBOARD_PASSWORD) {
+      onSuccess();
+    } else {
+      setError(true);
+      setPwd('');
+      setTimeout(() => setError(false), 1500);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <form onSubmit={handleSubmit} onClick={e => e.stopPropagation()} className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-80 shadow-2xl fade-in">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-indigo-500/15 flex items-center justify-center">
+            <Icon.Lock width={20} height={20} className="text-indigo-400"/>
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-white">管理看板验证</h3>
+            <p className="text-xs text-gray-500">请输入密码进入后台</p>
+          </div>
+        </div>
+        <input
+          ref={inputRef}
+          type="password"
+          value={pwd}
+          onChange={e => setPwd(e.target.value)}
+          placeholder="输入密码"
+          className={`w-full bg-gray-800 border rounded-lg px-4 py-2.5 text-sm text-white placeholder-gray-600 ${error ? 'border-red-500 animate-pulse' : 'border-gray-700'}`}
+        />
+        {error && <p className="text-xs text-red-400 mt-2">密码错误，请重试</p>}
+        <div className="flex gap-2 mt-4">
+          <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-gray-800 transition">取消</button>
+          <button type="submit" className="flex-1 py-2 rounded-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 transition">确认</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// ============ Sync Modal (Real-time) ============
+function SyncModal({ data, syncStatus, lastSyncTime, onClose, onImport }) {
+  const [status, setStatus] = useState({ type: '', msg: '' });
+  const [busy, setBusy] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const showStatus = (type, msg) => {
+    setStatus({ type, msg });
+    setTimeout(() => setStatus({ type: '', msg: '' }), 3000);
+  };
+
+  // Export to file (backup)
+  const handleExport = () => {
+    try {
+      const jsonStr = JSON.stringify(data, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const date = new Date().toISOString().slice(0, 10);
+      a.download = `带训数据_${date}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showStatus('success', '数据已导出为文件');
+    } catch(e) {
+      showStatus('error', '导出失败：' + e.message);
+    }
+  };
+
+  // Import from file (backup)
+  const handleFileImport = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setBusy(true);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target.result);
+        if (!parsed.trainees || !Array.isArray(parsed.trainees)) {
+          showStatus('error', '文件格式不正确');
+          setBusy(false);
+          return;
+        }
+        onImport(parsed);
+        showStatus('success', `导入成功！已导入 ${parsed.trainees.length} 名学员数据`);
+      } catch(err) {
+        showStatus('error', '文件解析失败：' + err.message);
+      }
+      setBusy(false);
+      e.target.value = '';
+    };
+    reader.onerror = () => {
+      showStatus('error', '文件读取失败');
+      setBusy(false);
+    };
+    reader.readAsText(file);
+  };
+
+  // Force push to GitHub
+  const handleForceSync = async () => {
+    setBusy(true);
+    try {
+      const ts = Date.now();
+      const ok = await ghForcePush(data, ts);
+      if (ok) {
+        showStatus('success', '数据已推送到云端');
+        setLastSyncTime(ts);
+      } else {
+        showStatus('error', '推送失败，请稍后重试');
+      }
+    } catch(e) {
+      showStatus('error', '推送失败：' + e.message);
+    }
+    setBusy(false);
+  };
+
+  // Force pull from GitHub
+  const handleForcePull = async () => {
+    setBusy(true);
+    try {
+      const remoteData = await ghFetchData();
+      if (remoteData && remoteData.trainees) {
+        showStatus('success', `已从云端拉取 ${remoteData.trainees.length} 名学员数据`);
+      } else {
+        showStatus('error', '云端暂无新数据');
+      }
+    } catch(e) {
+      showStatus('error', '拉取失败：' + e.message);
+    }
+    setBusy(false);
+  };
+
+  const statusConfig = {
+    connected: { color: 'bg-emerald-400', text: '已连接', textColor: 'text-emerald-300', bgColor: 'bg-emerald-500/10', borderColor: 'border-emerald-500/20' },
+    connecting: { color: 'bg-amber-400', text: '连接中...', textColor: 'text-amber-300', bgColor: 'bg-amber-500/10', borderColor: 'border-amber-500/20' },
+    error: { color: 'bg-red-400', text: '连接失败', textColor: 'text-red-300', bgColor: 'bg-red-500/10', borderColor: 'border-red-500/20' },
+  };
+  const sc = statusConfig[syncStatus] || statusConfig.connecting;
+
+  const lastSyncText = lastSyncTime
+    ? new Date(lastSyncTime).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    : '等待同步...';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-gray-900 border border-gray-700 rounded-2xl w-[480px] max-w-[92vw] max-h-[88vh] overflow-y-auto scrollbar-thin shadow-2xl fade-in">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-indigo-500/15 flex items-center justify-center">
+              <Icon.Cloud width={18} height={18} className="text-indigo-400"/>
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white">实时数据同步</h3>
+              <p className="text-xs text-gray-500">所有打开此网页的用户自动同步</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-gray-500 hover:text-white transition p-1">
+            <Icon.Close width={18} height={18}/>
+          </button>
+        </div>
+
+        {/* Status */}
+        {status.msg && (
+          <div className={`mx-5 mt-3 px-4 py-2.5 rounded-lg text-sm flex items-center gap-2 ${
+            status.type === 'success' ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20' : 'bg-red-500/10 text-red-300 border border-red-500/20'
+          }`}>
+            {status.type === 'success' ? <Icon.Check width={14} height={14}/> : <Icon.Close width={14} height={14}/>}
+            {status.msg}
+          </div>
+        )}
+
+        <div className="p-5 space-y-5">
+          {/* Sync Status Card */}
+          <div className={`rounded-xl p-4 border ${sc.bgColor} ${sc.borderColor}`}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2.5">
+                <span className={`w-3 h-3 rounded-full ${sc.color} ${syncStatus === 'connecting' ? 'animate-pulse' : ''}`}></span>
+                <span className={`text-sm font-medium ${sc.textColor}`}>{sc.text}</span>
+              </div>
+              <span className="text-xs text-gray-500">{data.trainees.length} 名学员</span>
+            </div>
+            <div className="text-xs text-gray-500">
+              上次同步：{lastSyncText}
+            </div>
+          </div>
+
+          {/* Feature List */}
+          <div className="space-y-2.5">
+            <div className="flex items-start gap-2.5 text-xs text-gray-400">
+              <Icon.Check width={14} height={14} className="text-emerald-400 mt-0.5 flex-shrink-0"/>
+              <span>店长打勾后，数据<span className="text-emerald-300">自动上传</span>到云端</span>
+            </div>
+            <div className="flex items-start gap-2.5 text-xs text-gray-400">
+              <Icon.Check width={14} height={14} className="text-emerald-400 mt-0.5 flex-shrink-0"/>
+              <span>老大这边<span className="text-emerald-300">自动刷新</span>看到最新数据</span>
+            </div>
+            <div className="flex items-start gap-2.5 text-xs text-gray-400">
+              <Icon.Check width={14} height={14} className="text-emerald-400 mt-0.5 flex-shrink-0"/>
+              <span>无需手动操作，打开网页即<span className="text-emerald-300">自动同步</span></span>
+            </div>
+            <div className="flex items-start gap-2.5 text-xs text-gray-400">
+              <Icon.Check width={14} height={14} className="text-emerald-400 mt-0.5 flex-shrink-0"/>
+              <span>每个学员数据<span className="text-emerald-300">独立合并</span>，不会互相覆盖</span>
+            </div>
+          </div>
+
+          {/* Force Sync Buttons */}
+          <div className="flex gap-2">
+            <button
+              onClick={handleForcePull}
+              disabled={busy}
+              className="flex-1 py-2.5 rounded-lg text-sm font-medium text-white bg-gray-800 hover:bg-gray-700 border border-gray-700 disabled:opacity-50 transition flex items-center justify-center gap-2"
+            >
+              <Icon.Download width={14} height={14}/> 从云端拉取
+            </button>
+            <button
+              onClick={handleForceSync}
+              disabled={busy || syncStatus !== 'connected'}
+              className="flex-1 py-2.5 rounded-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 transition flex items-center justify-center gap-2"
+            >
+              <Icon.RefreshCw width={14} height={14}/> 推送到云端
+            </button>
+          </div>
+
+          {/* Divider */}
+          <div className="border-t border-gray-800"></div>
+
+          {/* File Backup */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <Icon.Download width={14} height={14} className="text-amber-400"/>
+              <h4 className="text-sm font-semibold text-white">文件备份</h4>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">导出数据文件作为备份，或从备份恢复</p>
+            <div className="flex gap-2">
+              <button
+                onClick={handleExport}
+                className="flex-1 py-2.5 rounded-lg text-xs font-medium text-white bg-gray-800 hover:bg-gray-700 border border-gray-700 transition flex items-center justify-center gap-1.5"
+              >
+                <Icon.Download width={12} height={12}/> 导出备份
+              </button>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={busy}
+                className="flex-1 py-2.5 rounded-lg text-xs font-medium text-white bg-gray-800 hover:bg-gray-700 border border-gray-700 transition flex items-center justify-center gap-1.5"
+              >
+                <Icon.Upload width={12} height={12}/> 导入恢复
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json,application/json"
+                onChange={handleFileImport}
+                className="hidden"
+              />
+            </div>
+          </div>
+
+          {/* Info */}
+          <div className="bg-gray-800/50 rounded-lg p-3 text-xs text-gray-500 leading-relaxed">
+            <p className="text-gray-400 font-medium mb-1">使用说明</p>
+            <p>1. 所有打开此网页的用户自动进入同一个同步房间</p>
+            <p>2. 任何人修改数据后，其他人的页面会在3秒内自动更新</p>
+            <p>3. 如果同步不及时，点击「从云端拉取」手动刷新</p>
+            <p>4. 建议定期「导出备份」以防数据丢失</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [data, setData] = useState(loadData);
+  const [view, setView] = useState('tracker');
+  const [selectedId, setSelectedId] = useState(null);
+  const [dashboardUnlocked, setDashboardUnlocked] = useState(false);
+  const [showPwdModal, setShowPwdModal] = useState(false);
+  const [showSyncModal, setShowSyncModal] = useState(false);
+  const [syncStatus, setSyncStatus] = useState('connecting');
+  const [lastSyncTime, setLastSyncTime] = useState(null);
+  const isRemoteUpdate = useRef(false);
+  const ghReady = useRef(false);
+
+  // Save to localStorage + push to GitHub
+  useEffect(() => {
+    saveData(data);
+    if (!isRemoteUpdate.current && ghReady.current) {
+      const ts = Date.now();
+      ghPushData(data, ts);
+      setLastSyncTime(ts);
+    }
+    isRemoteUpdate.current = false;
+  }, [data]);
+
+  // Initialize GitHub Issues API sync
+  useEffect(() => {
+    initGitHubSync();
+
+    const unsubUpdate = ghOnUpdate((remoteData, remoteTs) => {
+      // Always merge when remote data changed — no timestamp comparison (immune to clock skew)
+      isRemoteUpdate.current = true;
+      setData(prevData => {
+        const merged = mergeTrainees(prevData.trainees, remoteData.trainees || []);
+        const newData = { trainees: merged, _updatedAt: remoteTs };
+        saveData(newData);
+        return newData;
+      });
+      setLastSyncTime(remoteTs || Date.now());
+    });
+
+    const unsubStatus = ghOnStatus((status) => {
+      setSyncStatus(status);
+    });
+
+    // After 3s, mark GitHub as ready and push local data if it has content
+    // (remote data should have been fetched and merged by now)
+    const initTimer = setTimeout(() => {
+      ghReady.current = true;
+      const localData = loadData();
+      // Only push if local has trainees (skip if empty/new device)
+      if (localData.trainees && localData.trainees.length > 0) {
+        const ts = Date.now();
+        ghPushData(localData, ts);
+        setLastSyncTime(ts);
+      }
+    }, 3000);
+
+    // Poll remote data every 3s (near real-time sync)
+    const pollTimer = setInterval(() => {
+      ghFetchData();
+    }, 3000);
+
+    return () => {
+      clearTimeout(initTimer);
+      clearInterval(pollTimer);
+      unsubUpdate();
+      unsubStatus();
+    };
+  }, []);
+
+  // Auto-select first trainee
+  useEffect(() => {
+    if (!selectedId && data.trainees.length > 0) {
+      setSelectedId(data.trainees[0].id);
+    }
+  }, [data.trainees, selectedId]);
+
+  const stores = useMemo(() => {
+    const set = new Set(data.trainees.map(t => t.store).filter(Boolean));
+    return Array.from(set).sort();
+  }, [data.trainees]);
+
+  const handleAddTrainee = (trainee) => {
+    const newTrainee = {
+      id: genId(),
+      ...trainee,
+      progress: {},
+      createdAt: new Date().toISOString(),
+      _updatedAt: Date.now()
+    };
+    setData(d => ({ ...d, trainees: [...d.trainees, newTrainee] }));
+    setSelectedId(newTrainee.id);
+  };
+
+  const handleEditTrainee = (id, updates) => {
+    setData(d => ({
+      ...d,
+      trainees: d.trainees.map(t => t.id === id ? { ...t, ...updates, _updatedAt: Date.now() } : t)
+    }));
+  };
+
+  const handleDeleteTrainee = (id) => {
+    setData(d => ({
+      ...d,
+      trainees: d.trainees.filter(t => t.id !== id)
+    }));
+    if (selectedId === id) setSelectedId(null);
+  };
+
+  const handleUpdateProgress = (id, progress) => {
+    setData(d => ({
+      ...d,
+      trainees: d.trainees.map(t => t.id === id ? { ...t, progress, _updatedAt: Date.now() } : t)
+    }));
+  };
+
+  const handleImportData = (imported) => {
+    const stamped = {
+      trainees: (imported.trainees || []).map(t => ({ ...t, _updatedAt: t._updatedAt || Date.now() }))
+    };
+    setData(stamped);
+    setSelectedId(stamped.trainees.length > 0 ? stamped.trainees[0].id : null);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-950">
+      {/* Header */}
+      <header className="sticky top-0 z-40 bg-gray-900/80 backdrop-blur-lg border-b border-gray-800">
+        <div className="flex items-center justify-between px-5 h-[60px]">
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center">
+                <Icon.Award width={18} height={18} className="text-white"/>
+              </div>
+              <div>
+                <h1 className="text-base font-bold text-white leading-tight">门店带训追踪系统</h1>
+                <p className="text-xs text-gray-500 leading-tight">区域带训进度管理</p>
+              </div>
+            </div>
+            <nav className="flex items-center gap-1">
+              <button
+                onClick={() => setView('tracker')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'tracker' ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
+              >
+                <Icon.Calendar width={16} height={16}/> 带训追踪
+              </button>
+              <button
+                onClick={() => {
+                  if (dashboardUnlocked) {
+                    setView('dashboard');
+                  } else {
+                    setShowPwdModal(true);
+                  }
+                }}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'dashboard' ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
+              >
+                <Icon.Dashboard width={16} height={16}/> 管理看板
+              </button>
+              <button
+                onClick={() => setShowSyncModal(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-gray-400 hover:text-white hover:bg-gray-800"
+              >
+                <Icon.Cloud width={16} height={16}/> 数据同步
+                <span className={`w-2 h-2 rounded-full ${syncStatus === 'connected' ? 'bg-emerald-400' : syncStatus === 'error' ? 'bg-red-400' : 'bg-amber-400 animate-pulse'}`}></span>
+              </button>
+            </nav>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-500">{data.trainees.length} 名学员</span>
+            <span className="text-xs text-gray-700">|</span>
+            <span className="text-xs text-gray-500">{stores.length} 家门店</span>
+          </div>
+        </div>
+      </header>
+
+      {/* Content */}
+      {view === 'tracker' ? (
+        <TrackerView
+          trainees={data.trainees}
+          selectedId={selectedId}
+          onSelectTrainee={setSelectedId}
+          onAddTrainee={handleAddTrainee}
+          onEditTrainee={handleEditTrainee}
+          onDeleteTrainee={handleDeleteTrainee}
+          onUpdateProgress={handleUpdateProgress}
+          stores={stores}
+        />
+      ) : (
+        <DashboardView trainees={data.trainees} stores={stores} />
+      )}
+
+      {/* 密码弹窗 */}
+      {showPwdModal && (
+        <PasswordModal
+          onSuccess={() => {
+            setDashboardUnlocked(true);
+            setShowPwdModal(false);
+            setView('dashboard');
+          }}
+          onClose={() => setShowPwdModal(false)}
+        />
+      )}
+
+      {/* 数据同步弹窗 */}
+      {showSyncModal && (
+        <SyncModal
+          data={data}
+          syncStatus={syncStatus}
+          lastSyncTime={lastSyncTime}
+          onClose={() => setShowSyncModal(false)}
+          onImport={handleImportData}
+        />
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

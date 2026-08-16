@@ -92,12 +92,17 @@ const GH_COMMENT_URL = (id) => `https://api.github.com/repos/${GH_OWNER}/${GH_RE
 let _ghCommentId = null;
 let _ghCommentUpdatedAt = '';
 let _ghEtag = '';
-let _isRemoteUpdate = false;
 let _ghSaveTimer = null;
 let _ghConnected = false;
 let _ghPushing = false;
+let _ghPushTimer = null;
 const _ghListeners = new Set();
 const _ghStatusListeners = new Set();
+const _ghPushStatusListeners = new Set();
+
+function _ghNotifyPushStatus(status, msg) {
+  _ghPushStatusListeners.forEach(cb => cb(status, msg));
+}
 
 function initGitHubSync() {
   _ghStatusListeners.forEach(cb => cb('connecting'));
@@ -109,6 +114,39 @@ function initGitHubSync() {
     _ghConnected = true;
     _ghStatusListeners.forEach(cb => cb('connected'));
   });
+}
+
+// Fetch raw remote data WITHOUT triggering listeners (used by push to merge before overwriting)
+async function _ghFetchRaw() {
+  try {
+    const url = `${GH_COMMENTS_URL}?per_page=1&sort=created&direction=desc&_t=${Date.now()}`;
+    const headers = {
+      'Authorization': `token ${GH_TOKEN}`,
+      'Accept': 'application/vnd.github.v3+json'
+    };
+    if (_ghEtag) headers['If-None-Match'] = _ghEtag;
+    const res = await fetch(url, { headers, cache: 'no-cache' });
+    const etag = res.headers.get('etag');
+    if (etag) _ghEtag = etag;
+    if (res.status === 304) return null;
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const comments = await res.json();
+    if (!comments || comments.length === 0) return null;
+    for (const c of comments) {
+      try {
+        let body = c.body.trim();
+        if (body.startsWith('LZ:')) body = LZString.decompressFromBase64(body.slice(3));
+        const data = JSON.parse(body);
+        _ghCommentId = c.id;
+        _ghCommentUpdatedAt = c.updated_at;
+        return data;
+      } catch(e) { continue; }
+    }
+    return null;
+  } catch(e) {
+    console.warn('[GitHub] Raw fetch error:', e.message);
+    return null;
+  }
 }
 
 async function ghFetchData() {
@@ -159,9 +197,7 @@ async function ghFetchData() {
     _ghCommentId = latestComment.id;
 
     console.log('[GitHub] Remote data changed, trainees:', (latestData.trainees || []).length);
-    _isRemoteUpdate = true;
     _ghListeners.forEach(cb => cb(latestData, latestData._updatedAt || 0));
-    _isRemoteUpdate = false;
     return latestData;
   } catch(e) {
     console.warn('[GitHub] Fetch error:', e.message);
@@ -170,21 +206,44 @@ async function ghFetchData() {
 }
 
 async function ghPushData(data, ts) {
-  if (_isRemoteUpdate || _ghPushing) return false;
+  if (_ghPushing) return false;
   if (_ghSaveTimer) clearTimeout(_ghSaveTimer);
   _ghSaveTimer = setTimeout(async () => {
     // Re-read latest data from localStorage — remote sync may have merged new data
     const latestData = loadData();
     await _ghDoPush(latestData, ts);
-  }, 400); // 400ms debounce (was 1000ms)
+  }, 400); // 400ms debounce
   return true;
 }
 
-async function _ghDoPush(data, ts) {
+async function _ghDoPush(localData, ts) {
   if (_ghPushing) return false;
   _ghPushing = true;
+  _ghNotifyPushStatus('pushing', '');
+
+  // Safety timeout: release lock after 10s even if something hangs
+  if (_ghPushTimer) clearTimeout(_ghPushTimer);
+  _ghPushTimer = setTimeout(() => {
+    if (_ghPushing) {
+      _ghPushing = false;
+      _ghNotifyPushStatus('error', '推送超时');
+      console.warn('[GitHub] Push timed out, releasing lock');
+    }
+  }, 10000);
+
   try {
-    const payload = Object.assign({}, data, { _updatedAt: ts || Date.now() });
+    // STEP 1: Fetch latest remote data and merge — prevents overwriting others' changes
+    const remoteData = await _ghFetchRaw();
+    let dataToPush = localData;
+    if (remoteData && remoteData.trainees && localData.trainees) {
+      const merged = mergeTrainees(localData.trainees, remoteData.trainees);
+      dataToPush = { trainees: merged, _updatedAt: ts || Date.now() };
+      // Save merged data locally so we don't lose remote entries
+      saveData(dataToPush);
+      console.log('[GitHub] Merged before push: local', localData.trainees.length, '+ remote', remoteData.trainees.length, '→', merged.length);
+    }
+
+    const payload = Object.assign({}, dataToPush, { _updatedAt: ts || Date.now() });
     let bodyStr = JSON.stringify(payload);
     // Compress with LZ-String if data is large (GitHub comment body max 65536 chars)
     if (bodyStr.length > 3000 && typeof LZString !== 'undefined') {
@@ -209,18 +268,23 @@ async function _ghDoPush(data, ts) {
         _ghCommentUpdatedAt = json.updated_at;
         _ghEtag = ''; // Reset ETag so next poll fetches fresh data
         console.log('[GitHub] Pushed data (updated comment), id:', _ghCommentId);
+        if (_ghPushTimer) clearTimeout(_ghPushTimer);
         _ghPushing = false;
+        _ghNotifyPushStatus('success', '已同步到云端');
         return true;
       } else if (res.status === 404) {
         // Comment was deleted, create new one
         console.warn('[GitHub] Comment not found, creating new one...');
         _ghCommentId = null;
+        if (_ghPushTimer) clearTimeout(_ghPushTimer);
         _ghPushing = false;
-        return await _ghDoPush(data, ts);
+        return await _ghDoPush(localData, ts);
       } else {
         const errText = await res.text();
         console.warn('[GitHub] Push failed:', res.status, errText.substring(0, 200));
+        if (_ghPushTimer) clearTimeout(_ghPushTimer);
         _ghPushing = false;
+        _ghNotifyPushStatus('error', `推送失败: HTTP ${res.status}`);
         return false;
       }
     } else {
@@ -236,18 +300,24 @@ async function _ghDoPush(data, ts) {
         _ghCommentUpdatedAt = json.updated_at;
         _ghEtag = ''; // Reset ETag so next poll fetches fresh data
         console.log('[GitHub] Pushed data (new comment), id:', _ghCommentId);
+        if (_ghPushTimer) clearTimeout(_ghPushTimer);
         _ghPushing = false;
+        _ghNotifyPushStatus('success', '已同步到云端');
         return true;
       } else {
         const errText = await res.text();
         console.warn('[GitHub] Push failed:', res.status, errText.substring(0, 200));
+        if (_ghPushTimer) clearTimeout(_ghPushTimer);
         _ghPushing = false;
+        _ghNotifyPushStatus('error', `推送失败: HTTP ${res.status}`);
         return false;
       }
     }
   } catch(e) {
     console.warn('[GitHub] Push error:', e.message);
+    if (_ghPushTimer) clearTimeout(_ghPushTimer);
     _ghPushing = false;
+    _ghNotifyPushStatus('error', '推送失败: ' + e.message);
     return false;
   }
 }
@@ -265,6 +335,11 @@ function ghOnUpdate(cb) {
 function ghOnStatus(cb) {
   _ghStatusListeners.add(cb);
   return () => _ghStatusListeners.delete(cb);
+}
+
+function ghOnPushStatus(cb) {
+  _ghPushStatusListeners.add(cb);
+  return () => _ghPushStatusListeners.delete(cb);
 }
 
 // Merge trainees at progress-day level (prevents data loss from concurrent edits)
@@ -1640,9 +1715,9 @@ function SyncModal({ data, syncStatus, lastSyncTime, setLastSyncTime, onClose, o
           <div className="bg-gray-800/50 rounded-lg p-3 text-xs text-gray-500 leading-relaxed">
             <p className="text-gray-400 font-medium mb-1">使用说明</p>
             <p>1. 所有打开此网页的用户自动进入同一个同步房间</p>
-            <p>2. 任何人修改数据后，其他人的页面会在3秒内自动更新</p>
-            <p>3. 如果同步不及时，点击「从云端拉取」手动刷新</p>
-            <p>4. 建议定期「导出备份」以防数据丢失</p>
+            <p>2. 任何人修改数据后，自动推送云端，其他人2秒内收到</p>
+            <p>3. 推送前自动合并云端数据，不会覆盖别人的修改</p>
+            <p>4. 如果同步不及时，点击「从云端拉取」手动刷新</p>
           </div>
         </div>
       </div>
@@ -1659,6 +1734,7 @@ function App() {
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [syncStatus, setSyncStatus] = useState('connecting');
   const [lastSyncTime, setLastSyncTime] = useState(null);
+  const [pushStatus, setPushStatus] = useState({ type: '', msg: '' });
   const isRemoteUpdate = useRef(false);
   const ghReady = useRef(false);
 
@@ -1693,6 +1769,13 @@ function App() {
       setSyncStatus(status);
     });
 
+    const unsubPushStatus = ghOnPushStatus((status, msg) => {
+      setPushStatus({ type: status, msg });
+      if (status === 'success') {
+        setTimeout(() => setPushStatus({ type: '', msg: '' }), 2000);
+      }
+    });
+
     // After 1.5s, mark GitHub as ready and push local data if it has content
     // (remote data should have been fetched and merged by now)
     const initTimer = setTimeout(() => {
@@ -1716,6 +1799,7 @@ function App() {
       clearInterval(pollTimer);
       unsubUpdate();
       unsubStatus();
+      unsubPushStatus();
     };
   }, []);
 
@@ -1812,7 +1896,9 @@ function App() {
                 className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-gray-400 hover:text-white hover:bg-gray-800"
               >
                 <Icon.Cloud width={16} height={16}/> 数据同步
-                <span className={`w-2 h-2 rounded-full ${syncStatus === 'connected' ? 'bg-emerald-400' : syncStatus === 'error' ? 'bg-red-400' : 'bg-amber-400 animate-pulse'}`}></span>
+                <span className={`w-2 h-2 rounded-full ${pushStatus.type === 'pushing' ? 'bg-blue-400 animate-pulse' : pushStatus.type === 'error' ? 'bg-red-400' : syncStatus === 'connected' ? 'bg-emerald-400' : syncStatus === 'error' ? 'bg-red-400' : 'bg-amber-400 animate-pulse'}`}></span>
+                {pushStatus.type === 'pushing' && <span className="text-xs text-blue-300">同步中...</span>}
+                {pushStatus.type === 'error' && <span className="text-xs text-red-300">推送失败</span>}
               </button>
             </nav>
           </div>

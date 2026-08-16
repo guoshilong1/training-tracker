@@ -91,7 +91,6 @@ const GH_COMMENT_URL = (id) => `https://api.github.com/repos/${GH_OWNER}/${GH_RE
 
 let _ghCommentId = null;
 let _ghCommentUpdatedAt = '';
-let _ghEtag = '';
 let _ghSaveTimer = null;
 let _ghConnected = false;
 let _ghPushing = false;
@@ -119,16 +118,15 @@ function initGitHubSync() {
 // Fetch raw remote data WITHOUT triggering listeners (used by push to merge before overwriting)
 async function _ghFetchRaw() {
   try {
+    // Always fetch fresh — no ETag. ETag on this endpoint was causing false 304s and stale merges.
     const url = `${GH_COMMENTS_URL}?per_page=1&sort=created&direction=desc&_t=${Date.now()}`;
-    const headers = {
-      'Authorization': `token ${GH_TOKEN}`,
-      'Accept': 'application/vnd.github.v3+json'
-    };
-    if (_ghEtag) headers['If-None-Match'] = _ghEtag;
-    const res = await fetch(url, { headers, cache: 'no-cache' });
-    const etag = res.headers.get('etag');
-    if (etag) _ghEtag = etag;
-    if (res.status === 304) return null;
+    const res = await fetch(url, {
+      headers: {
+        'Authorization': `token ${GH_TOKEN}`,
+        'Accept': 'application/vnd.github.v3+json'
+      },
+      cache: 'no-cache'
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const comments = await res.json();
     if (!comments || comments.length === 0) return null;
@@ -139,6 +137,7 @@ async function _ghFetchRaw() {
         const data = JSON.parse(body);
         _ghCommentId = c.id;
         _ghCommentUpdatedAt = c.updated_at;
+        console.log('[GitHub] Raw fetch got', (data.trainees || []).length, 'trainees, updated_at:', c.updated_at);
         return data;
       } catch(e) { continue; }
     }
@@ -151,20 +150,15 @@ async function _ghFetchRaw() {
 
 async function ghFetchData() {
   try {
+    // Always fetch fresh — compare updated_at to detect changes. ETag caused false 304s.
     const url = `${GH_COMMENTS_URL}?per_page=1&sort=created&direction=desc&_t=${Date.now()}`;
-    const headers = {
-      'Authorization': `token ${GH_TOKEN}`,
-      'Accept': 'application/vnd.github.v3+json'
-    };
-    if (_ghEtag) headers['If-None-Match'] = _ghEtag;
     const res = await fetch(url, {
-      headers: headers,
+      headers: {
+        'Authorization': `token ${GH_TOKEN}`,
+        'Accept': 'application/vnd.github.v3+json'
+      },
       cache: 'no-cache'
     });
-    // Capture ETag for next request — 304 means no change, super fast
-    const etag = res.headers.get('etag');
-    if (etag) _ghEtag = etag;
-    if (res.status === 304) return null; // Not modified — skip parsing
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const comments = await res.json();
     if (!comments || comments.length === 0) {
@@ -191,17 +185,21 @@ async function ghFetchData() {
 
     if (!latestComment || !latestData) return null;
     // Use updated_at (GitHub server time) for change detection — immune to clock skew
-    if (latestComment.updated_at === _ghCommentUpdatedAt) return null;
+    if (latestComment.updated_at === _ghCommentUpdatedAt) {
+      console.log('[GitHub] No change since last sync (updated_at match)');
+      return null;
+    }
 
     _ghCommentUpdatedAt = latestComment.updated_at;
     _ghCommentId = latestComment.id;
 
-    console.log('[GitHub] Remote data changed, trainees:', (latestData.trainees || []).length);
+    console.log('[GitHub] Remote data changed, trainees:', (latestData.trainees || []).length, 'updated_at:', latestComment.updated_at);
     _ghListeners.forEach(cb => cb(latestData, latestData._updatedAt || 0));
     return latestData;
   } catch(e) {
     console.warn('[GitHub] Fetch error:', e.message);
-    return null;
+    _ghStatusListeners.forEach(cb => cb('error'));
+    throw e; // Let callers know there was a real error
   }
 }
 
@@ -266,8 +264,7 @@ async function _ghDoPush(localData, ts) {
       if (res.ok) {
         const json = await res.json();
         _ghCommentUpdatedAt = json.updated_at;
-        _ghEtag = ''; // Reset ETag so next poll fetches fresh data
-        console.log('[GitHub] Pushed data (updated comment), id:', _ghCommentId);
+        console.log('[GitHub] Pushed data (updated comment), id:', _ghCommentId, 'updated_at:', json.updated_at);
         if (_ghPushTimer) clearTimeout(_ghPushTimer);
         _ghPushing = false;
         _ghNotifyPushStatus('success', '已同步到云端');
@@ -298,8 +295,7 @@ async function _ghDoPush(localData, ts) {
         const json = await res.json();
         _ghCommentId = json.id;
         _ghCommentUpdatedAt = json.updated_at;
-        _ghEtag = ''; // Reset ETag so next poll fetches fresh data
-        console.log('[GitHub] Pushed data (new comment), id:', _ghCommentId);
+        console.log('[GitHub] Pushed data (new comment), id:', _ghCommentId, 'updated_at:', json.updated_at);
         if (_ghPushTimer) clearTimeout(_ghPushTimer);
         _ghPushing = false;
         _ghNotifyPushStatus('success', '已同步到云端');
@@ -343,6 +339,58 @@ function ghOnPushStatus(cb) {
 }
 
 // Merge trainees at progress-day level (prevents data loss from concurrent edits)
+// Merge day-level progress: preserve checked items and completed status from BOTH sides
+function mergeDayProgress(lProgress, rProgress) {
+  const allDays = new Set([...Object.keys(lProgress || {}), ...Object.keys(rProgress || {})]);
+  const merged = {};
+  for (const day of allDays) {
+    const lp = lProgress?.[day] || {};
+    const rp = rProgress?.[day] || {};
+
+    // Per-day timestamp: newer side wins for completion status
+    const lTs = lp._updatedAt || 0;
+    const rTs = rp._updatedAt || 0;
+    const newer = rTs >= lTs ? rp : lp;
+    const older = rTs >= lTs ? lp : rp;
+
+    const dayMerged = {};
+
+    // 1) Completion status comes from the newer side (so unchecking can propagate)
+    if (newer.completed) {
+      dayMerged.completed = true;
+      dayMerged.completedAt = newer.completedAt || new Date().toISOString();
+      dayMerged.masterSignature = newer.masterSignature || '';
+      dayMerged.signatureAt = newer.signatureAt || new Date().toISOString();
+    }
+
+    // 2) Merge item-level checks: union of all checked items from BOTH sides
+    const items = {};
+    const allItemKeys = new Set([...Object.keys(lp.items || {}), ...Object.keys(rp.items || {})]);
+    for (const idx of allItemKeys) {
+      const li = lp.items?.[idx] || {};
+      const ri = rp.items?.[idx] || {};
+      if (li.checked || ri.checked) {
+        items[idx] = {
+          checked: true,
+          checkedAt: li.checkedAt || ri.checkedAt || new Date().toISOString(),
+          choice: li.choice || ri.choice || undefined
+        };
+      }
+    }
+    dayMerged.items = items;
+
+    // 3) Preserve any other fields from the newer side
+    for (const k of Object.keys(newer)) {
+      if (!(k in dayMerged)) dayMerged[k] = newer[k];
+    }
+    // 4) Keep the newer _updatedAt so subsequent merges compare correctly
+    dayMerged._updatedAt = Math.max(lTs, rTs);
+
+    merged[day] = dayMerged;
+  }
+  return merged;
+}
+
 function mergeTrainees(localTrainees, remoteTrainees, localDeletedIds, remoteDeletedIds) {
   // Union of all deleted IDs — once deleted, stays deleted across all devices
   const deletedIds = new Set([...(localDeletedIds || []), ...(remoteDeletedIds || [])]);
@@ -364,29 +412,9 @@ function mergeTrainees(localTrainees, remoteTrainees, localDeletedIds, remoteDel
     const lTs = lt._updatedAt || 0;
     const rTs = rt._updatedAt || 0;
     const base = rTs >= lTs ? Object.assign({}, rt) : Object.assign({}, lt);
-    // Merge progress at day level — both sides' checked days are preserved
-    const lProgress = lt.progress || {};
-    const rProgress = rt.progress || {};
-    const allDays = new Set([...Object.keys(lProgress), ...Object.keys(rProgress)]);
-    const mergedProgress = {};
-    for (const day of allDays) {
-      const lp = lProgress[day];
-      const rp = rProgress[day];
-      if (!lp) { mergedProgress[day] = rp; continue; }
-      if (!rp) { mergedProgress[day] = lp; continue; }
-      // If either is checked, prefer the checked one
-      if (lp.checked && !rp.checked) mergedProgress[day] = lp;
-      else if (!lp.checked && rp.checked) mergedProgress[day] = rp;
-      else if (lp.checked && rp.checked) {
-        // Both checked — prefer the one with master signature
-        if (lp.master && !rp.master) mergedProgress[day] = lp;
-        else if (rp.master && !lp.master) mergedProgress[day] = rp;
-        else mergedProgress[day] = lp;
-      } else {
-        mergedProgress[day] = lp;
-      }
-    }
-    base.progress = mergedProgress;
+    // Merge progress at item/day level — both sides' checked items & completed days are preserved
+    base.progress = mergeDayProgress(lt.progress, rt.progress);
+    base._updatedAt = Math.max(lTs, rTs);
     result.push(base);
   }
   return { trainees: result, deletedIds: [...deletedIds] };
@@ -827,6 +855,7 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
       delete prev.choice;
     }
     dayProg.items[itemIdx] = prev;
+    dayProg._updatedAt = Date.now();
     progress[dayKey] = dayProg;
     onUpdateProgress(selected.id, progress);
   };
@@ -844,6 +873,7 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
       dayProg.masterSignature = (masterSignature || selected.master || '未签名').trim();
       dayProg.signatureAt = new Date().toISOString();
     }
+    dayProg._updatedAt = Date.now();
     progress[dayKey] = dayProg;
     onUpdateProgress(selected.id, progress);
   };
@@ -1583,7 +1613,7 @@ function SyncModal({ data, syncStatus, lastSyncTime, setLastSyncTime, onClose, o
       if (remoteData && remoteData.trainees) {
         showStatus('success', `已从云端拉取 ${remoteData.trainees.length} 名学员数据`);
       } else {
-        showStatus('error', '云端暂无新数据');
+        showStatus('success', '当前已是最新数据，无需更新');
       }
     } catch(e) {
       showStatus('error', '拉取失败：' + e.message);
@@ -1796,9 +1826,9 @@ function App() {
       }
     }, 1500);
 
-    // Poll remote data every 1.5s (near real-time sync, ETag makes 304s ultra-fast)
+    // Poll remote data every 1.5s (near real-time sync)
     const pollTimer = setInterval(() => {
-      ghFetchData();
+      ghFetchData().catch(() => {}); // Errors are handled by status listeners
     }, 1500);
 
     return () => {

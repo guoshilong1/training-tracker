@@ -118,11 +118,13 @@ let _ghConnected = false;
 let _ghPushing = false;
 let _ghPushTimer = null;
 let _ghBackoffUntil = 0; // GitHub secondary rate limit backoff: skip requests until this timestamp
+let _lastPushErrorMsg = ''; // Last push error message, surfaced in the sync modal
 const _ghListeners = new Set();
 const _ghStatusListeners = new Set();
 const _ghPushStatusListeners = new Set();
 
 function _ghNotifyPushStatus(status, msg) {
+  if (status === 'error' && msg) _lastPushErrorMsg = msg;
   _ghPushStatusListeners.forEach(cb => cb(status, msg));
 }
 
@@ -237,10 +239,18 @@ async function ghPushData(data, ts) {
   if (_ghPushing) return false;
   if (_ghSaveTimer) clearTimeout(_ghSaveTimer);
   _ghSaveTimer = setTimeout(async () => {
+    // If we are in a GitHub rate-limit backoff window, delay the push until it expires.
+    // This prevents hammering the API with write requests that are guaranteed to fail.
+    const wait = _ghBackoffUntil - Date.now();
+    if (wait > 0) {
+      _ghNotifyPushStatus('error', '请求过于频繁，稍后自动重试');
+      setTimeout(() => ghPushData(loadData(), Date.now()), wait + 500);
+      return;
+    }
     // Re-read latest data from localStorage — remote sync may have merged new data
     const latestData = loadData();
     await _ghDoPush(latestData, ts);
-  }, 400); // 400ms debounce
+  }, 1500); // 1.5s debounce: consecutive edits batch into one push
   return true;
 }
 
@@ -311,7 +321,12 @@ async function _ghDoPush(localData, ts) {
         console.warn('[GitHub] Push failed:', res.status, errText.substring(0, 200));
         if (_ghPushTimer) clearTimeout(_ghPushTimer);
         _ghPushing = false;
-        _ghNotifyPushStatus('error', `推送失败: HTTP ${res.status}`);
+        if (res.status === 403 || res.status === 429) {
+          _ghBackoffUntil = Date.now() + 60000;
+          _ghNotifyPushStatus('error', '请求过于频繁，稍后自动重试');
+        } else {
+          _ghNotifyPushStatus('error', `推送失败: HTTP ${res.status}`);
+        }
         return false;
       }
     } else {
@@ -335,7 +350,12 @@ async function _ghDoPush(localData, ts) {
         console.warn('[GitHub] Push failed:', res.status, errText.substring(0, 200));
         if (_ghPushTimer) clearTimeout(_ghPushTimer);
         _ghPushing = false;
-        _ghNotifyPushStatus('error', `推送失败: HTTP ${res.status}`);
+        if (res.status === 403 || res.status === 429) {
+          _ghBackoffUntil = Date.now() + 60000;
+          _ghNotifyPushStatus('error', '请求过于频繁，稍后自动重试');
+        } else {
+          _ghNotifyPushStatus('error', `推送失败: HTTP ${res.status}`);
+        }
         return false;
       }
     }
@@ -343,7 +363,11 @@ async function _ghDoPush(localData, ts) {
     console.warn('[GitHub] Push error:', e.message);
     if (_ghPushTimer) clearTimeout(_ghPushTimer);
     _ghPushing = false;
-    _ghNotifyPushStatus('error', '推送失败: ' + e.message);
+    if (e.message === 'RATE_LIMITED') {
+      _ghNotifyPushStatus('error', '请求过于频繁，稍后自动重试');
+    } else {
+      _ghNotifyPushStatus('error', '推送失败: ' + e.message);
+    }
     return false;
   }
 }
@@ -2126,7 +2150,7 @@ function SyncModal({ data, syncStatus, lastSyncTime, setLastSyncTime, onClose, o
         showStatus('success', '数据已推送到云端');
         setLastSyncTime(ts);
       } else {
-        showStatus('error', '推送失败，请稍后重试');
+        showStatus('error', _lastPushErrorMsg || '推送失败，请稍后重试');
       }
     } catch(e) {
       showStatus('error', '推送失败：' + e.message);

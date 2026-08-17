@@ -559,7 +559,8 @@ function countCerts(trainee) {
   let n = 0;
   for (const day of allDays) {
     const dp = progress[day.key];
-    if (!dp || !dp.items) continue;
+    // 认证类项目必须等本天“确认完成”后才计证（兼职三选一不能只选就计）
+    if (!dp || !dp.items || !dp.completed) continue;
     day.items.forEach((item, idx) => {
       const type = getItemType(item.content);
       if ((type === 'cert' || type === 'final_cert') && dp.items[idx]) {
@@ -1640,7 +1641,14 @@ function RegionDashboardView({ trainees, stores, config }) {
     return visibleTrainees
       .filter(t => calcProgress(t).percent < 100)
       .map(t => ({ ...t, _progress: calcProgress(t), _streak: calcNoCheckInStreak(t, today) }))
-      .sort((a, b) => a._progress.percent - b._progress.percent);
+      .filter(t => t._streak.days > 0) // 排除今日已打卡人员，避免影响分析
+      .sort((a, b) => {
+        // 按区域排序，再按进度排序
+        const areaA = a.area || '000';
+        const areaB = b.area || '000';
+        if (areaA !== areaB) return areaA.localeCompare(areaB, undefined, { numeric: true });
+        return a._progress.percent - b._progress.percent;
+      });
   }, [visibleTrainees, today]);
 
   const storeRanking = useMemo(() => {

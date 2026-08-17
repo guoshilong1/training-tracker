@@ -117,6 +117,7 @@ let _ghSaveTimer = null;
 let _ghConnected = false;
 let _ghPushing = false;
 let _ghPushTimer = null;
+let _ghBackoffUntil = 0; // GitHub secondary rate limit backoff: skip requests until this timestamp
 const _ghListeners = new Set();
 const _ghStatusListeners = new Set();
 const _ghPushStatusListeners = new Set();
@@ -181,7 +182,14 @@ async function ghFetchData() {
       },
       cache: 'no-cache'
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      if (res.status === 403 || res.status === 429) {
+        // GitHub secondary rate limit (too frequent polling) — back off 60s
+        _ghBackoffUntil = Date.now() + 60000;
+        throw new Error('RATE_LIMITED');
+      }
+      throw new Error(`HTTP ${res.status}`);
+    }
     const comments = await res.json();
     if (!comments || comments.length === 0) {
       console.log('[GitHub] No sync comments yet');
@@ -220,7 +228,7 @@ async function ghFetchData() {
     return latestData;
   } catch(e) {
     console.warn('[GitHub] Fetch error:', e.message);
-    _ghStatusListeners.forEach(cb => cb('error'));
+    _ghStatusListeners.forEach(cb => cb('error', e.message === 'RATE_LIMITED' ? '请求过于频繁，稍后自动重试' : ''));
     throw e; // Let callers know there was a real error
   }
 }
@@ -2417,14 +2425,26 @@ function App() {
       }
     }, 1500);
 
-    // Poll remote data every 1.5s (near real-time sync)
+    // Poll remote data every 12s. 1.5s polling with 9 accounts triggered GitHub's
+    // secondary rate limit, so: slower interval + skip when tab hidden + 60s backoff on 403.
     const pollTimer = setInterval(() => {
+      if (Date.now() < _ghBackoffUntil) return;          // rate-limit backoff
+      if (document.visibilityState !== 'visible') return; // don't poll in background
       ghFetchData().catch(() => {}); // Errors are handled by status listeners
-    }, 1500);
+    }, 12000);
+
+    // When tab becomes visible again, sync immediately (feels responsive despite slower polling)
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible' && Date.now() >= _ghBackoffUntil) {
+        ghFetchData().catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
       clearTimeout(initTimer);
       clearInterval(pollTimer);
+      document.removeEventListener('visibilitychange', onVisibility);
       unsubUpdate();
       unsubStatus();
       unsubPushStatus();

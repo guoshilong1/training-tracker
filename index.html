@@ -379,11 +379,16 @@ function mergeDayProgress(lProgress, rProgress) {
     }
     dayMerged.items = items;
 
-    // 3) Preserve any other fields from the newer side
+    // 3) Merge training time: keep the newer side's value if either side has one
+    if (newer.trainingTime || older.trainingTime) {
+      dayMerged.trainingTime = newer.trainingTime || older.trainingTime;
+    }
+
+    // 4) Preserve any other fields from the newer side
     for (const k of Object.keys(newer)) {
       if (!(k in dayMerged)) dayMerged[k] = newer[k];
     }
-    // 4) Keep the newer _updatedAt so subsequent merges compare correctly
+    // 5) Keep the newer _updatedAt so subsequent merges compare correctly
     dayMerged._updatedAt = Math.max(lTs, rTs);
 
     merged[day] = dayMerged;
@@ -661,9 +666,11 @@ function TraineeModal({ open, onClose, onSave, editing, stores }) {
 function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, trainee }) {
   const [expanded, setExpanded] = useState(true);
   const [masterName, setMasterName] = useState(dayProgress?.masterSignature || trainee?.master || '');
+  const [trainingTime, setTrainingTime] = useState(dayProgress?.trainingTime || '');
   React.useEffect(() => {
     setMasterName(dayProgress?.masterSignature || trainee?.master || '');
-  }, [dayProgress?.masterSignature, trainee?.master]);
+    setTrainingTime(dayProgress?.trainingTime || '');
+  }, [dayProgress?.masterSignature, trainee?.master, dayProgress?.trainingTime]);
   const shiftStyle = getShiftStyle(day.shift);
   const isCompleted = dayProgress?.completed;
   const checkedItems = dayProgress?.items || {};
@@ -767,7 +774,7 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, trai
             );
           })}
 
-          {/* Master Signature + Complete Day Button */}
+          {/* Master Signature + Training Time + Complete Day Button */}
           <div className="pt-2 space-y-2">
             <div className="flex items-center gap-2">
               <span className="text-xs text-gray-500 flex-shrink-0">师傅签名</span>
@@ -782,9 +789,22 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, trai
                 <span className="text-xs text-gray-500 flex-shrink-0">{new Date(dayProgress.signatureAt).toLocaleString('zh-CN', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</span>
               )}
             </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500 flex-shrink-0">带训时间</span>
+              <input
+                type="time"
+                value={trainingTime}
+                onChange={(e) => setTrainingTime(e.target.value)}
+                placeholder="如 09:00"
+                className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-600"
+              />
+              {dayProgress?.trainingTime && (
+                <span className="text-xs text-gray-500 flex-shrink-0">已填 {dayProgress.trainingTime}</span>
+              )}
+            </div>
             {!isCompleted ? (
               <button
-                onClick={() => onCompleteDay(day.key, masterName)}
+                onClick={() => onCompleteDay(day.key, masterName, trainingTime)}
                 disabled={!allItemsChecked}
                 className={`w-full py-2.5 rounded-lg font-medium text-sm transition ${allItemsChecked ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}
               >
@@ -792,7 +812,7 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, trai
               </button>
             ) : (
               <button
-                onClick={() => onCompleteDay(day.key, masterName)}
+                onClick={() => onCompleteDay(day.key, masterName, trainingTime)}
                 className="w-full py-2.5 rounded-lg font-medium text-sm bg-gray-800 hover:bg-gray-700 text-gray-400 transition"
               >
                 ↩ 取消完成（重新开放编辑）
@@ -860,7 +880,7 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
     onUpdateProgress(selected.id, progress);
   };
 
-  const handleCompleteDay = (dayKey, masterSignature) => {
+  const handleCompleteDay = (dayKey, masterSignature, trainingTime) => {
     if (!selected) return;
     const progress = { ...(selected.progress || {}) };
     const dayProg = { ...(progress[dayKey] || { items: {} }) };
@@ -872,6 +892,7 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
       dayProg.completedAt = new Date().toISOString();
       dayProg.masterSignature = (masterSignature || selected.master || '未签名').trim();
       dayProg.signatureAt = new Date().toISOString();
+      dayProg.trainingTime = trainingTime || '';
     }
     dayProg._updatedAt = Date.now();
     progress[dayKey] = dayProg;
@@ -1111,6 +1132,37 @@ function timeStr(iso) {
   return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
 }
 
+function daysBetween(dateStrA, dateStrB) {
+  const a = new Date(dateStrA + 'T00:00:00');
+  const b = new Date(dateStrB + 'T00:00:00');
+  return Math.round((b - a) / 86400000);
+}
+
+function calcNoCheckInStreak(t, today) {
+  const dates = new Set();
+  const progress = t.progress || {};
+  Object.values(progress).forEach(day => {
+    Object.values(day.items || {}).forEach(item => {
+      if (item.checked && item.checkedAt) dates.add(localDateStr(item.checkedAt));
+    });
+    if (day.completed && day.completedAt) dates.add(localDateStr(day.completedAt));
+  });
+
+  if (dates.size === 0) {
+    if (t.startDate) {
+      const days = Math.max(1, daysBetween(t.startDate, today));
+      return { days, label: `连续${days}天未打卡` };
+    }
+    return { days: 9999, label: '从未打卡' };
+  }
+
+  const sorted = [...dates].sort();
+  const lastDate = sorted[sorted.length - 1];
+  if (lastDate >= today) return { days: 0, label: '今日已打卡' };
+  const days = daysBetween(lastDate, today);
+  return { days, label: `连续${days}天未打卡` };
+}
+
 function DashboardView({ trainees, stores }) {
   const [filterStore, setFilterStore] = useState('');
   const [filterRoute, setFilterRoute] = useState('');
@@ -1187,7 +1239,7 @@ function DashboardView({ trainees, stores }) {
             if (item.checkedAt > lastTime) lastTime = item.checkedAt;
           }
         });
-        // Confirming completion of a training day today also counts
+        // Confirming completion of a training day also counts
         if (day.completed && day.completedAt && localDateStr(day.completedAt) === today) {
           completedDay = true;
           if (day.completedAt > lastTime) lastTime = day.completedAt;
@@ -1195,9 +1247,13 @@ function DashboardView({ trainees, stores }) {
       });
       const entry = { id: t.id, name: t.name, store: t.store, count, lastTime, completedDay };
       if (count > 0 || completedDay) checkedList.push(entry);
-      else uncheckedList.push(entry);
+      else {
+        const streak = calcNoCheckInStreak(t, today);
+        uncheckedList.push({ ...entry, streakDays: streak.days, streakLabel: streak.label });
+      }
     });
     checkedList.sort((a, b) => b.count - a.count);
+    uncheckedList.sort((a, b) => b.streakDays - a.streakDays);
     return { checkedList, uncheckedList, today };
   }, [trainees]);
 
@@ -1281,6 +1337,9 @@ function DashboardView({ trainees, stores }) {
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-sm text-gray-300 font-medium">{p.name}</span>
                       <span className="text-xs text-gray-600 truncate">{p.store}</span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300">{p.streakLabel}</span>
                     </div>
                   </div>
                 ))}

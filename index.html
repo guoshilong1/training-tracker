@@ -46,32 +46,54 @@ const STORAGE_KEY = 'training_tracker_data_v2';
 function loadData() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return normalizeData(parsed);
+    }
   } catch(e) {}
   // First-time: return empty — will be populated by cloud sync
   return { trainees: [], _deletedIds: [] };
 }
 
-function seedStoreRoster() {
+// Normalize legacy data: ensure every trainee has an area field (default '000')
+function normalizeData(data) {
+  if (!data || typeof data !== 'object') return { trainees: [], _deletedIds: [] };
+  return {
+    ...data,
+    trainees: (data.trainees || []).map(t => ({ ...t, area: t.area || '000' }))
+  };
+}
+
+// 8 区域 + 1 大区经理账号配置
+const AREA_CONFIG = [
+  { id: '000', password: '000', name: '郭士龙区域带训追踪系统', role: 'area', stores: [
+    '长治4店（壶关五八八广场）', '太原16店（万象城）', '太原15店（钟楼街）', '太原17店（昌盛万达广场）',
+    '太原7店（康达时光里）', '三门峡3店（灵宝市天基茂业店）', '长治5店（金威超市世纪城店）',
+    '太原14店（铜锣湾国际购物中心）', '太原3店（北美新天地购物中心）'
+  ]},
+  { id: '001', password: '1122', name: '李澳区域带训追踪系统', role: 'area', stores: [] },
+  { id: '002', password: '2233', name: '韩福亮区域带训追踪系统', role: 'area', stores: [] },
+  { id: '003', password: '3344', name: '王萌区域带训追踪系统', role: 'area', stores: [] },
+  { id: '004', password: '4455', name: '徐誌良区域带训追踪系统', role: 'area', stores: [] },
+  { id: '005', password: '5566', name: '郜一鸣区域带训追踪系统', role: 'area', stores: [] },
+  { id: '006', password: '6677', name: '李万玲区域带训追踪系统', role: 'area', stores: [] },
+  { id: '007', password: '7788', name: '江秀丽区域带训追踪系统', role: 'area', stores: [] },
+  { id: '666', password: '888', name: '白高朋大区带训追踪系统', role: 'manager', stores: [] }
+];
+const AREA_MAP = Object.fromEntries(AREA_CONFIG.map(a => [a.id, a]));
+
+function seedAreaRoster(areaId) {
+  const cfg = AREA_MAP[areaId];
+  if (!cfg || cfg.role !== 'area' || !cfg.stores || cfg.stores.length === 0) return [];
   const today = new Date().toISOString().slice(0, 10);
-  const roster = [
-    { name: '吴东', store: '长治4店（壶关五八八广场）', route: 'front_to_back' },
-    { name: '徐丹丹', store: '太原16店（万象城）', route: 'front_to_back' },
-    { name: '盛文', store: '太原15店（钟楼街）', route: 'front_to_back' },
-    { name: '赵瑞', store: '太原17店（昌盛万达广场）', route: 'front_to_back' },
-    { name: '葛婷', store: '太原7店（康达时光里）', route: 'front_to_back' },
-    { name: '代永飞', store: '三门峡3店（灵宝市天基茂业店）', route: 'front_to_back' },
-    { name: '郝淼', store: '长治5店（金威超市世纪城店）', route: 'front_to_back' },
-    { name: '杨远', store: '太原14店（铜锣湾国际购物中心）', route: 'front_to_back' },
-    { name: '张宇航', store: '太原3店（北美新天地购物中心）', route: 'front_to_back' },
-  ];
-  return roster.map((p, i) => ({
-    id: 'store_' + (i + 1),
-    name: p.name,
-    store: p.store,
-    route: p.route,
+  return cfg.stores.map((storeName, i) => ({
+    id: `${areaId}_store_${i + 1}`,
+    name: '',
+    store: storeName,
+    route: 'front_to_back',
     startDate: today,
     master: '',
+    area: areaId,
     createdAt: new Date().toISOString(),
     progress: {}
   }));
@@ -235,7 +257,7 @@ async function _ghDoPush(localData, ts) {
     let dataToPush = localData;
     if (remoteData && remoteData.trainees && localData.trainees) {
       const mergedResult = mergeTrainees(localData.trainees, remoteData.trainees, localData._deletedIds, remoteData._deletedIds);
-      dataToPush = { trainees: mergedResult.trainees, _deletedIds: mergedResult.deletedIds, _updatedAt: ts || Date.now() };
+      dataToPush = normalizeData({ trainees: mergedResult.trainees, _deletedIds: mergedResult.deletedIds, _updatedAt: ts || Date.now() });
       // Save merged data locally so we don't lose remote entries
       saveData(dataToPush);
       console.log('[GitHub] Merged before push: local', localData.trainees.length, '+ remote', remoteData.trainees.length, '→', mergedResult.trainees.length);
@@ -442,9 +464,9 @@ function getShiftStyle(shift) {
 // ============ Item Type Detection ============
 function getItemType(content) {
   if (!content) return 'empty';
+  if (content.includes('岗位认证')) return 'final_cert';
   if (content.includes('认证')) return 'cert';
   if (content.includes('练习')) return 'practice';
-  if (content.includes('岗位认证')) return 'final_cert';
   return 'learn';
 }
 
@@ -480,6 +502,7 @@ const Icon = {
   RefreshCw: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>,
   Copy: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>,
   Link: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>,
+  LogOut: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
 };
 
 // ============ Progress Calculation ============
@@ -519,6 +542,23 @@ function isDayUnlocked(trainee, dayKey) {
   const prevDay = allDays[idx - 1];
   const prevProgress = progress[prevDay.key];
   return prevProgress && prevProgress.completed;
+}
+
+function countCerts(trainee) {
+  const allDays = getAllDays(trainee.route, trainee.subRoute).filter(d => d.items.length > 0);
+  const progress = trainee.progress || {};
+  let n = 0;
+  for (const day of allDays) {
+    const dp = progress[day.key];
+    if (!dp || !dp.items) continue;
+    day.items.forEach((item, idx) => {
+      const type = getItemType(item.content);
+      if ((type === 'cert' || type === 'final_cert') && dp.items[idx] && dp.items[idx].checked) {
+        n++;
+      }
+    });
+  }
+  return n;
 }
 
 // ============ Modal ============
@@ -782,8 +822,9 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, trai
                 type="text"
                 value={masterName}
                 onChange={(e) => setMasterName(e.target.value)}
-                placeholder="当天负责师傅姓名"
-                className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-600"
+                placeholder="当天负责师傅姓名 *必填"
+                disabled={isCompleted}
+                className={`flex-1 bg-gray-800 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none ${isCompleted ? 'border border-gray-700 opacity-70' : !masterName.trim() ? 'border border-red-500/50' : 'border border-gray-700'}`}
               />
               {dayProgress?.signatureAt && (
                 <span className="text-xs text-gray-500 flex-shrink-0">{new Date(dayProgress.signatureAt).toLocaleString('zh-CN', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</span>
@@ -795,8 +836,9 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, trai
                 type="time"
                 value={trainingTime}
                 onChange={(e) => setTrainingTime(e.target.value)}
-                placeholder="如 09:00"
-                className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-600"
+                placeholder="如 09:00 *必填"
+                disabled={isCompleted}
+                className={`flex-1 bg-gray-800 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none ${isCompleted ? 'border border-gray-700 opacity-70' : !trainingTime ? 'border border-red-500/50' : 'border border-gray-700'}`}
               />
               {dayProgress?.trainingTime && (
                 <span className="text-xs text-gray-500 flex-shrink-0">已填 {dayProgress.trainingTime}</span>
@@ -805,18 +847,15 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, trai
             {!isCompleted ? (
               <button
                 onClick={() => onCompleteDay(day.key, masterName, trainingTime)}
-                disabled={!allItemsChecked}
-                className={`w-full py-2.5 rounded-lg font-medium text-sm transition ${allItemsChecked ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}
+                disabled={!allItemsChecked || !masterName.trim() || !trainingTime}
+                className={`w-full py-2.5 rounded-lg font-medium text-sm transition ${allItemsChecked && masterName.trim() && trainingTime ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}
               >
-                {allItemsChecked ? '✓ 确认完成本天带训' : `需完成全部 ${day.items.length} 项后才能解锁下一天`}
+                {allItemsChecked ? (masterName.trim() && trainingTime ? '✓ 确认完成本天带训' : '请填写师傅签名和带训时间') : `需完成全部 ${day.items.length} 项后才能解锁下一天`}
               </button>
             ) : (
-              <button
-                onClick={() => onCompleteDay(day.key, masterName, trainingTime)}
-                className="w-full py-2.5 rounded-lg font-medium text-sm bg-gray-800 hover:bg-gray-700 text-gray-400 transition"
-              >
-                ↩ 取消完成（重新开放编辑）
-              </button>
+              <div className="w-full py-2.5 rounded-lg font-medium text-sm bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-center flex items-center justify-center gap-1.5">
+                <Icon.Check width={14} height={14}/> 本天带训已完成（不可撤回）
+              </div>
             )}
           </div>
         </div>
@@ -884,16 +923,17 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
     if (!selected) return;
     const progress = { ...(selected.progress || {}) };
     const dayProg = { ...(progress[dayKey] || { items: {} }) };
-    if (dayProg.completed) {
-      delete dayProg.completed;
-      delete dayProg.completedAt;
-    } else {
-      dayProg.completed = true;
-      dayProg.completedAt = new Date().toISOString();
-      dayProg.masterSignature = (masterSignature || selected.master || '未签名').trim();
-      dayProg.signatureAt = new Date().toISOString();
-      dayProg.trainingTime = trainingTime || '';
+    if (dayProg.completed) return; // cannot undo
+    const sig = (masterSignature || selected.master || '').trim();
+    if (!sig || !trainingTime) {
+      alert('请填写师傅签名和带训时间后再确认完成');
+      return;
     }
+    dayProg.completed = true;
+    dayProg.completedAt = new Date().toISOString();
+    dayProg.masterSignature = sig;
+    dayProg.signatureAt = new Date().toISOString();
+    dayProg.trainingTime = trainingTime;
     dayProg._updatedAt = Date.now();
     progress[dayKey] = dayProg;
     onUpdateProgress(selected.id, progress);
@@ -1179,6 +1219,7 @@ function DashboardView({ trainees, stores }) {
     if (sortBy === 'progress') list.sort((a, b) => b._progress.percent - a._progress.percent);
     else if (sortBy === 'name') list.sort((a, b) => a.name.localeCompare(b.name));
     else if (sortBy === 'store') list.sort((a, b) => a.store.localeCompare(b.store));
+    else if (sortBy === 'certs') list.sort((a, b) => countCerts(b) - countCerts(a));
     return list;
   }, [trainees, filterStore, filterRoute, sortBy]);
 
@@ -1431,6 +1472,7 @@ function DashboardView({ trainees, stores }) {
                 <option value="progress">按进度排序</option>
                 <option value="name">按姓名排序</option>
                 <option value="store">按门店排序</option>
+                <option value="certs">按证书数排序</option>
               </select>
             </div>
           </div>
@@ -1443,6 +1485,7 @@ function DashboardView({ trainees, stores }) {
                   <th className="text-left px-4 py-3 font-medium">门店</th>
                   <th className="text-left px-4 py-3 font-medium">路线</th>
                   <th className="text-left px-4 py-3 font-medium">师傅</th>
+                  <th className="text-left px-4 py-3 font-medium">证书数</th>
                   <th className="text-left px-4 py-3 font-medium">当前阶段</th>
                   <th className="text-left px-4 py-3 font-medium">进度</th>
                   <th className="text-left px-4 py-3 font-medium">完成/总天数</th>
@@ -1452,7 +1495,7 @@ function DashboardView({ trainees, stores }) {
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan="8" className="text-center text-gray-500 py-8">暂无数据</td>
+                    <td colSpan="9" className="text-center text-gray-500 py-8">暂无数据</td>
                   </tr>
                 ) : filtered.map(t => {
                   const route = TRAINING_DATA.routes.find(r => r.id === t.route);
@@ -1478,6 +1521,9 @@ function DashboardView({ trainees, stores }) {
                         <td className="px-4 py-3 text-gray-400">{t.store}</td>
                         <td className="px-4 py-3"><span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400">{getRouteName(t.route, t.subRoute)}</span></td>
                         <td className="px-4 py-3 text-gray-400">{t.master || '-'}</td>
+                        <td className="px-4 py-3">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30">{countCerts(t)}</span>
+                        </td>
                         <td className="px-4 py-3 text-gray-400 text-xs">
                           {cd ? `${cd.monthName} · ${cd.phaseName} · 第${cd.day}天` : '已完成'}
                         </td>
@@ -1496,7 +1542,7 @@ function DashboardView({ trainees, stores }) {
                       </tr>
                       {expandedRow === t.id && (
                         <tr className="bg-gray-900/40">
-                          <td colSpan="8" className="px-4 py-4">
+                          <td colSpan="9" className="px-4 py-4">
                             <div className="space-y-1.5">
                               {allDays.map(d => {
                                 const dp = t.progress?.[d.key];
@@ -1532,9 +1578,412 @@ function DashboardView({ trainees, stores }) {
   );
 }
 
+// ============ Region Manager Dashboard ============
+function RegionDashboardView({ trainees, stores, config }) {
+  const today = localDateStr(new Date().toISOString());
+  const [filterArea, setFilterArea] = useState('');
+  const [showAllIncomplete, setShowAllIncomplete] = useState(false);
+
+  const visibleTrainees = useMemo(() => {
+    if (!filterArea) return trainees;
+    return trainees.filter(t => (t.area || '000') === filterArea);
+  }, [trainees, filterArea]);
+
+  const stats = useMemo(() => {
+    const total = visibleTrainees.length;
+    const progressList = visibleTrainees.map(t => calcProgress(t));
+    const inProgress = progressList.filter(p => p.percent > 0 && p.percent < 100).length;
+    const completed = progressList.filter(p => p.percent === 100).length;
+    const notStarted = progressList.filter(p => p.percent === 0).length;
+    const avgProgress = total > 0 ? Math.round(progressList.reduce((s, p) => s + p.percent, 0) / total) : 0;
+    let checkedToday = 0;
+    visibleTrainees.forEach(t => {
+      const progress = t.progress || {};
+      let hasToday = false;
+      Object.values(progress).forEach(day => {
+        Object.values(day.items || {}).forEach(item => {
+          if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === today) hasToday = true;
+        });
+        if (day.completed && day.completedAt && localDateStr(day.completedAt) === today) hasToday = true;
+      });
+      if (hasToday) checkedToday++;
+    });
+    return { total, inProgress, completed, notStarted, avgProgress, checkedToday, uncheckedToday: total - checkedToday, totalCerts: visibleTrainees.reduce((s, t) => s + countCerts(t), 0) };
+  }, [visibleTrainees, today]);
+
+  const areaStats = useMemo(() => {
+    return config.filter(c => c.role === 'area').map(c => {
+      const list = trainees.filter(t => (t.area || '000') === c.id);
+      const progressList = list.map(t => calcProgress(t));
+      const total = list.length;
+      const avg = total > 0 ? Math.round(progressList.reduce((s, p) => s + p.percent, 0) / total) : 0;
+      const completed = progressList.filter(p => p.percent === 100).length;
+      const inProgress = progressList.filter(p => p.percent > 0 && p.percent < 100).length;
+      return { ...c, total, avg, completed, inProgress };
+    });
+  }, [trainees, config]);
+
+  const incompleteList = useMemo(() => {
+    return visibleTrainees
+      .filter(t => calcProgress(t).percent < 100)
+      .map(t => ({ ...t, _progress: calcProgress(t), _streak: calcNoCheckInStreak(t, today) }))
+      .sort((a, b) => a._progress.percent - b._progress.percent);
+  }, [visibleTrainees, today]);
+
+  const storeRanking = useMemo(() => {
+    const map = {};
+    visibleTrainees.forEach(t => { if (t.store) map[t.store] = (map[t.store] || 0) + 1; });
+    return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  }, [visibleTrainees]);
+
+  const phaseDist = useMemo(() => {
+    const phases = { '第一阶段': 0, '第二阶段': 0, '第三阶段': 0, '第四阶段': 0, '已完成': 0 };
+    visibleTrainees.forEach(t => {
+      const prog = calcProgress(t);
+      if (prog.percent === 100) { phases['已完成']++; return; }
+      const cd = getCurrentDay(t);
+      if (cd && phases[cd.phaseName] !== undefined) phases[cd.phaseName]++;
+      else phases['已完成']++;
+    });
+    return Object.entries(phases).filter(([k, v]) => v > 0);
+  }, [visibleTrainees]);
+
+  const todayStats = useMemo(() => {
+    const checkedList = [];
+    const uncheckedList = [];
+    visibleTrainees.forEach(t => {
+      let hasToday = false;
+      let lastTime = '';
+      const progress = t.progress || {};
+      Object.values(progress).forEach(day => {
+        Object.values(day.items || {}).forEach(item => {
+          if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === today) {
+            hasToday = true;
+            if (item.checkedAt > lastTime) lastTime = item.checkedAt;
+          }
+        });
+        if (day.completed && day.completedAt && localDateStr(day.completedAt) === today) {
+          hasToday = true;
+          if (day.completedAt > lastTime) lastTime = day.completedAt;
+        }
+      });
+      const areaCfg = config.find(c => c.id === (t.area || '000'));
+      const entry = { ...t, areaName: areaCfg?.name?.replace('区域带训追踪系统', '') || (t.area || '000'), lastTime };
+      if (hasToday) checkedList.push(entry);
+      else {
+        const streak = calcNoCheckInStreak(t, today);
+        uncheckedList.push({ ...entry, streakDays: streak.days, streakLabel: streak.label });
+      }
+    });
+    checkedList.sort((a, b) => (b.lastTime || '').localeCompare(a.lastTime || ''));
+    uncheckedList.sort((a, b) => b.streakDays - a.streakDays);
+    return { checkedList, uncheckedList };
+  }, [visibleTrainees, today, config]);
+
+  const certRanking = useMemo(() => {
+    return visibleTrainees
+      .map(t => ({ ...t, _certs: countCerts(t), _progress: calcProgress(t) }))
+      .sort((a, b) => b._certs - a._certs)
+      .slice(0, 10);
+  }, [visibleTrainees]);
+
+  const conclusion = useMemo(() => {
+    if (areaStats.length === 0) return '暂无区域数据';
+    const activeAreas = areaStats.filter(a => a.total > 0);
+    if (activeAreas.length === 0) return '暂无学员数据';
+    const lowestArea = [...activeAreas].sort((a, b) => a.avg - b.avg)[0];
+    const worstStreak = todayStats.uncheckedList[0];
+    const parts = [];
+    parts.push(`当前共 ${stats.total} 名学员，平均进度 ${stats.avgProgress}%。`);
+    if (lowestArea) parts.push(`${lowestArea.name.replace('区域带训追踪系统', '')}平均进度最低（${lowestArea.avg}%），需重点关注。`);
+    if (worstStreak) parts.push(`今日有 ${todayStats.uncheckedList.length} 人未打卡，${worstStreak.name}已连续${worstStreak.streakDays}天未打卡。`);
+    return parts.join('');
+  }, [stats, areaStats, todayStats]);
+
+  const StatCard = ({ label, value, sub, color = 'indigo' }) => {
+    const colorClass = {
+      white: 'text-white',
+      emerald: 'text-emerald-400',
+      amber: 'text-amber-400',
+      gray: 'text-gray-400',
+      indigo: 'text-indigo-400',
+      sky: 'text-sky-400'
+    }[color] || 'text-indigo-400';
+    return (
+      <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
+        <p className="text-xs text-gray-500 mb-1">{label}</p>
+        <p className={`text-2xl font-bold ${colorClass}`}>{value}</p>
+        {sub && <p className="text-xs text-gray-600 mt-1">{sub}</p>}
+      </div>
+    );
+  };
+
+  return (
+    <div className="p-5 space-y-5 overflow-y-auto h-[calc(100vh-60px)]">
+      {/* Filter + Conclusion */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gray-900/50 border border-gray-800 rounded-xl p-4">
+        <div>
+          <h2 className="text-base font-bold text-white">大区汇总看板</h2>
+          <p className="text-xs text-gray-500 mt-1">{conclusion}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500">数据范围</span>
+          <select value={filterArea} onChange={e => setFilterArea(e.target.value)} className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-300">
+            <option value="">全部区域</option>
+            {config.filter(c => c.role === 'area').map(c => <option key={c.id} value={c.id}>{c.name.replace('区域带训追踪系统', '')}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* Top Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard label="学员总数" value={stats.total} color="white"/>
+        <StatCard label="今日已打卡" value={stats.checkedToday} sub={`未打卡 ${stats.uncheckedToday}`} color="emerald"/>
+        <StatCard label="带训中" value={stats.inProgress} color="amber"/>
+        <StatCard label="已完成" value={stats.completed} color="emerald"/>
+        <StatCard label="未开始" value={stats.notStarted} color="gray"/>
+        <StatCard label="平均进度" value={`${stats.avgProgress}%`} color="indigo"/>
+        <StatCard label="覆盖区域" value={areaStats.filter(a => a.total > 0).length} sub={`共 ${areaStats.length} 个区域`} color="sky"/>
+        <StatCard label="总证书数" value={stats.totalCerts} color="amber"/>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {/* Area Progress */}
+        <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
+          <h3 className="text-sm font-medium text-gray-300 mb-4 flex items-center gap-2"><Icon.TrendUp/> 各小区进度对比</h3>
+          <div className="space-y-3">
+            {areaStats.filter(a => a.total > 0).length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-4">暂无区域数据</p>
+            ) : areaStats.filter(a => a.total > 0).map(a => (
+              <div key={a.id} className="flex items-center gap-3">
+                <span className="text-xs text-gray-400 w-24 truncate" title={a.name}>{a.name.replace('区域带训追踪系统', '')}</span>
+                <div className="flex-1 h-6 bg-gray-800 rounded-md overflow-hidden relative">
+                  <div className="h-full bg-indigo-500 progress-bar-fill rounded-md flex items-center justify-end pr-2" style={{width: `${Math.max(a.avg, 5)}%`}}>
+                    <span className="text-xs font-bold text-white">{a.avg}%</span>
+                  </div>
+                </div>
+                <span className="text-xs text-gray-500 w-16 text-right">{a.completed}/{a.total}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Phase Distribution */}
+        <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
+          <h3 className="text-sm font-medium text-gray-300 mb-4 flex items-center gap-2"><Icon.Dashboard/> 带训阶段分布</h3>
+          <div className="space-y-3">
+            {phaseDist.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-4">暂无数据</p>
+            ) : phaseDist.map(([phase, count]) => {
+              const max = Math.max(...phaseDist.map(p => p[1]));
+              const width = (count / max) * 100;
+              const colors = { '第一阶段': 'bg-blue-500', '第二阶段': 'bg-purple-500', '第三阶段': 'bg-amber-500', '第四阶段': 'bg-red-500', '已完成': 'bg-emerald-500' };
+              return (
+                <div key={phase} className="flex items-center gap-3">
+                  <span className="text-xs text-gray-400 w-16 text-right">{phase}</span>
+                  <div className="flex-1 h-6 bg-gray-800 rounded-md overflow-hidden relative">
+                    <div className={`h-full ${colors[phase] || 'bg-gray-500'} progress-bar-fill rounded-md flex items-center justify-end pr-2`} style={{width: `${Math.max(width, 8)}%`}}>
+                      <span className="text-xs font-bold text-white">{count}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Incomplete List */}
+        <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4 lg:col-span-2">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2"><Icon.User/> 未完成人员汇总</h3>
+            <button onClick={() => setShowAllIncomplete(!showAllIncomplete)} className="text-xs text-indigo-400 hover:text-indigo-300">
+              {showAllIncomplete ? '收起' : `展开全部 (${incompleteList.length})`}
+            </button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-gray-500 border-b border-gray-800">
+                  <th className="text-left px-3 py-2 font-medium">区域</th>
+                  <th className="text-left px-3 py-2 font-medium">学员</th>
+                  <th className="text-left px-3 py-2 font-medium">门店</th>
+                  <th className="text-left px-3 py-2 font-medium">当前阶段</th>
+                  <th className="text-left px-3 py-2 font-medium">进度</th>
+                  <th className="text-left px-3 py-2 font-medium">未打卡</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(showAllIncomplete ? incompleteList : incompleteList.slice(0, 10)).map(t => {
+                  const areaCfg = config.find(c => c.id === (t.area || '000'));
+                  const cd = getCurrentDay(t);
+                  return (
+                    <tr key={t.id} className="border-b border-gray-800/50">
+                      <td className="px-3 py-2 text-xs text-gray-400">{areaCfg?.name?.replace('区域带训追踪系统', '') || t.area || '000'}</td>
+                      <td className="px-3 py-2 text-white font-medium">{t.name}</td>
+                      <td className="px-3 py-2 text-xs text-gray-400">{t.store}</td>
+                      <td className="px-3 py-2 text-xs text-gray-400">{cd ? `${cd.monthName} · ${cd.phaseName}` : '已完成'}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-20 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                            <div className={`h-full progress-bar-fill rounded-full ${t._progress.percent < 30 ? 'bg-red-500' : 'bg-indigo-500'}`} style={{width: `${t._progress.percent}%`}}></div>
+                          </div>
+                          <span className={`text-xs ${t._progress.percent < 30 ? 'text-red-400' : 'text-gray-400'}`}>{t._progress.percent}%</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2"><span className="text-xs px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-400">{t._streak.label}</span></td>
+                    </tr>
+                  );
+                })}
+                {incompleteList.length === 0 && <tr><td colSpan="6" className="text-center text-gray-500 py-6">暂无数据</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Store Ranking */}
+        <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
+          <h3 className="text-sm font-medium text-gray-300 mb-4 flex items-center gap-2"><Icon.Store/> 门店学员分布 TOP10</h3>
+          <div className="space-y-3">
+            {storeRanking.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-4">暂无数据</p>
+            ) : storeRanking.map(([store, count], idx) => {
+              const max = storeRanking[0][1];
+              const width = (count / max) * 100;
+              return (
+                <div key={store} className="flex items-center gap-3">
+                  <span className="text-xs text-gray-500 w-5">{idx + 1}</span>
+                  <span className="text-xs text-gray-400 w-28 truncate" title={store}>{store}</span>
+                  <div className="flex-1 h-5 bg-gray-800 rounded-md overflow-hidden relative">
+                    <div className="h-full bg-sky-500 progress-bar-fill rounded-md flex items-center justify-end pr-2" style={{width: `${Math.max(width, 5)}%`}}>
+                      <span className="text-xs font-bold text-white">{count}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Cert Ranking */}
+        <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
+          <h3 className="text-sm font-medium text-gray-300 mb-4 flex items-center gap-2"><Icon.Award/> 证书获得排名 TOP10</h3>
+          <div className="space-y-3">
+            {certRanking.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-4">暂无数据</p>
+            ) : certRanking.map((t, idx) => (
+              <div key={t.id} className="flex items-center gap-3">
+                <span className={`text-xs w-5 font-bold ${idx < 3 ? 'text-amber-400' : 'text-gray-500'}`}>{idx + 1}</span>
+                <span className="text-xs text-gray-300 flex-1 truncate">{t.name}</span>
+                <span className="text-xs text-gray-500">{t.store}</span>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30">{t._certs} 证书</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Today's Check-in */}
+        <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
+          <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2"><Icon.Calendar/> 今日已打卡 ({todayStats.checkedList.length})</h3>
+          <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
+            {todayStats.checkedList.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-4">今日暂无人打卡</p>
+            ) : todayStats.checkedList.map(t => (
+              <div key={t.id} className="flex items-center justify-between bg-emerald-500/5 border border-emerald-500/10 rounded-lg px-3 py-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm text-gray-300 font-medium">{t.name}</span>
+                  <span className="text-xs text-gray-600 truncate">{t.store}</span>
+                  <span className="text-xs text-indigo-400/80">{t.areaName}</span>
+                </div>
+                {t.lastTime && <span className="text-xs text-gray-500 flex-shrink-0">{timeStr(t.lastTime)}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
+          <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2"><Icon.Calendar/> 今日未打卡 ({todayStats.uncheckedList.length})</h3>
+          <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
+            {todayStats.uncheckedList.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-4">全部已打卡</p>
+            ) : todayStats.uncheckedList.slice(0, 20).map(t => (
+              <div key={t.id} className="flex items-center justify-between bg-rose-500/5 border border-rose-500/10 rounded-lg px-3 py-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm text-gray-300 font-medium">{t.name}</span>
+                  <span className="text-xs text-gray-600 truncate">{t.store}</span>
+                  <span className="text-xs text-indigo-400/80">{t.areaName}</span>
+                </div>
+                <span className="text-xs px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 flex-shrink-0">{t.streakLabel}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Area Comparison Table */}
+        <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4 lg:col-span-2">
+          <h3 className="text-sm font-medium text-gray-300 mb-4 flex items-center gap-2"><Icon.Dashboard/> 区域完成率对比表</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-gray-500 border-b border-gray-800">
+                  <th className="text-left px-3 py-2 font-medium">区域</th>
+                  <th className="text-left px-3 py-2 font-medium">学员数</th>
+                  <th className="text-left px-3 py-2 font-medium">已完成</th>
+                  <th className="text-left px-3 py-2 font-medium">带训中</th>
+                  <th className="text-left px-3 py-2 font-medium">未开始</th>
+                  <th className="text-left px-3 py-2 font-medium">平均进度</th>
+                  <th className="text-left px-3 py-2 font-medium">今日打卡</th>
+                  <th className="text-left px-3 py-2 font-medium">总证书数</th>
+                </tr>
+              </thead>
+              <tbody>
+                {areaStats.map(a => {
+                  const list = trainees.filter(t => (t.area || '000') === a.id);
+                  let checkedToday = 0;
+                  list.forEach(t => {
+                    const progress = t.progress || {};
+                    let hasToday = false;
+                    Object.values(progress).forEach(day => {
+                      Object.values(day.items || {}).forEach(item => {
+                        if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === today) hasToday = true;
+                      });
+                      if (day.completed && day.completedAt && localDateStr(day.completedAt) === today) hasToday = true;
+                    });
+                    if (hasToday) checkedToday++;
+                  });
+                  const certs = list.reduce((s, t) => s + countCerts(t), 0);
+                  return (
+                    <tr key={a.id} className="border-b border-gray-800/50 hover:bg-gray-800/20 cursor-pointer" onClick={() => setFilterArea(filterArea === a.id ? '' : a.id)}>
+                      <td className="px-3 py-2 text-white font-medium">{a.name.replace('区域带训追踪系统', '')}</td>
+                      <td className="px-3 py-2 text-gray-400">{a.total}</td>
+                      <td className="px-3 py-2 text-emerald-400">{a.completed}</td>
+                      <td className="px-3 py-2 text-amber-400">{a.inProgress}</td>
+                      <td className="px-3 py-2 text-gray-500">{a.total - a.completed - a.inProgress}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-20 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                            <div className="h-full progress-bar-fill rounded-full bg-indigo-500" style={{width: `${a.avg}%`}}></div>
+                          </div>
+                          <span className="text-xs text-gray-400">{a.avg}%</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-gray-400">{checkedToday}/{a.total}</td>
+                      <td className="px-3 py-2 text-amber-400">{certs}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-gray-600 mt-2">点击表格行可筛选上方所有模块为单个区域</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ============ Main App ============
 // ============ Password Modal ============
-const DASHBOARD_PASSWORD = '1216';
+const DASHBOARD_PASSWORD = '415';
 
 function PasswordModal({ onSuccess, onClose }) {
   const [pwd, setPwd] = useState('');
@@ -1821,8 +2270,86 @@ function SyncModal({ data, syncStatus, lastSyncTime, setLastSyncTime, onClose, o
   );
 }
 
+// ============ Login Screen ============
+function LoginScreen({ onLogin }) {
+  const [account, setAccount] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const pwdRef = useRef(null);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setError('');
+    const cfg = AREA_MAP[account.trim()];
+    if (!cfg || cfg.password !== password) {
+      setError('账号或密码错误');
+      setPassword('');
+      pwdRef.current && pwdRef.current.focus();
+      return;
+    }
+    setLoading(true);
+    setTimeout(() => {
+      onLogin({ id: cfg.id, name: cfg.name, role: cfg.role });
+      setLoading(false);
+    }, 300);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+      <div className="w-full max-w-sm bg-gray-900 border border-gray-800 rounded-2xl p-8 shadow-2xl fade-in">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center">
+            <Icon.Award width={24} height={24} className="text-white"/>
+          </div>
+          <div>
+            <h1 className="text-lg font-bold text-white">带训追踪系统</h1>
+            <p className="text-xs text-gray-500">请输入账号密码登录</p>
+          </div>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1.5">账号</label>
+            <input
+              type="text"
+              value={account}
+              onChange={e => setAccount(e.target.value)}
+              placeholder="如 000"
+              autoFocus
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1.5">密码</label>
+            <input
+              ref={pwdRef}
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="请输入密码"
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+          {error && <p className="text-xs text-red-400">{error}</p>}
+          <button
+            type="submit"
+            disabled={loading || !account.trim() || !password}
+            className={`w-full py-2.5 rounded-lg text-sm font-medium text-white transition ${loading || !account.trim() || !password ? 'bg-indigo-600/50 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500'}`}
+          >
+            {loading ? '登录中...' : '登录'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [data, setData] = useState(loadData);
+  const [currentUser, setCurrentUser] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('training_tracker_user') || 'null'); }
+    catch(e) { return null; }
+  });
   const [view, setView] = useState('tracker');
   const [selectedId, setSelectedId] = useState(null);
   const [dashboardUnlocked, setDashboardUnlocked] = useState(false);
@@ -1854,7 +2381,7 @@ function App() {
       isRemoteUpdate.current = true;
       setData(prevData => {
         const mergedResult = mergeTrainees(prevData.trainees, remoteData.trainees || [], prevData._deletedIds, remoteData._deletedIds);
-        const newData = { trainees: mergedResult.trainees, _deletedIds: mergedResult.deletedIds, _updatedAt: remoteTs };
+        const newData = normalizeData({ trainees: mergedResult.trainees, _deletedIds: mergedResult.deletedIds, _updatedAt: remoteTs });
         saveData(newData);
         return newData;
       });
@@ -1899,22 +2426,53 @@ function App() {
     };
   }, []);
 
-  // Auto-select first trainee
-  useEffect(() => {
-    if (!selectedId && data.trainees.length > 0) {
-      setSelectedId(data.trainees[0].id);
-    }
-  }, [data.trainees, selectedId]);
+  const visibleTrainees = useMemo(() => {
+    if (!currentUser) return [];
+    if (currentUser.role === 'manager') return data.trainees;
+    return data.trainees.filter(t => (t.area || '000') === currentUser.id);
+  }, [data.trainees, currentUser]);
 
   const stores = useMemo(() => {
-    const set = new Set(data.trainees.map(t => t.store).filter(Boolean));
+    const set = new Set(visibleTrainees.map(t => t.store).filter(Boolean));
     return Array.from(set).sort();
-  }, [data.trainees]);
+  }, [visibleTrainees]);
+
+  // Auto-select first trainee (from visible list)
+  useEffect(() => {
+    if (!selectedId && visibleTrainees.length > 0) {
+      setSelectedId(visibleTrainees[0].id);
+    }
+  }, [visibleTrainees, selectedId]);
+
+  // Update document title when logged in
+  useEffect(() => {
+    if (currentUser) {
+      document.title = currentUser.name;
+    } else {
+      document.title = '带训追踪系统 - 登录';
+    }
+  }, [currentUser]);
+
+  const handleLogin = (user) => {
+    localStorage.setItem('training_tracker_user', JSON.stringify(user));
+    setCurrentUser(user);
+    setView(user.role === 'manager' ? 'region_dashboard' : 'tracker');
+    setDashboardUnlocked(user.role === 'manager');
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('training_tracker_user');
+    setCurrentUser(null);
+    setView('tracker');
+    setSelectedId(null);
+    setDashboardUnlocked(false);
+  };
 
   const handleAddTrainee = (trainee) => {
     const newTrainee = {
       id: genId(),
       ...trainee,
+      area: currentUser?.role === 'area' ? currentUser.id : (trainee.area || '000'),
       progress: {},
       createdAt: new Date().toISOString(),
       _updatedAt: Date.now()
@@ -1926,7 +2484,7 @@ function App() {
   const handleEditTrainee = (id, updates) => {
     setData(d => ({
       ...d,
-      trainees: d.trainees.map(t => t.id === id ? { ...t, ...updates, _updatedAt: Date.now() } : t)
+      trainees: d.trainees.map(t => t.id === id ? { ...t, ...updates, area: t.area || '000', _updatedAt: Date.now() } : t)
     }));
   };
 
@@ -1947,13 +2505,20 @@ function App() {
   };
 
   const handleImportData = (imported) => {
-    const stamped = {
+    const stamped = normalizeData({
       trainees: (imported.trainees || []).map(t => ({ ...t, _updatedAt: t._updatedAt || Date.now() })),
       _deletedIds: imported._deletedIds || []
-    };
+    });
     setData(stamped);
     setSelectedId(stamped.trainees.length > 0 ? stamped.trainees[0].id : null);
   };
+
+  // Not logged in: show full-screen login
+  if (!currentUser) {
+    return <LoginScreen onLogin={handleLogin} />;
+  }
+
+  const isManager = currentUser.role === 'manager';
 
   return (
     <div className="min-h-screen bg-gray-950">
@@ -1966,26 +2531,30 @@ function App() {
                 <Icon.Award width={18} height={18} className="text-white"/>
               </div>
               <div>
-                <h1 className="text-base font-bold text-white leading-tight">门店带训追踪系统</h1>
-                <p className="text-xs text-gray-500 leading-tight">区域带训进度管理</p>
+                <h1 className="text-base font-bold text-white leading-tight">{currentUser.name}</h1>
+                <p className="text-xs text-gray-500 leading-tight">
+                  {isManager ? '大区汇总看板 · 全区域数据总览' : '区域带训进度管理'}
+                </p>
               </div>
             </div>
             <nav className="flex items-center gap-1">
-              <button
-                onClick={() => setView('tracker')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'tracker' ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
-              >
-                <Icon.Calendar width={16} height={16}/> 带训追踪
-              </button>
+              {!isManager && (
+                <button
+                  onClick={() => setView('tracker')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'tracker' ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
+                >
+                  <Icon.Calendar width={16} height={16}/> 带训追踪
+                </button>
+              )}
               <button
                 onClick={() => {
                   if (dashboardUnlocked) {
-                    setView('dashboard');
+                    setView(isManager ? 'region_dashboard' : 'dashboard');
                   } else {
                     setShowPwdModal(true);
                   }
                 }}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'dashboard' ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'dashboard' || view === 'region_dashboard' ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
               >
                 <Icon.Dashboard width={16} height={16}/> 管理看板
               </button>
@@ -2001,17 +2570,24 @@ function App() {
             </nav>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-gray-500">{data.trainees.length} 名学员</span>
+            <span className="text-xs text-gray-500">{visibleTrainees.length} 名学员</span>
             <span className="text-xs text-gray-700">|</span>
             <span className="text-xs text-gray-500">{stores.length} 家门店</span>
+            <span className="text-xs text-gray-700">|</span>
+            <button
+              onClick={handleLogout}
+              className="text-xs text-gray-400 hover:text-white transition flex items-center gap-1"
+            >
+              <Icon.LogOut width={12} height={12}/> 退出
+            </button>
           </div>
         </div>
       </header>
 
       {/* Content */}
-      {view === 'tracker' ? (
+      {view === 'tracker' && !isManager && (
         <TrackerView
-          trainees={data.trainees}
+          trainees={visibleTrainees}
           selectedId={selectedId}
           onSelectTrainee={setSelectedId}
           onAddTrainee={handleAddTrainee}
@@ -2020,8 +2596,12 @@ function App() {
           onUpdateProgress={handleUpdateProgress}
           stores={stores}
         />
-      ) : (
-        <DashboardView trainees={data.trainees} stores={stores} />
+      )}
+      {view === 'dashboard' && !isManager && (
+        <DashboardView trainees={visibleTrainees} stores={stores} />
+      )}
+      {view === 'region_dashboard' && isManager && (
+        <RegionDashboardView trainees={data.trainees} stores={stores} config={AREA_CONFIG} />
       )}
 
       {/* 密码弹窗 */}
@@ -2030,7 +2610,7 @@ function App() {
           onSuccess={() => {
             setDashboardUnlocked(true);
             setShowPwdModal(false);
-            setView('dashboard');
+            setView(isManager ? 'region_dashboard' : 'dashboard');
           }}
           onClose={() => setShowPwdModal(false)}
         />

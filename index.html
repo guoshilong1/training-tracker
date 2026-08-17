@@ -465,6 +465,7 @@ function getShiftStyle(shift) {
 function getItemType(content) {
   if (!content) return 'empty';
   if (content.includes('岗位认证')) return 'final_cert';
+  if (content.includes('三选一')) return 'cert'; // 兼职岗位三选一通过即获证
   if (content.includes('认证')) return 'cert';
   if (content.includes('练习')) return 'practice';
   return 'learn';
@@ -553,8 +554,12 @@ function countCerts(trainee) {
     if (!dp || !dp.items) continue;
     day.items.forEach((item, idx) => {
       const type = getItemType(item.content);
-      if ((type === 'cert' || type === 'final_cert') && dp.items[idx] && dp.items[idx].checked) {
-        n++;
+      if ((type === 'cert' || type === 'final_cert') && dp.items[idx]) {
+        if (item.choices) {
+          if (dp.items[idx].choice) n++;
+        } else if (dp.items[idx].checked) {
+          n++;
+        }
       }
     });
   }

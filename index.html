@@ -324,6 +324,9 @@ async function _ghDoPush(localData, ts) {
         if (res.status === 403 || res.status === 429) {
           _ghBackoffUntil = Date.now() + 60000;
           _ghNotifyPushStatus('error', '请求过于频繁，稍后自动重试');
+        } else if (res.status >= 500 && res.status < 600) {
+          _ghBackoffUntil = Date.now() + 30000;
+          _ghNotifyPushStatus('error', 'GitHub 服务暂时不可用，稍后自动重试');
         } else {
           _ghNotifyPushStatus('error', `推送失败: HTTP ${res.status}`);
         }
@@ -353,6 +356,9 @@ async function _ghDoPush(localData, ts) {
         if (res.status === 403 || res.status === 429) {
           _ghBackoffUntil = Date.now() + 60000;
           _ghNotifyPushStatus('error', '请求过于频繁，稍后自动重试');
+        } else if (res.status >= 500 && res.status < 600) {
+          _ghBackoffUntil = Date.now() + 30000;
+          _ghNotifyPushStatus('error', 'GitHub 服务暂时不可用，稍后自动重试');
         } else {
           _ghNotifyPushStatus('error', `推送失败: HTTP ${res.status}`);
         }
@@ -587,7 +593,7 @@ function countCerts(trainee) {
     if (!dp || !dp.items || !dp.completed) continue;
     day.items.forEach((item, idx) => {
       const type = getItemType(item.content);
-      if ((type === 'cert' || type === 'final_cert') && dp.items[idx]) {
+      if (type === 'cert' && dp.items[idx]) {
         if (item.choices) {
           if (dp.items[idx].choice) n++;
         } else if (dp.items[idx].checked) {
@@ -1205,6 +1211,12 @@ function localDateStr(iso) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
+function yesterdayStr() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
 function timeStr(iso) {
   const d = new Date(iso);
   return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
@@ -1241,7 +1253,7 @@ function calcNoCheckInStreak(t, today) {
   return { days, label: `连续${days}天未打卡` };
 }
 
-function DashboardView({ trainees, stores }) {
+function DashboardView({ trainees, stores, onUpdateNote }) {
   const [filterStore, setFilterStore] = useState('');
   const [filterRoute, setFilterRoute] = useState('');
   const [sortBy, setSortBy] = useState('progress');
@@ -1301,8 +1313,9 @@ function DashboardView({ trainees, stores }) {
     });
   }, [trainees]);
 
-  // Today's check-in stats
-  const todayStats = useMemo(() => {
+  // Yesterday's check-in stats (dashboard looks at previous day)
+  const yesterdayStats = useMemo(() => {
+    const yesterday = yesterdayStr();
     const today = localDateStr(new Date().toISOString());
     const checkedList = [];
     const uncheckedList = [];
@@ -1313,18 +1326,18 @@ function DashboardView({ trainees, stores }) {
       const progress = t.progress || {};
       Object.values(progress).forEach(day => {
         Object.values(day.items || {}).forEach(item => {
-          if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === today) {
+          if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === yesterday) {
             count++;
             if (item.checkedAt > lastTime) lastTime = item.checkedAt;
           }
         });
         // Confirming completion of a training day also counts
-        if (day.completed && day.completedAt && localDateStr(day.completedAt) === today) {
+        if (day.completed && day.completedAt && localDateStr(day.completedAt) === yesterday) {
           completedDay = true;
           if (day.completedAt > lastTime) lastTime = day.completedAt;
         }
       });
-      const entry = { id: t.id, name: t.name, store: t.store, count, lastTime, completedDay };
+      const entry = { id: t.id, name: t.name, store: t.store, note: t.note || '', count, lastTime, completedDay };
       if (count > 0 || completedDay) checkedList.push(entry);
       else {
         const streak = calcNoCheckInStreak(t, today);
@@ -1333,7 +1346,7 @@ function DashboardView({ trainees, stores }) {
     });
     checkedList.sort((a, b) => b.count - a.count);
     uncheckedList.sort((a, b) => b.streakDays - a.streakDays);
-    return { checkedList, uncheckedList, today };
+    return { checkedList, uncheckedList, yesterday };
   }, [trainees]);
 
   return (
@@ -1346,16 +1359,16 @@ function DashboardView({ trainees, stores }) {
             <div className="text-3xl font-bold text-white mt-1">{stats.total}</div>
           </div>
           <div className="bg-gradient-to-br from-emerald-500/20 to-emerald-600/5 border border-emerald-500/20 rounded-xl p-4">
-            <div className="text-xs text-emerald-300/70">今日已打卡</div>
+            <div className="text-xs text-emerald-300/70">昨日已打卡</div>
             <div className="text-3xl font-bold text-emerald-400 mt-1">
-              {todayStats.checkedList.length}
+              {yesterdayStats.checkedList.length}
               <span className="text-sm text-gray-500 font-normal">/{stats.total}</span>
             </div>
           </div>
           <div className="bg-gradient-to-br from-rose-500/15 to-rose-600/5 border border-rose-500/20 rounded-xl p-4">
-            <div className="text-xs text-rose-300/70">今日未打卡</div>
+            <div className="text-xs text-rose-300/70">昨日未打卡</div>
             <div className="text-3xl font-bold text-rose-400 mt-1">
-              {todayStats.uncheckedList.length}
+              {yesterdayStats.uncheckedList.length}
               <span className="text-sm text-gray-500 font-normal">/{stats.total}</span>
             </div>
           </div>
@@ -1373,22 +1386,22 @@ function DashboardView({ trainees, stores }) {
           </div>
         </div>
 
-        {/* Today Check-in Panel */}
+        {/* Yesterday Check-in Panel */}
         <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-5 mb-6">
           <h3 className="text-sm font-medium text-gray-300 mb-4 flex items-center gap-2">
-            <Icon.Clock/> 今日带训打卡 · {todayStats.today}
+            <Icon.Clock/> 昨日带训打卡 · {yesterdayStats.yesterday}
           </h3>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Checked today */}
+            {/* Checked yesterday */}
             <div>
               <div className="text-xs font-medium text-emerald-400 mb-2 flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
-                今日已打卡（{todayStats.checkedList.length}人）
+                昨日已打卡（{yesterdayStats.checkedList.length}人）
               </div>
               <div className="space-y-1.5 max-h-56 overflow-y-auto scrollbar-thin pr-1">
-                {todayStats.checkedList.length === 0 ? (
-                  <div className="text-xs text-gray-600 py-3 text-center border border-dashed border-gray-800 rounded-lg">今天还没有人打卡</div>
-                ) : todayStats.checkedList.map(p => (
+                {yesterdayStats.checkedList.length === 0 ? (
+                  <div className="text-xs text-gray-600 py-3 text-center border border-dashed border-gray-800 rounded-lg">昨天还没有人打卡</div>
+                ) : yesterdayStats.checkedList.map(p => (
                   <div key={p.id} className="flex items-center justify-between bg-emerald-500/5 border border-emerald-500/20 rounded-lg px-3 py-2">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-sm text-white font-medium">{p.name}</span>
@@ -1402,24 +1415,29 @@ function DashboardView({ trainees, stores }) {
                 ))}
               </div>
             </div>
-            {/* Not checked today */}
+            {/* Not checked yesterday */}
             <div>
               <div className="text-xs font-medium text-rose-400 mb-2 flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-rose-500 inline-block"></span>
-                今日未打卡（{todayStats.uncheckedList.length}人）
+                昨日未打卡（{yesterdayStats.uncheckedList.length}人）
               </div>
               <div className="space-y-1.5 max-h-56 overflow-y-auto scrollbar-thin pr-1">
-                {todayStats.uncheckedList.length === 0 ? (
-                  <div className="text-xs text-gray-600 py-3 text-center border border-dashed border-gray-800 rounded-lg">全员已打卡 👍</div>
-                ) : todayStats.uncheckedList.map(p => (
-                  <div key={p.id} className="flex items-center justify-between bg-rose-500/5 border border-rose-500/15 rounded-lg px-3 py-2">
-                    <div className="flex items-center gap-2 min-w-0">
+                {yesterdayStats.uncheckedList.length === 0 ? (
+                  <div className="text-xs text-gray-600 py-3 text-center border border-dashed border-gray-800 rounded-lg">昨天全员已打卡 👍</div>
+                ) : yesterdayStats.uncheckedList.map(p => (
+                  <div key={p.id} className="flex items-center gap-2 bg-rose-500/5 border border-rose-500/15 rounded-lg px-3 py-2">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
                       <span className="text-sm text-gray-300 font-medium">{p.name}</span>
                       <span className="text-xs text-gray-600 truncate">{p.store}</span>
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className="text-xs px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300">{p.streakLabel}</span>
-                    </div>
+                    <input
+                      type="text"
+                      defaultValue={p.note}
+                      onBlur={e => onUpdateNote && onUpdateNote(p.id, e.target.value.trim())}
+                      placeholder="备注原因"
+                      className="w-28 md:w-40 bg-gray-800/60 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 placeholder-gray-600 focus:border-rose-400/50 focus:outline-none"
+                    />
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 flex-shrink-0">{p.streakLabel}</span>
                   </div>
                 ))}
               </div>
@@ -1619,6 +1637,7 @@ function DashboardView({ trainees, stores }) {
 // ============ Region Manager Dashboard ============
 function RegionDashboardView({ trainees, stores, config }) {
   const today = localDateStr(new Date().toISOString());
+  const yesterday = yesterdayStr();
   const [filterArea, setFilterArea] = useState('');
   const [showAllIncomplete, setShowAllIncomplete] = useState(false);
 
@@ -1634,19 +1653,19 @@ function RegionDashboardView({ trainees, stores, config }) {
     const completed = progressList.filter(p => p.percent === 100).length;
     const notStarted = progressList.filter(p => p.percent === 0).length;
     const avgProgress = total > 0 ? Math.round(progressList.reduce((s, p) => s + p.percent, 0) / total) : 0;
-    let checkedToday = 0;
+    let checkedYesterday = 0;
     visibleTrainees.forEach(t => {
       const progress = t.progress || {};
-      let hasToday = false;
+      let hasYesterday = false;
       Object.values(progress).forEach(day => {
         Object.values(day.items || {}).forEach(item => {
-          if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === today) hasToday = true;
+          if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === yesterday) hasYesterday = true;
         });
-        if (day.completed && day.completedAt && localDateStr(day.completedAt) === today) hasToday = true;
+        if (day.completed && day.completedAt && localDateStr(day.completedAt) === yesterday) hasYesterday = true;
       });
-      if (hasToday) checkedToday++;
+      if (hasYesterday) checkedYesterday++;
     });
-    return { total, inProgress, completed, notStarted, avgProgress, checkedToday, uncheckedToday: total - checkedToday, totalCerts: visibleTrainees.reduce((s, t) => s + countCerts(t), 0) };
+    return { total, inProgress, completed, notStarted, avgProgress, checkedYesterday, uncheckedYesterday: total - checkedYesterday, totalCerts: visibleTrainees.reduce((s, t) => s + countCerts(t), 0) };
   }, [visibleTrainees, today]);
 
   const areaStats = useMemo(() => {
@@ -1693,28 +1712,28 @@ function RegionDashboardView({ trainees, stores, config }) {
     return Object.entries(phases).filter(([k, v]) => v > 0);
   }, [visibleTrainees]);
 
-  const todayStats = useMemo(() => {
+  const yesterdayStats = useMemo(() => {
     const checkedList = [];
     const uncheckedList = [];
     visibleTrainees.forEach(t => {
-      let hasToday = false;
+      let hasYesterday = false;
       let lastTime = '';
       const progress = t.progress || {};
       Object.values(progress).forEach(day => {
         Object.values(day.items || {}).forEach(item => {
-          if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === today) {
-            hasToday = true;
+          if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === yesterday) {
+            hasYesterday = true;
             if (item.checkedAt > lastTime) lastTime = item.checkedAt;
           }
         });
-        if (day.completed && day.completedAt && localDateStr(day.completedAt) === today) {
-          hasToday = true;
+        if (day.completed && day.completedAt && localDateStr(day.completedAt) === yesterday) {
+          hasYesterday = true;
           if (day.completedAt > lastTime) lastTime = day.completedAt;
         }
       });
       const areaCfg = config.find(c => c.id === (t.area || '000'));
       const entry = { ...t, areaName: areaCfg?.name?.replace('区域带训追踪系统', '') || (t.area || '000'), lastTime };
-      if (hasToday) checkedList.push(entry);
+      if (hasYesterday) checkedList.push(entry);
       else {
         const streak = calcNoCheckInStreak(t, today);
         uncheckedList.push({ ...entry, streakDays: streak.days, streakLabel: streak.label });
@@ -1723,7 +1742,7 @@ function RegionDashboardView({ trainees, stores, config }) {
     checkedList.sort((a, b) => (b.lastTime || '').localeCompare(a.lastTime || ''));
     uncheckedList.sort((a, b) => b.streakDays - a.streakDays);
     return { checkedList, uncheckedList };
-  }, [visibleTrainees, today, config]);
+  }, [visibleTrainees, yesterday, today, config]);
 
   const certRanking = useMemo(() => {
     return visibleTrainees
@@ -1737,13 +1756,13 @@ function RegionDashboardView({ trainees, stores, config }) {
     const activeAreas = areaStats.filter(a => a.total > 0);
     if (activeAreas.length === 0) return '暂无学员数据';
     const lowestArea = [...activeAreas].sort((a, b) => a.avg - b.avg)[0];
-    const worstStreak = todayStats.uncheckedList[0];
+    const worstStreak = yesterdayStats.uncheckedList[0];
     const parts = [];
     parts.push(`当前共 ${stats.total} 名学员，平均进度 ${stats.avgProgress}%。`);
     if (lowestArea) parts.push(`${lowestArea.name.replace('区域带训追踪系统', '')}平均进度最低（${lowestArea.avg}%），需重点关注。`);
-    if (worstStreak) parts.push(`今日有 ${todayStats.uncheckedList.length} 人未打卡，${worstStreak.name}已连续${worstStreak.streakDays}天未打卡。`);
+    if (worstStreak) parts.push(`昨日有 ${yesterdayStats.uncheckedList.length} 人未打卡，${worstStreak.name}已连续${worstStreak.streakDays}天未打卡。`);
     return parts.join('');
-  }, [stats, areaStats, todayStats]);
+  }, [stats, areaStats, yesterdayStats]);
 
   const StatCard = ({ label, value, sub, color = 'indigo' }) => {
     const colorClass = {
@@ -1783,7 +1802,7 @@ function RegionDashboardView({ trainees, stores, config }) {
       {/* Top Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard label="学员总数" value={stats.total} color="white"/>
-        <StatCard label="今日已打卡" value={stats.checkedToday} sub={`未打卡 ${stats.uncheckedToday}`} color="emerald"/>
+        <StatCard label="昨日已打卡" value={stats.checkedYesterday} sub={`未打卡 ${stats.uncheckedYesterday}`} color="emerald"/>
         <StatCard label="带训中" value={stats.inProgress} color="amber"/>
         <StatCard label="已完成" value={stats.completed} color="emerald"/>
         <StatCard label="未开始" value={stats.notStarted} color="gray"/>
@@ -1855,6 +1874,7 @@ function RegionDashboardView({ trainees, stores, config }) {
                   <th className="text-left px-3 py-2 font-medium">当前阶段</th>
                   <th className="text-left px-3 py-2 font-medium">进度</th>
                   <th className="text-left px-3 py-2 font-medium">未打卡</th>
+                  <th className="text-left px-3 py-2 font-medium">备注</th>
                 </tr>
               </thead>
               <tbody>
@@ -1876,10 +1896,11 @@ function RegionDashboardView({ trainees, stores, config }) {
                         </div>
                       </td>
                       <td className="px-3 py-2"><span className="text-xs px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-400">{t._streak.label}</span></td>
+                      <td className="px-3 py-2 text-xs text-amber-300/80 max-w-[180px] truncate" title={t.note || ''}>{t.note || '—'}</td>
                     </tr>
                   );
                 })}
-                {incompleteList.length === 0 && <tr><td colSpan="6" className="text-center text-gray-500 py-6">暂无数据</td></tr>}
+                {incompleteList.length === 0 && <tr><td colSpan="7" className="text-center text-gray-500 py-6">暂无数据</td></tr>}
               </tbody>
             </table>
           </div>
@@ -1926,13 +1947,13 @@ function RegionDashboardView({ trainees, stores, config }) {
           </div>
         </div>
 
-        {/* Today's Check-in */}
+        {/* Yesterday's Check-in */}
         <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
-          <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2"><Icon.Calendar/> 今日已打卡 ({todayStats.checkedList.length})</h3>
+          <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2"><Icon.Calendar/> 昨日已打卡 ({yesterdayStats.checkedList.length})</h3>
           <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
-            {todayStats.checkedList.length === 0 ? (
-              <p className="text-sm text-gray-500 text-center py-4">今日暂无人打卡</p>
-            ) : todayStats.checkedList.map(t => (
+            {yesterdayStats.checkedList.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-4">昨日暂无人打卡</p>
+            ) : yesterdayStats.checkedList.map(t => (
               <div key={t.id} className="flex items-center justify-between bg-emerald-500/5 border border-emerald-500/10 rounded-lg px-3 py-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="text-sm text-gray-300 font-medium">{t.name}</span>
@@ -1946,17 +1967,18 @@ function RegionDashboardView({ trainees, stores, config }) {
         </div>
 
         <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
-          <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2"><Icon.Calendar/> 今日未打卡 ({todayStats.uncheckedList.length})</h3>
+          <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2"><Icon.Calendar/> 昨日未打卡 ({yesterdayStats.uncheckedList.length})</h3>
           <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
-            {todayStats.uncheckedList.length === 0 ? (
-              <p className="text-sm text-gray-500 text-center py-4">全部已打卡</p>
-            ) : todayStats.uncheckedList.slice(0, 20).map(t => (
+            {yesterdayStats.uncheckedList.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-4">昨天全部已打卡</p>
+            ) : yesterdayStats.uncheckedList.slice(0, 20).map(t => (
               <div key={t.id} className="flex items-center justify-between bg-rose-500/5 border border-rose-500/10 rounded-lg px-3 py-2">
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
                   <span className="text-sm text-gray-300 font-medium">{t.name}</span>
                   <span className="text-xs text-gray-600 truncate">{t.store}</span>
                   <span className="text-xs text-indigo-400/80">{t.areaName}</span>
                 </div>
+                {t.note && <span className="text-xs text-amber-300/80 truncate max-w-[140px]" title={t.note}>📝 {t.note}</span>}
                 <span className="text-xs px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 flex-shrink-0">{t.streakLabel}</span>
               </div>
             ))}
@@ -1976,24 +1998,24 @@ function RegionDashboardView({ trainees, stores, config }) {
                   <th className="text-left px-3 py-2 font-medium">带训中</th>
                   <th className="text-left px-3 py-2 font-medium">未开始</th>
                   <th className="text-left px-3 py-2 font-medium">平均进度</th>
-                  <th className="text-left px-3 py-2 font-medium">今日打卡</th>
+                  <th className="text-left px-3 py-2 font-medium">昨日打卡</th>
                   <th className="text-left px-3 py-2 font-medium">总证书数</th>
                 </tr>
               </thead>
               <tbody>
                 {areaStats.map(a => {
                   const list = trainees.filter(t => (t.area || '000') === a.id);
-                  let checkedToday = 0;
+                  let checkedYesterday = 0;
                   list.forEach(t => {
                     const progress = t.progress || {};
-                    let hasToday = false;
+                    let hasYesterday = false;
                     Object.values(progress).forEach(day => {
                       Object.values(day.items || {}).forEach(item => {
-                        if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === today) hasToday = true;
+                        if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === yesterday) hasYesterday = true;
                       });
-                      if (day.completed && day.completedAt && localDateStr(day.completedAt) === today) hasToday = true;
+                      if (day.completed && day.completedAt && localDateStr(day.completedAt) === yesterday) hasYesterday = true;
                     });
-                    if (hasToday) checkedToday++;
+                    if (hasYesterday) checkedYesterday++;
                   });
                   const certs = list.reduce((s, t) => s + countCerts(t), 0);
                   return (
@@ -2011,7 +2033,7 @@ function RegionDashboardView({ trainees, stores, config }) {
                           <span className="text-xs text-gray-400">{a.avg}%</span>
                         </div>
                       </td>
-                      <td className="px-3 py-2 text-gray-400">{checkedToday}/{a.total}</td>
+                      <td className="px-3 py-2 text-gray-400">{checkedYesterday}/{a.total}</td>
                       <td className="px-3 py-2 text-amber-400">{certs}</td>
                     </tr>
                   );
@@ -2655,7 +2677,7 @@ function App() {
         />
       )}
       {view === 'dashboard' && !isManager && (
-        <DashboardView trainees={visibleTrainees} stores={stores} />
+        <DashboardView trainees={visibleTrainees} stores={stores} onUpdateNote={(id, note) => handleEditTrainee(id, { note })} />
       )}
       {view === 'region_dashboard' && isManager && (
         <RegionDashboardView trainees={data.trainees} stores={stores} config={AREA_CONFIG} />

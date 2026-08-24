@@ -975,6 +975,7 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
   const [search, setSearch] = useState('');
   const [filterStore, setFilterStore] = useState('');
   const [filterRoute, setFilterRoute] = useState('');
+  const [certFilter, setCertFilter] = useState('incomplete'); // 'incomplete' | 'completed'
   const [showModal, setShowModal] = useState(false);
   const [editingTrainee, setEditingTrainee] = useState(null);
 
@@ -996,14 +997,22 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
     prevSelectedIdRef.current = selectedId;
   }, [selectedId, currentDay]);
 
+  const certCounts = useMemo(() => {
+    const incomplete = trainees.filter(t => getCurrentDay(t) !== null).length;
+    return { incomplete, completed: trainees.length - incomplete };
+  }, [trainees]);
+
   const filtered = useMemo(() => {
     return trainees.filter(t => {
       if (search && !t.name.includes(search) && !t.store.includes(search)) return false;
       if (filterStore && t.store !== filterStore) return false;
       if (filterRoute && t.route !== filterRoute) return false;
+      const isCompleted = getCurrentDay(t) === null;
+      if (certFilter === 'completed' && !isCompleted) return false;
+      if (certFilter === 'incomplete' && isCompleted) return false;
       return true;
     });
-  }, [trainees, search, filterStore, filterRoute]);
+  }, [trainees, search, filterStore, filterRoute, certFilter]);
 
   const handleSave = (data) => {
     if (editingTrainee) {
@@ -1101,6 +1110,34 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
               </select>
               <Icon.ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" width={14} height={14}/>
             </div>
+          </div>
+        </div>
+
+        {/* Certification filter tabs */}
+        <div className="px-3 pb-2 border-b border-gray-800">
+          <div className="flex bg-gray-800/50 rounded-lg p-1 gap-1">
+            <button
+              onClick={() => setCertFilter('incomplete')}
+              className={`flex-1 py-1.5 text-xs font-medium rounded-md transition flex items-center justify-center gap-1 ${
+                certFilter === 'incomplete' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-400 hover:text-white hover:bg-gray-800'
+              }`}
+            >
+              未认证
+              <span className={`text-[10px] px-1 py-0.5 rounded-full ${certFilter === 'incomplete' ? 'bg-white/20' : 'bg-gray-700 text-gray-400'}`}>
+                {certCounts.incomplete}
+              </span>
+            </button>
+            <button
+              onClick={() => setCertFilter('completed')}
+              className={`flex-1 py-1.5 text-xs font-medium rounded-md transition flex items-center justify-center gap-1 ${
+                certFilter === 'completed' ? 'bg-emerald-600 text-white shadow-sm' : 'text-gray-400 hover:text-white hover:bg-gray-800'
+              }`}
+            >
+              已认证
+              <span className={`text-[10px] px-1 py-0.5 rounded-full ${certFilter === 'completed' ? 'bg-white/20' : 'bg-gray-700 text-gray-400'}`}>
+                {certCounts.completed}
+              </span>
+            </button>
           </div>
         </div>
 
@@ -1440,6 +1477,8 @@ function DashboardView({ trainees, stores, onUpdateNote }) {
       const tEntry = { ...baseEntry, count: tCount, lastTime: tLastTime, completedDay: tCompletedDay };
       if (yCount > 0 || yCompletedDay) yesterdayChecked.push(yEntry);
       else {
+        // 已完成全部带训的人员不再出现在未打卡列表中
+        if (getCurrentDay(t) === null) return;
         const streak = calcNoCheckInStreak(t, today);
         yesterdayUnchecked.push({ ...yEntry, streakDays: streak.days, streakLabel: streak.label });
       }
@@ -1864,6 +1903,8 @@ function RegionDashboardView({ trainees, stores, config }) {
       const baseEntry = { ...t, areaName };
       if (yHas) yesterdayChecked.push({ ...baseEntry, lastTime: yLast });
       else {
+        // 已完成全部带训的人员不再出现在未打卡列表中
+        if (getCurrentDay(t) === null) return;
         const streak = calcNoCheckInStreak(t, today);
         yesterdayUnchecked.push({ ...baseEntry, streakDays: streak.days, streakLabel: streak.label });
       }

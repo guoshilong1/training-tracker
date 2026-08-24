@@ -1475,14 +1475,15 @@ function DashboardView({ trainees, stores, onUpdateNote }) {
       const baseEntry = { id: t.id, name: t.name, store: t.store, note: t.note || '' };
       const yEntry = { ...baseEntry, count: yCount, lastTime: yLastTime, completedDay: yCompletedDay };
       const tEntry = { ...baseEntry, count: tCount, lastTime: tLastTime, completedDay: tCompletedDay };
-      if (yCount > 0 || yCompletedDay) yesterdayChecked.push(yEntry);
+      // 已打卡必须以至少勾选1项为准，仅确认完成但没勾选项不算打卡
+      if (yCount > 0) yesterdayChecked.push(yEntry);
       else {
         // 已完成全部带训的人员不再出现在未打卡列表中
         if (getCurrentDay(t) === null) return;
         const streak = calcNoCheckInStreak(t, today);
         yesterdayUnchecked.push({ ...yEntry, streakDays: streak.days, streakLabel: streak.label });
       }
-      if (tCount > 0 || tCompletedDay) todayChecked.push(tEntry);
+      if (tCount > 0) todayChecked.push(tEntry);
     });
     yesterdayChecked.sort((a, b) => b.count - a.count);
     yesterdayUnchecked.sort((a, b) => b.streakDays - a.streakDays);
@@ -1894,11 +1895,7 @@ function RegionDashboardView({ trainees, stores, config }) {
             else if (d === today) { tHas = true; if (item.checkedAt > tLast) tLast = item.checkedAt; }
           }
         });
-        if (day.completed && day.completedAt) {
-          const d = localDateStr(day.completedAt);
-          if (d === yesterday) { yHas = true; if (day.completedAt > yLast) yLast = day.completedAt; }
-          else if (d === today) { tHas = true; if (day.completedAt > tLast) tLast = day.completedAt; }
-        }
+        // 仅确认完成但没有勾选项的不算打卡，因此 completedAt 不再作为打卡依据
       });
       const baseEntry = { ...t, areaName };
       if (yHas) yesterdayChecked.push({ ...baseEntry, lastTime: yLast });

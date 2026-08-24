@@ -750,11 +750,24 @@ function TraineeModal({ open, onClose, onSave, editing, stores }) {
 function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, trainee }) {
   const [expanded, setExpanded] = useState(true);
   const [masterName, setMasterName] = useState(dayProgress?.masterSignature || trainee?.master || '');
-  const [trainingTime, setTrainingTime] = useState(dayProgress?.trainingTime || '');
+  // 带训次数（1-3），兼容旧数据：如果只有 trainingTime 单字段，按 1 次处理
+  const initialCount = (dayProgress?.trainingTimes && dayProgress.trainingTimes.length > 0)
+    ? Math.min(3, Math.max(1, dayProgress.trainingTimes.length))
+    : (dayProgress?.trainingTime ? 1 : 1);
+  const [sessionCount, setSessionCount] = useState(initialCount);
+  const initialTimes = (dayProgress?.trainingTimes && dayProgress.trainingTimes.length > 0)
+    ? [...dayProgress.trainingTimes]
+    : (dayProgress?.trainingTime ? [dayProgress.trainingTime] : ['']);
+  const [trainingTimes, setTrainingTimes] = useState(initialTimes);
   React.useEffect(() => {
     setMasterName(dayProgress?.masterSignature || trainee?.master || '');
-    setTrainingTime(dayProgress?.trainingTime || '');
-  }, [dayProgress?.masterSignature, trainee?.master, dayProgress?.trainingTime]);
+    const tps = (dayProgress?.trainingTimes && dayProgress.trainingTimes.length > 0)
+      ? [...dayProgress.trainingTimes]
+      : (dayProgress?.trainingTime ? [dayProgress.trainingTime] : ['']);
+    const cnt = Math.min(3, Math.max(1, tps.length || 1));
+    setTrainingTimes(tps);
+    setSessionCount(cnt);
+  }, [dayProgress?.masterSignature, trainee?.master, dayProgress?.trainingTime, dayProgress?.trainingTimes]);
   const shiftStyle = getShiftStyle(day.shift);
   const isCompleted = dayProgress?.completed;
   const checkedItems = dayProgress?.items || {};
@@ -763,6 +776,21 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, trai
     if (item.choices) return !!state.choice;
     return !!state.checked;
   });
+  const anyTimeFilled = trainingTimes.some(t => t && t.trim());
+  const handleSessionCountChange = (n) => {
+    const newCount = Math.min(3, Math.max(1, n));
+    setSessionCount(newCount);
+    // 调整 times 数组长度
+    setTrainingTimes(prev => {
+      const next = [...prev];
+      while (next.length < newCount) next.push('');
+      next.length = newCount;
+      return next;
+    });
+  };
+  const handleTimeChange = (idx, val) => {
+    setTrainingTimes(prev => prev.map((t, i) => i === idx ? val : t));
+  };
 
   return (
     <div className={`day-card rounded-xl border ${isCompleted ? 'border-emerald-500/30 bg-emerald-500/5' : unlocked ? 'border-gray-700 bg-gray-900/50' : 'border-gray-800 bg-gray-900/20 opacity-60'} overflow-hidden`}>
@@ -874,27 +902,55 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, trai
                 <span className="text-xs text-gray-500 flex-shrink-0">{new Date(dayProgress.signatureAt).toLocaleString('zh-CN', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</span>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-500 flex-shrink-0">带训时间</span>
-              <input
-                type="time"
-                value={trainingTime}
-                onChange={(e) => setTrainingTime(e.target.value)}
-                placeholder="如 09:00 *必填"
-                disabled={isCompleted}
-                className={`flex-1 bg-gray-800 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none ${isCompleted ? 'border border-gray-700 opacity-70' : !trainingTime ? 'border border-red-500/50' : 'border border-gray-700'}`}
-              />
-              {dayProgress?.trainingTime && (
+            {/* 今日带训次数选择 */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-gray-500 flex-shrink-0">今日带训次数</span>
+              <div className="inline-flex rounded-lg overflow-hidden border border-gray-700">
+                {[1, 2, 3].map(n => (
+                  <button
+                    key={n}
+                    type="button"
+                    disabled={isCompleted}
+                    onClick={() => handleSessionCountChange(n)}
+                    className={`px-3 py-1 text-xs font-medium transition ${sessionCount === n ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'} ${isCompleted ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  >{n}次</button>
+                ))}
+              </div>
+              {dayProgress?.trainingTimes && dayProgress.trainingTimes.length > 0 && (
+                <span className="text-xs text-gray-500 flex-shrink-0">
+                  已填 {dayProgress.trainingTimes.filter(t => t).join(' / ')}
+                </span>
+              )}
+              {!dayProgress?.trainingTimes && dayProgress?.trainingTime && (
                 <span className="text-xs text-gray-500 flex-shrink-0">已填 {dayProgress.trainingTime}</span>
               )}
             </div>
+            {/* 各次带训时间输入框 */}
+            <div className="space-y-1.5">
+              {Array.from({ length: sessionCount }).map((_, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500 flex-shrink-0 w-12">第{idx + 1}次</span>
+                  <input
+                    type="time"
+                    value={trainingTimes[idx] || ''}
+                    onChange={(e) => handleTimeChange(idx, e.target.value)}
+                    placeholder="如 09:00"
+                    disabled={isCompleted}
+                    className={`flex-1 bg-gray-800 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none ${isCompleted ? 'border border-gray-700 opacity-70' : !trainingTimes[idx] ? 'border border-red-500/50' : 'border border-gray-700'}`}
+                  />
+                </div>
+              ))}
+            </div>
             {!isCompleted ? (
               <button
-                onClick={() => onCompleteDay(day.key, masterName, trainingTime)}
-                disabled={!allItemsChecked || !masterName.trim() || !trainingTime}
-                className={`w-full py-2.5 rounded-lg font-medium text-sm transition ${allItemsChecked && masterName.trim() && trainingTime ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}
+                onClick={() => {
+                  const filled = trainingTimes.filter(t => t && t.trim());
+                  onCompleteDay(day.key, masterName, filled);
+                }}
+                disabled={!allItemsChecked || !masterName.trim() || !anyTimeFilled}
+                className={`w-full py-2.5 rounded-lg font-medium text-sm transition ${allItemsChecked && masterName.trim() && anyTimeFilled ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}
               >
-                {allItemsChecked ? (masterName.trim() && trainingTime ? '✓ 确认完成本天带训' : '请填写师傅签名和带训时间') : `需完成全部 ${day.items.length} 项后才能解锁下一天`}
+                {allItemsChecked ? (masterName.trim() && anyTimeFilled ? '✓ 确认完成本天带训' : '请填写师傅签名和至少一次带训时间') : `需完成全部 ${day.items.length} 项后才能解锁下一天`}
               </button>
             ) : (
               <div className="w-full py-2.5 rounded-lg font-medium text-sm bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-center flex items-center justify-center gap-1.5">
@@ -963,21 +1019,27 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
     onUpdateProgress(selected.id, progress);
   };
 
-  const handleCompleteDay = (dayKey, masterSignature, trainingTime) => {
+  const handleCompleteDay = (dayKey, masterSignature, trainingTimesInput) => {
     if (!selected) return;
     const progress = { ...(selected.progress || {}) };
     const dayProg = { ...(progress[dayKey] || { items: {} }) };
     if (dayProg.completed) return; // cannot undo
     const sig = (masterSignature || selected.master || '').trim();
-    if (!sig || !trainingTime) {
-      alert('请填写师傅签名和带训时间后再确认完成');
+    // trainingTimesInput 可能是数组（多次带训）或字符串（兼容旧数据）
+    const times = Array.isArray(trainingTimesInput)
+      ? trainingTimesInput.filter(t => t && t.trim()).map(t => t.trim())
+      : (trainingTimesInput ? [trainingTimesInput.trim()] : []);
+    if (!sig || times.length === 0) {
+      alert('请填写师傅签名和至少一次带训时间后再确认完成');
       return;
     }
     dayProg.completed = true;
     dayProg.completedAt = new Date().toISOString();
     dayProg.masterSignature = sig;
     dayProg.signatureAt = new Date().toISOString();
-    dayProg.trainingTime = trainingTime;
+    dayProg.trainingTimes = times;
+    // 兼容旧数据：保留单个 trainingTime 字段（取最早一次）
+    dayProg.trainingTime = times[0];
     dayProg._updatedAt = Date.now();
     progress[dayKey] = dayProg;
     onUpdateProgress(selected.id, progress);
@@ -1313,40 +1375,61 @@ function DashboardView({ trainees, stores, onUpdateNote }) {
     });
   }, [trainees]);
 
-  // Yesterday's check-in stats (dashboard looks at previous day)
-  const yesterdayStats = useMemo(() => {
+  // Yesterday & today check-in stats (dashboard shows both)
+  const yesterdayAndTodayStats = useMemo(() => {
     const yesterday = yesterdayStr();
     const today = localDateStr(new Date().toISOString());
-    const checkedList = [];
-    const uncheckedList = [];
+    const yesterdayChecked = [];
+    const yesterdayUnchecked = [];
+    const todayChecked = [];
     trainees.forEach(t => {
-      let count = 0;
-      let lastTime = '';
-      let completedDay = false;
+      // Yesterday
+      let yCount = 0;
+      let yLastTime = '';
+      let yCompletedDay = false;
+      // Today
+      let tCount = 0;
+      let tLastTime = '';
+      let tCompletedDay = false;
       const progress = t.progress || {};
       Object.values(progress).forEach(day => {
         Object.values(day.items || {}).forEach(item => {
-          if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === yesterday) {
-            count++;
-            if (item.checkedAt > lastTime) lastTime = item.checkedAt;
+          if (item.checked && item.checkedAt) {
+            const d = localDateStr(item.checkedAt);
+            if (d === yesterday) {
+              yCount++;
+              if (item.checkedAt > yLastTime) yLastTime = item.checkedAt;
+            } else if (d === today) {
+              tCount++;
+              if (item.checkedAt > tLastTime) tLastTime = item.checkedAt;
+            }
           }
         });
-        // Confirming completion of a training day also counts
-        if (day.completed && day.completedAt && localDateStr(day.completedAt) === yesterday) {
-          completedDay = true;
-          if (day.completedAt > lastTime) lastTime = day.completedAt;
+        if (day.completed && day.completedAt) {
+          const d = localDateStr(day.completedAt);
+          if (d === yesterday) {
+            yCompletedDay = true;
+            if (day.completedAt > yLastTime) yLastTime = day.completedAt;
+          } else if (d === today) {
+            tCompletedDay = true;
+            if (day.completedAt > tLastTime) tLastTime = day.completedAt;
+          }
         }
       });
-      const entry = { id: t.id, name: t.name, store: t.store, note: t.note || '', count, lastTime, completedDay };
-      if (count > 0 || completedDay) checkedList.push(entry);
+      const baseEntry = { id: t.id, name: t.name, store: t.store, note: t.note || '' };
+      const yEntry = { ...baseEntry, count: yCount, lastTime: yLastTime, completedDay: yCompletedDay };
+      const tEntry = { ...baseEntry, count: tCount, lastTime: tLastTime, completedDay: tCompletedDay };
+      if (yCount > 0 || yCompletedDay) yesterdayChecked.push(yEntry);
       else {
         const streak = calcNoCheckInStreak(t, today);
-        uncheckedList.push({ ...entry, streakDays: streak.days, streakLabel: streak.label });
+        yesterdayUnchecked.push({ ...yEntry, streakDays: streak.days, streakLabel: streak.label });
       }
+      if (tCount > 0 || tCompletedDay) todayChecked.push(tEntry);
     });
-    checkedList.sort((a, b) => b.count - a.count);
-    uncheckedList.sort((a, b) => b.streakDays - a.streakDays);
-    return { checkedList, uncheckedList, yesterday };
+    yesterdayChecked.sort((a, b) => b.count - a.count);
+    yesterdayUnchecked.sort((a, b) => b.streakDays - a.streakDays);
+    todayChecked.sort((a, b) => b.count - a.count);
+    return { yesterdayChecked, yesterdayUnchecked, todayChecked, yesterday, today };
   }, [trainees]);
 
   return (
@@ -1361,14 +1444,14 @@ function DashboardView({ trainees, stores, onUpdateNote }) {
           <div className="bg-gradient-to-br from-emerald-500/20 to-emerald-600/5 border border-emerald-500/20 rounded-xl p-4">
             <div className="text-xs text-emerald-300/70">昨日已打卡</div>
             <div className="text-3xl font-bold text-emerald-400 mt-1">
-              {yesterdayStats.checkedList.length}
+              {yesterdayAndTodayStats.yesterdayChecked.length}
               <span className="text-sm text-gray-500 font-normal">/{stats.total}</span>
             </div>
           </div>
           <div className="bg-gradient-to-br from-rose-500/15 to-rose-600/5 border border-rose-500/20 rounded-xl p-4">
             <div className="text-xs text-rose-300/70">昨日未打卡</div>
             <div className="text-3xl font-bold text-rose-400 mt-1">
-              {yesterdayStats.uncheckedList.length}
+              {yesterdayAndTodayStats.yesterdayUnchecked.length}
               <span className="text-sm text-gray-500 font-normal">/{stats.total}</span>
             </div>
           </div>
@@ -1386,22 +1469,23 @@ function DashboardView({ trainees, stores, onUpdateNote }) {
           </div>
         </div>
 
-        {/* Yesterday Check-in Panel */}
+        {/* Yesterday + Today Check-in Panel */}
         <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-5 mb-6">
           <h3 className="text-sm font-medium text-gray-300 mb-4 flex items-center gap-2">
-            <Icon.Clock/> 昨日带训打卡 · {yesterdayStats.yesterday}
+            <Icon.Clock/> 昨日带训打卡 · {yesterdayAndTodayStats.yesterday}
           </h3>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Row 1: 昨日已打卡 | 今日已打卡 */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
             {/* Checked yesterday */}
             <div>
               <div className="text-xs font-medium text-emerald-400 mb-2 flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
-                昨日已打卡（{yesterdayStats.checkedList.length}人）
+                昨日已打卡（{yesterdayAndTodayStats.yesterdayChecked.length}人）
               </div>
               <div className="space-y-1.5 max-h-56 overflow-y-auto scrollbar-thin pr-1">
-                {yesterdayStats.checkedList.length === 0 ? (
+                {yesterdayAndTodayStats.yesterdayChecked.length === 0 ? (
                   <div className="text-xs text-gray-600 py-3 text-center border border-dashed border-gray-800 rounded-lg">昨天还没有人打卡</div>
-                ) : yesterdayStats.checkedList.map(p => (
+                ) : yesterdayAndTodayStats.yesterdayChecked.map(p => (
                   <div key={p.id} className="flex items-center justify-between bg-emerald-500/5 border border-emerald-500/20 rounded-lg px-3 py-2">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-sm text-white font-medium">{p.name}</span>
@@ -1415,32 +1499,55 @@ function DashboardView({ trainees, stores, onUpdateNote }) {
                 ))}
               </div>
             </div>
-            {/* Not checked yesterday */}
+            {/* Checked today */}
             <div>
-              <div className="text-xs font-medium text-rose-400 mb-2 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-rose-500 inline-block"></span>
-                昨日未打卡（{yesterdayStats.uncheckedList.length}人）
+              <div className="text-xs font-medium text-sky-400 mb-2 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-sky-500 inline-block"></span>
+                今日已打卡（{yesterdayAndTodayStats.todayChecked.length}人）
               </div>
               <div className="space-y-1.5 max-h-56 overflow-y-auto scrollbar-thin pr-1">
-                {yesterdayStats.uncheckedList.length === 0 ? (
-                  <div className="text-xs text-gray-600 py-3 text-center border border-dashed border-gray-800 rounded-lg">昨天全员已打卡 👍</div>
-                ) : yesterdayStats.uncheckedList.map(p => (
-                  <div key={p.id} className="flex items-center gap-2 bg-rose-500/5 border border-rose-500/15 rounded-lg px-3 py-2">
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <span className="text-sm text-gray-300 font-medium">{p.name}</span>
-                      <span className="text-xs text-gray-600 truncate">{p.store}</span>
+                {yesterdayAndTodayStats.todayChecked.length === 0 ? (
+                  <div className="text-xs text-gray-600 py-3 text-center border border-dashed border-gray-800 rounded-lg">今天还没有人打卡</div>
+                ) : yesterdayAndTodayStats.todayChecked.map(p => (
+                  <div key={p.id} className="flex items-center justify-between bg-sky-500/5 border border-sky-500/20 rounded-lg px-3 py-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-sm text-white font-medium">{p.name}</span>
+                      <span className="text-xs text-gray-500 truncate">{p.store}</span>
                     </div>
-                    <input
-                      type="text"
-                      defaultValue={p.note}
-                      onBlur={e => onUpdateNote && onUpdateNote(p.id, e.target.value.trim())}
-                      placeholder="备注原因"
-                      className="w-28 md:w-40 bg-gray-800/60 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 placeholder-gray-600 focus:border-rose-400/50 focus:outline-none"
-                    />
-                    <span className="text-xs px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 flex-shrink-0">{p.streakLabel}</span>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300">勾了{p.count}项</span>
+                      {p.lastTime && <span className="text-xs text-gray-500">{timeStr(p.lastTime)}</span>}
+                    </div>
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+          {/* Row 2: 昨日未打卡 */}
+          <div>
+            <div className="text-xs font-medium text-rose-400 mb-2 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-rose-500 inline-block"></span>
+              昨日未打卡（{yesterdayAndTodayStats.yesterdayUnchecked.length}人）
+            </div>
+            <div className="space-y-1.5 max-h-56 overflow-y-auto scrollbar-thin pr-1">
+              {yesterdayAndTodayStats.yesterdayUnchecked.length === 0 ? (
+                <div className="text-xs text-gray-600 py-3 text-center border border-dashed border-gray-800 rounded-lg">昨天全员已打卡 👍</div>
+              ) : yesterdayAndTodayStats.yesterdayUnchecked.map(p => (
+                <div key={p.id} className="flex items-center gap-2 bg-rose-500/5 border border-rose-500/15 rounded-lg px-3 py-2">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <span className="text-sm text-gray-300 font-medium">{p.name}</span>
+                    <span className="text-xs text-gray-600 truncate">{p.store}</span>
+                  </div>
+                  <input
+                    type="text"
+                    defaultValue={p.note}
+                    onBlur={e => onUpdateNote && onUpdateNote(p.id, e.target.value.trim())}
+                    placeholder="备注原因"
+                    className="w-28 md:w-40 bg-gray-800/60 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 placeholder-gray-600 focus:border-rose-400/50 focus:outline-none"
+                  />
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 flex-shrink-0">{p.streakLabel}</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -1712,36 +1819,41 @@ function RegionDashboardView({ trainees, stores, config }) {
     return Object.entries(phases).filter(([k, v]) => v > 0);
   }, [visibleTrainees]);
 
-  const yesterdayStats = useMemo(() => {
-    const checkedList = [];
-    const uncheckedList = [];
+  const yesterdayAndTodayStats = useMemo(() => {
+    const yesterdayChecked = [];
+    const yesterdayUnchecked = [];
+    const todayChecked = [];
     visibleTrainees.forEach(t => {
-      let hasYesterday = false;
-      let lastTime = '';
+      const areaCfg = config.find(c => c.id === (t.area || '000'));
+      const areaName = areaCfg?.name?.replace('区域带训追踪系统', '') || (t.area || '000');
+      let yHas = false; let yLast = ''; let tHas = false; let tLast = '';
       const progress = t.progress || {};
       Object.values(progress).forEach(day => {
         Object.values(day.items || {}).forEach(item => {
-          if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === yesterday) {
-            hasYesterday = true;
-            if (item.checkedAt > lastTime) lastTime = item.checkedAt;
+          if (item.checked && item.checkedAt) {
+            const d = localDateStr(item.checkedAt);
+            if (d === yesterday) { yHas = true; if (item.checkedAt > yLast) yLast = item.checkedAt; }
+            else if (d === today) { tHas = true; if (item.checkedAt > tLast) tLast = item.checkedAt; }
           }
         });
-        if (day.completed && day.completedAt && localDateStr(day.completedAt) === yesterday) {
-          hasYesterday = true;
-          if (day.completedAt > lastTime) lastTime = day.completedAt;
+        if (day.completed && day.completedAt) {
+          const d = localDateStr(day.completedAt);
+          if (d === yesterday) { yHas = true; if (day.completedAt > yLast) yLast = day.completedAt; }
+          else if (d === today) { tHas = true; if (day.completedAt > tLast) tLast = day.completedAt; }
         }
       });
-      const areaCfg = config.find(c => c.id === (t.area || '000'));
-      const entry = { ...t, areaName: areaCfg?.name?.replace('区域带训追踪系统', '') || (t.area || '000'), lastTime };
-      if (hasYesterday) checkedList.push(entry);
+      const baseEntry = { ...t, areaName };
+      if (yHas) yesterdayChecked.push({ ...baseEntry, lastTime: yLast });
       else {
         const streak = calcNoCheckInStreak(t, today);
-        uncheckedList.push({ ...entry, streakDays: streak.days, streakLabel: streak.label });
+        yesterdayUnchecked.push({ ...baseEntry, streakDays: streak.days, streakLabel: streak.label });
       }
+      if (tHas) todayChecked.push({ ...baseEntry, lastTime: tLast });
     });
-    checkedList.sort((a, b) => (b.lastTime || '').localeCompare(a.lastTime || ''));
-    uncheckedList.sort((a, b) => b.streakDays - a.streakDays);
-    return { checkedList, uncheckedList };
+    yesterdayChecked.sort((a, b) => (b.lastTime || '').localeCompare(a.lastTime || ''));
+    yesterdayUnchecked.sort((a, b) => b.streakDays - a.streakDays);
+    todayChecked.sort((a, b) => (b.lastTime || '').localeCompare(a.lastTime || ''));
+    return { yesterdayChecked, yesterdayUnchecked, todayChecked };
   }, [visibleTrainees, yesterday, today, config]);
 
   const certRanking = useMemo(() => {
@@ -1756,13 +1868,13 @@ function RegionDashboardView({ trainees, stores, config }) {
     const activeAreas = areaStats.filter(a => a.total > 0);
     if (activeAreas.length === 0) return '暂无学员数据';
     const lowestArea = [...activeAreas].sort((a, b) => a.avg - b.avg)[0];
-    const worstStreak = yesterdayStats.uncheckedList[0];
+    const worstStreak = yesterdayAndTodayStats.yesterdayUnchecked[0];
     const parts = [];
     parts.push(`当前共 ${stats.total} 名学员，平均进度 ${stats.avgProgress}%。`);
     if (lowestArea) parts.push(`${lowestArea.name.replace('区域带训追踪系统', '')}平均进度最低（${lowestArea.avg}%），需重点关注。`);
-    if (worstStreak) parts.push(`昨日有 ${yesterdayStats.uncheckedList.length} 人未打卡，${worstStreak.name}已连续${worstStreak.streakDays}天未打卡。`);
+    if (worstStreak) parts.push(`昨日有 ${yesterdayAndTodayStats.yesterdayUnchecked.length} 人未打卡，${worstStreak.name}已连续${worstStreak.streakDays}天未打卡。`);
     return parts.join('');
-  }, [stats, areaStats, yesterdayStats]);
+  }, [stats, areaStats, yesterdayAndTodayStats]);
 
   const StatCard = ({ label, value, sub, color = 'indigo' }) => {
     const colorClass = {
@@ -1947,13 +2059,15 @@ function RegionDashboardView({ trainees, stores, config }) {
           </div>
         </div>
 
+        {/* Row 1: 昨日已打卡 | 今日已打卡 */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Yesterday's Check-in */}
         <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
-          <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2"><Icon.Calendar/> 昨日已打卡 ({yesterdayStats.checkedList.length})</h3>
+          <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2"><Icon.Calendar/> 昨日已打卡 ({yesterdayAndTodayStats.yesterdayChecked.length})</h3>
           <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
-            {yesterdayStats.checkedList.length === 0 ? (
+            {yesterdayAndTodayStats.yesterdayChecked.length === 0 ? (
               <p className="text-sm text-gray-500 text-center py-4">昨日暂无人打卡</p>
-            ) : yesterdayStats.checkedList.map(t => (
+            ) : yesterdayAndTodayStats.yesterdayChecked.map(t => (
               <div key={t.id} className="flex items-center justify-between bg-emerald-500/5 border border-emerald-500/10 rounded-lg px-3 py-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="text-sm text-gray-300 font-medium">{t.name}</span>
@@ -1966,12 +2080,33 @@ function RegionDashboardView({ trainees, stores, config }) {
           </div>
         </div>
 
+        {/* Today's Check-in */}
         <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
-          <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2"><Icon.Calendar/> 昨日未打卡 ({yesterdayStats.uncheckedList.length})</h3>
+          <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2"><Icon.Calendar/> 今日已打卡 ({yesterdayAndTodayStats.todayChecked.length})</h3>
           <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
-            {yesterdayStats.uncheckedList.length === 0 ? (
+            {yesterdayAndTodayStats.todayChecked.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-4">今日暂无人打卡</p>
+            ) : yesterdayAndTodayStats.todayChecked.map(t => (
+              <div key={t.id} className="flex items-center justify-between bg-sky-500/5 border border-sky-500/10 rounded-lg px-3 py-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm text-gray-300 font-medium">{t.name}</span>
+                  <span className="text-xs text-gray-600 truncate">{t.store}</span>
+                  <span className="text-xs text-indigo-400/80">{t.areaName}</span>
+                </div>
+                {t.lastTime && <span className="text-xs text-gray-500 flex-shrink-0">{timeStr(t.lastTime)}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+        </div>
+
+        {/* Row 2: 昨日未打卡 */}
+        <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
+          <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2"><Icon.Calendar/> 昨日未打卡 ({yesterdayAndTodayStats.yesterdayUnchecked.length})</h3>
+          <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
+            {yesterdayAndTodayStats.yesterdayUnchecked.length === 0 ? (
               <p className="text-sm text-gray-500 text-center py-4">昨天全部已打卡</p>
-            ) : yesterdayStats.uncheckedList.slice(0, 20).map(t => (
+            ) : yesterdayAndTodayStats.yesterdayUnchecked.slice(0, 20).map(t => (
               <div key={t.id} className="flex items-center justify-between bg-rose-500/5 border border-rose-500/10 rounded-lg px-3 py-2">
                 <div className="flex items-center gap-2 min-w-0 flex-1">
                   <span className="text-sm text-gray-300 font-medium">{t.name}</span>

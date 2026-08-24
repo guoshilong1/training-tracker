@@ -978,7 +978,23 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
   const [showModal, setShowModal] = useState(false);
   const [editingTrainee, setEditingTrainee] = useState(null);
 
+  // Refs for auto-scrolling to "next day to learn" when user switches trainee
+  const dayRefs = useRef({});
+  const prevSelectedIdRef = useRef(null);
+
   const selected = trainees.find(t => t.id === selectedId);
+
+  // Auto-scroll to current day when user actively switches trainee (skip initial auto-select)
+  useEffect(() => {
+    if (selectedId && prevSelectedIdRef.current !== null && selectedId !== prevSelectedIdRef.current) {
+      const targetKey = currentDay?.key;
+      const el = targetKey ? dayRefs.current[targetKey] : null;
+      if (el) {
+        setTimeout(() => { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 80);
+      }
+    }
+    prevSelectedIdRef.current = selectedId;
+  }, [selectedId, currentDay]);
 
   const filtered = useMemo(() => {
     return trainees.filter(t => {
@@ -1215,7 +1231,10 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
                 const dayProgress = selected.progress?.[day.key];
                 const isCurrent = currentDay?.key === day.key;
                 return (
-                  <div key={selected.id + '_' + day.key}>
+                  <div
+                    key={selected.id + '_' + day.key}
+                    ref={(el) => { dayRefs.current[day.key] = el; }}
+                  >
                     {isCurrent && (
                       <div className="flex items-center gap-2 px-1 mb-2 text-xs text-amber-400">
                         <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>

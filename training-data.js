@@ -930,7 +930,8 @@ function getAllDays(routeId, subRouteId) {
   months.slice(0, 1).forEach((month, mi) => {
     month.phases.forEach((phase, pi) => {
       phase.days.forEach((day, di) => {
-        if (day.items.length > 0 || day.shift) {
+        // 只保留有内容的 day（空架子天不计入进度，避免 22/24 这种卡死）
+        if (day.items.length > 0) {
           allDays.push({
             key: `${keyPrefix}${mi}-${pi}-${di}`,
             routeId,

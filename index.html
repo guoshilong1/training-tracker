@@ -1852,7 +1852,9 @@ function RegionDashboardView({ trainees, stores, config }) {
       .map(t => ({ ...t, _progress: calcProgress(t), _streak: calcNoCheckInStreak(t, today) }))
       .filter(t => t._streak.days > 0) // 排除今日已打卡人员，避免影响分析
       .sort((a, b) => {
-        // 按区域排序，再按进度排序
+        // 优先按连续未打卡天数从大到小排；天数相同再按区域排序
+        const daysDiff = b._streak.days - a._streak.days;
+        if (daysDiff !== 0) return daysDiff;
         const areaA = a.area || '000';
         const areaB = b.area || '000';
         if (areaA !== areaB) return areaA.localeCompare(areaB, undefined, { numeric: true });

@@ -543,6 +543,46 @@ async function sbSoftDeleteTrainees(ids, ts) {
   return true;
 }
 
+let _sbRealtimeTimer = null;
+let _sbRealtimeChannel = null;
+
+// Subscribe to realtime changes. When any trainee row changes, debounce-pull latest data.
+function sbSubscribeRealtime(onChange) {
+  if (!supabase?.channel) {
+    console.warn('[Supabase Realtime] client does not support channels');
+    return null;
+  }
+  try {
+    _sbRealtimeChannel = supabase
+      .channel('trainees-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'trainees' },
+        (payload) => {
+          const id = (payload.new && payload.new.id) || (payload.old && payload.old.id);
+          console.log('[Supabase Realtime] event:', payload.eventType, id);
+          if (_sbRealtimeTimer) clearTimeout(_sbRealtimeTimer);
+          _sbRealtimeTimer = setTimeout(() => {
+            try { onChange(); } catch(e) {}
+          }, 1200);
+        }
+      )
+      .subscribe((status) => {
+        console.log('[Supabase Realtime] status:', status);
+      });
+    return () => {
+      if (_sbRealtimeTimer) clearTimeout(_sbRealtimeTimer);
+      if (_sbRealtimeChannel) {
+        supabase.removeChannel(_sbRealtimeChannel).catch(() => {});
+        _sbRealtimeChannel = null;
+      }
+    };
+  } catch(e) {
+    console.warn('[Supabase Realtime] subscribe failed:', e.message);
+    return null;
+  }
+}
+
 // Debounced push: diff prev vs new, upsert changed rows + soft-delete removed ones
 function sbPushData(newData, prevData, ts) {
   if (_sbPushing) return false;
@@ -3584,8 +3624,24 @@ function App() {
       }
     }, 1500);
 
-    // Poll remote data every 30min (1800s). Supabase has no practical rate limit —
-    // one SELECT per poll is trivially cheap even for 2000+ stores.
+    // Realtime subscription: pull immediately when cloud data changes
+    const unsubRealtime = sbSubscribeRealtime(async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const remote = await sbFetchAll();
+        if (!remote.trainees || remote.trainees.length === 0) return;
+        isRemoteUpdate.current = true;
+        setData(prevData => {
+          const mergedResult = mergeTrainees(prevData.trainees, remote.trainees, prevData._deletedIds || [], remote._deletedIds || []);
+          const newData = normalizeData({ trainees: mergedResult.trainees, _deletedIds: mergedResult.deletedIds, _updatedAt: Date.now() });
+          saveData(newData);
+          return newData;
+        });
+        setLastSyncTime(Date.now());
+      } catch(e) {}
+    });
+
+    // Fallback poll every 60s when tab is visible (Realtime may be blocked on some networks)
     const pollTimer = setInterval(async () => {
       if (document.visibilityState !== 'visible') return; // don't poll in background
       try {
@@ -3600,7 +3656,7 @@ function App() {
         });
         setLastSyncTime(Date.now());
       } catch(e) { /* errors surfaced via status listeners */ }
-    }, 1800000);
+    }, 60000);
 
     // When tab becomes visible again, sync immediately
     const onVisibility = () => {
@@ -3626,6 +3682,7 @@ function App() {
       clearTimeout(initTimer);
       clearInterval(pollTimer);
       document.removeEventListener('visibilitychange', onVisibility);
+      if (unsubRealtime) unsubRealtime();
       unsubUpdate();
       unsubStatus();
       unsubPushStatus();

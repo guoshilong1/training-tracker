@@ -67,6 +67,7 @@ function normalizeData(data) {
 }
 
 // 8 区域 + 1 大区经理账号配置
+// 账号配置：8 个现有区域(000-007) + 666 大区经理 + 147 个小区经理(0001-0147) + 21 个大区经理(008-028)
 const AREA_CONFIG = [
   { id: '000', password: '000', name: '郭士龙区域带训追踪系统', role: 'area', stores: [
     '长治4店（壶关五八八广场）', '太原16店（万象城）', '太原15店（钟楼街）', '太原17店（昌盛万达广场）',
@@ -80,8 +81,177 @@ const AREA_CONFIG = [
   { id: '005', password: '5566', name: '郜一鸣区域带训追踪系统', role: 'area', stores: [] },
   { id: '006', password: '6677', name: '李万玲区域带训追踪系统', role: 'area', stores: [] },
   { id: '007', password: '7788', name: '江秀丽区域带训追踪系统', role: 'area', stores: [] },
-  { id: '666', password: '888', name: '白高朋大区带训追踪系统', role: 'manager', stores: [] }
-];
+  { id: '666', password: '888', name: '白高朋大区带训追踪系统', role: 'manager', stores: [], subAreas: ['000', '001', '002', '003', '004', '005', '006', '007'] },
+  // ===== 147 个小区经理账号（0001-0147）=====
+  { id: '0001', password: '0001', name: '赵海龙区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0002', password: '0002', name: '王晓蕾区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0003', password: '0003', name: '赵庆磊区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0004', password: '0004', name: '丛雄翔区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0005', password: '0005', name: '杨海庆区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0006', password: '0006', name: '刘本洋区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0007', password: '0007', name: '梁译区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0008', password: '0008', name: '宫博区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0009', password: '0009', name: '王桂玲区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0010', password: '0010', name: '程玲玲区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0011', password: '0011', name: '和晓帅区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0012', password: '0012', name: '魏魁区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0013', password: '0013', name: '张伟区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0014', password: '0014', name: '王小红区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0015', password: '0015', name: '刘欢区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0016', password: '0016', name: '张兴娜区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0017', password: '0017', name: '关赞骥区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0018', password: '0018', name: '孙国平区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0019', password: '0019', name: '温国丽区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0020', password: '0020', name: '孙长江区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0021', password: '0021', name: '王有刚区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0022', password: '0022', name: '张天宇区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0023', password: '0023', name: '佟淑晶区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0024', password: '0024', name: '姚慧区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0025', password: '0025', name: '赵国惠区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0026', password: '0026', name: '刘晓强区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0027', password: '0027', name: '朱佳区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0028', password: '0028', name: '董晓东区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0029', password: '0029', name: '顾思怡区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0030', password: '0030', name: '王建伟区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0031', password: '0031', name: '王元区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0032', password: '0032', name: '孙娟区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0033', password: '0033', name: '张超区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0034', password: '0034', name: '姚洪岩区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0035', password: '0035', name: '周林帅区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0036', password: '0036', name: '王双双区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0037', password: '0037', name: '许霞区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0038', password: '0038', name: '张岩哲区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0039', password: '0039', name: '周建坤区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0040', password: '0040', name: '蔡晓菲区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0041', password: '0041', name: '谭家君区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0042', password: '0042', name: '路华区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0043', password: '0043', name: '张涛区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0044', password: '0044', name: '刘现立区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0045', password: '0045', name: '王永鑫区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0046', password: '0046', name: '张宏伟区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0047', password: '0047', name: '孙东梅区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0048', password: '0048', name: '张帅区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0049', password: '0049', name: '周军英区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0050', password: '0050', name: '张永博区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0051', password: '0051', name: '刘超区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0052', password: '0052', name: '朱云苓区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0053', password: '0053', name: '黄晓南区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0054', password: '0054', name: '梁清扬区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0055', password: '0055', name: '张慧岩区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0056', password: '0056', name: '李连合区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0057', password: '0057', name: '刘鑫区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0058', password: '0058', name: '霍仁洁区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0059', password: '0059', name: '蒋成区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0060', password: '0060', name: '任纪强区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0061', password: '0061', name: '鲁吉区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0062', password: '0062', name: '王凤逵区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0063', password: '0063', name: '张伟家区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0064', password: '0064', name: '刘保延区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0065', password: '0065', name: '董雷区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0066', password: '0066', name: '吴景强区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0067', password: '0067', name: '陈跃洋区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0068', password: '0068', name: '姜春莉区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0069', password: '0069', name: '李艳玲区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0070', password: '0070', name: '田洪斌区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0071', password: '0071', name: '张彤区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0072', password: '0072', name: '周洋区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0073', password: '0073', name: '刘慧区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0074', password: '0074', name: '张钧秋区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0075', password: '0075', name: '孟波宇区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0076', password: '0076', name: '王旭区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0077', password: '0077', name: '周思成区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0078', password: '0078', name: '那雷区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0079', password: '0079', name: '刘思岑区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0080', password: '0080', name: '盛菲雪区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0081', password: '0081', name: '徐壮壮区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0082', password: '0082', name: '黄振振区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0083', password: '0083', name: '李广亮区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0084', password: '0084', name: '刘光普区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0085', password: '0085', name: '林承超区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0086', password: '0086', name: '李亚男区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0087', password: '0087', name: '刘思佳区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0088', password: '0088', name: '刘海娟区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0089', password: '0089', name: '张杨区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0090', password: '0090', name: '康广昌区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0091', password: '0091', name: '王磊区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0092', password: '0092', name: '滕雪区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0093', password: '0093', name: '张宇升区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0094', password: '0094', name: '康艳丽区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0095', password: '0095', name: '赵英臣区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0096', password: '0096', name: '邱实区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0097', password: '0097', name: '徐洪东区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0098', password: '0098', name: '高蕾区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0099', password: '0099', name: '林彤区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0100', password: '0100', name: '冯宝宇区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0101', password: '0101', name: '林海区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0102', password: '0102', name: '张阳阳区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0103', password: '0103', name: '张学奇区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0104', password: '0104', name: '赵智博区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0105', password: '0105', name: '张江林区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0106', password: '0106', name: '刘丽颖区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0107', password: '0107', name: '朱柏臣区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0108', password: '0108', name: '卜春艳区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0109', password: '0109', name: '刘利区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0110', password: '0110', name: '刘云龙区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0111', password: '0111', name: '宋国帅区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0112', password: '0112', name: '宋明双区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0113', password: '0113', name: '王华学区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0114', password: '0114', name: '董海雷区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0115', password: '0115', name: '王丹凤区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0116', password: '0116', name: '曹杰区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0117', password: '0117', name: '邱佐莲区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0118', password: '0118', name: '赵庆区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0119', password: '0119', name: '赵宇航区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0120', password: '0120', name: '于兴江区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0121', password: '0121', name: '刘长龙区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0122', password: '0122', name: '常莹区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0123', password: '0123', name: '迟炎区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0124', password: '0124', name: '崔维强区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0125', password: '0125', name: '刘永平区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0126', password: '0126', name: '于宪富区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0127', password: '0127', name: '王帅区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0128', password: '0128', name: '许庆森区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0129', password: '0129', name: '邓然区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0130', password: '0130', name: '金松花区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0131', password: '0131', name: '张浩区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0132', password: '0132', name: '杜泊泉区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0133', password: '0133', name: '李凌霞区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0134', password: '0134', name: '余腊荣区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0135', password: '0135', name: '陈佳兴区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0136', password: '0136', name: '陈玲玲区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0137', password: '0137', name: '李岩区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0138', password: '0138', name: '杨金凤区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0139', password: '0139', name: '王文会区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0140', password: '0140', name: '范安杰区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0141', password: '0141', name: '马圣哲区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0142', password: '0142', name: '卢家梁区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0143', password: '0143', name: '任清泉区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0144', password: '0144', name: '刘亚敬区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0145', password: '0145', name: '王天蕊区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0146', password: '0146', name: '赵志浩区域带训追踪系统', role: 'area', stores: [] },
+  { id: '0147', password: '0147', name: '张忠超区域带训追踪系统', role: 'area', stores: [] },
+  // ===== 21 个大区经理账号（008-028）=====
+  { id: '008', password: '008', name: '刘海英大区带训追踪系统', role: 'manager', stores: [], subAreas: ['0026', '0027', '0028', '0029', '0030', '0031', '0032', '0033', '0034'] },
+  { id: '009', password: '009', name: '杨福强大区带训追踪系统', role: 'manager', stores: [], subAreas: ['0105', '0106', '0107', '0108', '0109', '0110', '0111', '0112', '0113'] },
+  { id: '010', password: '010', name: '刘瑞新大区带训追踪系统', role: 'manager', stores: [], subAreas: ['0035', '0036', '0037', '0038', '0039', '0040', '0041', '0042'] },
+  { id: '011', password: '011', name: '刘现勇大区带训追踪系统', role: 'manager', stores: [], subAreas: ['0043', '0044', '0045', '0046', '0047', '0048', '0049', '0050'] },
+  { id: '012', password: '012', name: '孙鸿蕊大区带训追踪系统', role: 'manager', stores: [], subAreas: ['0071', '0072', '0073', '0074', '0075', '0076', '0077', '0078'] },
+  { id: '013', password: '013', name: '周振华大区带训追踪系统', role: 'manager', stores: [], subAreas: ['0140', '0141', '0142', '0143', '0144', '0145', '0146', '0147'] },
+  { id: '014', password: '014', name: '陈双双大区带训追踪系统', role: 'manager', stores: [], subAreas: ['0001', '0002', '0003', '0004', '0005', '0006', '0007'] },
+  { id: '015', password: '015', name: '李肖大区带训追踪系统', role: 'manager', stores: [], subAreas: ['0019', '0020', '0021', '0022', '0023', '0024', '0025'] },
+  { id: '016', password: '016', name: '倪萍萍大区带训追踪系统', role: 'manager', stores: [], subAreas: ['0051', '0052', '0053', '0054', '0055', '0056', '0057'] },
+  { id: '017', password: '017', name: '孙凤现大区带训追踪系统', role: 'manager', stores: [], subAreas: ['0064', '0065', '0066', '0067', '0068', '0069', '0070'] },
+  { id: '018', password: '018', name: '田玲大区带训追踪系统', role: 'manager', stores: [], subAreas: ['0079', '0080', '0081', '0082', '0083', '0084', '0085'] },
+  { id: '019', password: '019', name: '肖敏大区带训追踪系统', role: 'manager', stores: [], subAreas: ['0098', '0099', '0100', '0101', '0102', '0103', '0104'] },
+  { id: '020', password: '020', name: '袁百臣大区带训追踪系统', role: 'manager', stores: [], subAreas: ['0114', '0115', '0116', '0117', '0118', '0119', '0120'] },
+  { id: '021', password: '021', name: '张贺大区带训追踪系统', role: 'manager', stores: [], subAreas: ['0127', '0128', '0129', '0130', '0131', '0132', '0133'] },
+  { id: '022', password: '022', name: '付钟庆大区带训追踪系统', role: 'manager', stores: [], subAreas: ['0008', '0009', '0010', '0011', '0012', '0013'] },
+  { id: '023', password: '023', name: '沈彦伟大区带训追踪系统', role: 'manager', stores: [], subAreas: ['0058', '0059', '0060', '0061', '0062', '0063'] },
+  { id: '024', password: '024', name: '王世爽大区带训追踪系统', role: 'manager', stores: [], subAreas: ['0086', '0087', '0088', '0089', '0090', '0091'] },
+  { id: '025', password: '025', name: '王瑶大区带训追踪系统', role: 'manager', stores: [], subAreas: ['0092', '0093', '0094', '0095', '0096', '0097'] },
+  { id: '026', password: '026', name: '张国良大区带训追踪系统', role: 'manager', stores: [], subAreas: ['0121', '0122', '0123', '0124', '0125', '0126'] },
+  { id: '027', password: '027', name: '赵静大区带训追踪系统', role: 'manager', stores: [], subAreas: ['0134', '0135', '0136', '0137', '0138', '0139'] },
+  { id: '028', password: '028', name: '姜海艳大区带训追踪系统', role: 'manager', stores: [], subAreas: ['0014', '0015', '0016', '0017', '0018'] },];
 const AREA_MAP = Object.fromEntries(AREA_CONFIG.map(a => [a.id, a]));
 
 function seedAreaRoster(areaId) {
@@ -1854,7 +2024,7 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
 }
 
 // ============ Region Manager Dashboard ============
-function RegionDashboardView({ trainees, stores, config, workHours }) {
+function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) {
   const today = localDateStr(new Date().toISOString());
   const yesterday = yesterdayStr();
   const [filterArea, setFilterArea] = useState('');
@@ -1888,7 +2058,7 @@ function RegionDashboardView({ trainees, stores, config, workHours }) {
   }, [visibleTrainees, today]);
 
   const areaStats = useMemo(() => {
-    return config.filter(c => c.role === 'area').map(c => {
+    return config.filter(c => c.role === 'area' && (!subAreas || subAreas.includes(c.id))).map(c => {
       const list = trainees.filter(t => (t.area || '000') === c.id);
       const total = list.length;
       const completed = list.filter(t => isCertified(t)).length;
@@ -1896,7 +2066,7 @@ function RegionDashboardView({ trainees, stores, config, workHours }) {
       const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
       return { ...c, total, avg: completionRate, completed, inProgress };
     });
-  }, [trainees, config]);
+  }, [trainees, config, subAreas]);
 
   const incompleteList = useMemo(() => {
     return visibleTrainees
@@ -2029,7 +2199,7 @@ function RegionDashboardView({ trainees, stores, config, workHours }) {
           <span className="text-xs text-gray-500">数据范围</span>
           <select value={filterArea} onChange={e => setFilterArea(e.target.value)} className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-300">
             <option value="">全部区域</option>
-            {config.filter(c => c.role === 'area').map(c => <option key={c.id} value={c.id}>{c.name.replace('区域带训追踪系统', '')}</option>)}
+            {config.filter(c => c.role === 'area' && (!subAreas || subAreas.includes(c.id))).map(c => <option key={c.id} value={c.id}>{c.name.replace('区域带训追踪系统', '')}</option>)}
           </select>
         </div>
       </div>
@@ -3125,7 +3295,13 @@ function App() {
 
   const visibleTrainees = useMemo(() => {
     if (!currentUser) return [];
-    if (currentUser.role === 'manager') return data.trainees;
+    if (currentUser.role === 'manager') {
+      // 大区经理只能看到自己名下小区(subAreas)的学员
+      const cfg = AREA_MAP[currentUser.id];
+      const subs = (cfg && cfg.subAreas) || [];
+      if (subs.length === 0) return [];
+      return data.trainees.filter(t => subs.includes(t.area || '000'));
+    }
     return data.trainees.filter(t => (t.area || '000') === currentUser.id);
   }, [data.trainees, currentUser]);
 
@@ -3350,7 +3526,7 @@ function App() {
         <DashboardView trainees={visibleTrainees} stores={stores} workHours={workHours} onUpdateNote={(id, note) => handleEditTrainee(id, { note })} />
       )}
       {view === 'region_dashboard' && isManager && (
-        <RegionDashboardView trainees={data.trainees} stores={stores} config={AREA_CONFIG} workHours={workHours} />
+        <RegionDashboardView trainees={visibleTrainees} stores={stores} config={AREA_CONFIG} workHours={workHours} subAreas={currentUser?.role === 'manager' ? (AREA_MAP[currentUser.id]?.subAreas || []) : null} />
       )}
 
       {/* 密码弹窗 */}

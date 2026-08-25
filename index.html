@@ -3054,7 +3054,7 @@ function App() {
       }
     }, 1500);
 
-    // Poll remote data every 12s. Supabase has no practical rate limit —
+    // Poll remote data every 30min (1800s). Supabase has no practical rate limit —
     // one SELECT per poll is trivially cheap even for 2000+ stores.
     const pollTimer = setInterval(async () => {
       if (document.visibilityState !== 'visible') return; // don't poll in background
@@ -3070,7 +3070,7 @@ function App() {
         });
         setLastSyncTime(Date.now());
       } catch(e) { /* errors surfaced via status listeners */ }
-    }, 12000);
+    }, 1800000);
 
     // When tab becomes visible again, sync immediately
     const onVisibility = () => {
@@ -3102,7 +3102,7 @@ function App() {
     };
   }, []);
 
-  // After login, pull remote data immediately (no 12s wait)
+  // After login, pull remote data immediately (no 30min wait)
   const lastUserRef = useRef(null);
   useEffect(() => {
     if (!currentUser || currentUser === lastUserRef.current) return;

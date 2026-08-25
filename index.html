@@ -3641,7 +3641,8 @@ function App() {
       } catch(e) {}
     });
 
-    // Fallback poll every 60s when tab is visible (Realtime may be blocked on some networks)
+    // Fallback poll every 30min when tab is visible (Realtime handles instant sync;
+    // this is just a safety net in case Realtime is blocked on some networks)
     const pollTimer = setInterval(async () => {
       if (document.visibilityState !== 'visible') return; // don't poll in background
       try {
@@ -3656,7 +3657,7 @@ function App() {
         });
         setLastSyncTime(Date.now());
       } catch(e) { /* errors surfaced via status listeners */ }
-    }, 60000);
+    }, 1800000);
 
     // When tab becomes visible again, sync immediately
     const onVisibility = () => {

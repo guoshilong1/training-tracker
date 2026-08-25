@@ -394,19 +394,23 @@ function mergeDayProgress(lProgress, rProgress) {
       dayMerged.signatureAt = newer.signatureAt || new Date().toISOString();
     }
 
-    // 2) Merge item-level checks: union of all checked items from BOTH sides
+    // 2) Merge item-level checks: newer operation wins (check OR uncheck)
+    //    每个勾选项带时间戳，最后操作的设备说了算；
+    //    取消勾选会留下 checked:false 的痕迹（tombstone），确保取消也能同步
     const items = {};
     const allItemKeys = new Set([...Object.keys(lp.items || {}), ...Object.keys(rp.items || {})]);
     for (const idx of allItemKeys) {
       const li = lp.items?.[idx] || {};
       const ri = rp.items?.[idx] || {};
-      if (li.checked || ri.checked) {
-        items[idx] = {
-          checked: true,
-          checkedAt: li.checkedAt || ri.checkedAt || new Date().toISOString(),
-          choice: li.choice || ri.choice || undefined
-        };
-      }
+      const lTs = li.checkedAt || '';
+      const rTs = ri.checkedAt || '';
+      const winner = (rTs >= lTs) ? ri : li;
+      // 保留痕迹（即使 checked:false），否则下次合并时另一台设备的旧勾选会复活
+      items[idx] = {
+        checked: !!winner.checked,
+        checkedAt: winner.checkedAt || new Date().toISOString(),
+        choice: winner.choice || undefined
+      };
     }
     dayMerged.items = items;
 
@@ -1201,8 +1205,10 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
       prev.checkedAt = new Date().toISOString();
       if (choice) prev.choice = choice;
     } else {
-      delete prev.checked;
-      delete prev.checkedAt;
+      // 取消勾选时保留"已取消"痕迹（checked:false + 最新时间戳），
+      // 这样取消操作才能同步到其他设备（否则合并时会被旧勾选数据"复活"）
+      prev.checked = false;
+      prev.checkedAt = new Date().toISOString();
       delete prev.choice;
     }
     dayProg.items[itemIdx] = prev;

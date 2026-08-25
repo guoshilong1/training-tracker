@@ -1397,7 +1397,7 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
       return true;
     });
     list = list
-      .filter(t => calcProgress(t).percent < 100) // 看板明细只显示未完成（未认证）学员
+      .filter(t => !isCertified(t)) // 看板明细只显示未完成（未认证）学员
       .map(t => ({ ...t, _progress: calcProgress(t), _currentDay: getCurrentDay(t) }));
     if (sortBy === 'progress') list.sort((a, b) => b._progress.percent - a._progress.percent);
     else if (sortBy === 'name') list.sort((a, b) => a.name.localeCompare(b.name));

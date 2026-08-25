@@ -545,6 +545,19 @@ function isDayUnlocked(trainee, dayKey) {
   return prevProgress && prevProgress.completed;
 }
 
+function isPartTime(trainee) { return trainee.route === 'part_time'; }
+function getWorkHoursLimit(trainee) { return isPartTime(trainee) ? 300 : 500; }
+function getWorkHoursThreshold(trainee) { return isPartTime(trainee) ? 200 : 300; }
+function getWorkHoursWarning(t, hours) {
+  if (hours == null || Number.isNaN(Number(hours))) return null;
+  const limit = getWorkHoursLimit(t);
+  const threshold = getWorkHoursThreshold(t);
+  if (hours > threshold) {
+    return { limit, threshold, hours: Number(hours), remaining: Math.max(0, limit - hours), isPartTime: isPartTime(t) };
+  }
+  return null;
+}
+
 function countCerts(trainee) {
   const allDays = getAllDays(trainee.route, trainee.subRoute).filter(d => d.items.length > 0);
   const progress = trainee.progress || {};
@@ -1115,15 +1128,16 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
         <div className="flex-1 overflow-y-auto scrollbar-thin p-2 space-y-1">
           {filtered.length === 0 ? (
             <div className="text-center text-gray-500 text-sm py-8">暂无学员数据</div>
-          ) : filtered.map(t => {
+          )           : filtered.map(t => {
             const prog = calcProgress(t);
             const route = TRAINING_DATA.routes.find(r => r.id === t.route);
             const isSelected = t.id === selectedId;
+            const warning = getWorkHoursWarning(t, workHours?.[t.empId]?.hours);
             return (
               <button
                 key={t.id}
                 onClick={() => onSelectTrainee(t.id)}
-                className={`group w-full text-left p-3 rounded-lg transition ${isSelected ? 'bg-indigo-600/20 border border-indigo-500/40' : 'hover:bg-gray-800/50 border border-transparent'}`}
+                className={`group w-full text-left p-3 rounded-lg transition ${isSelected ? 'bg-indigo-600/20 border border-indigo-500/40' : warning ? 'bg-yellow-500/10 border border-yellow-500/30 hover:bg-yellow-500/15' : 'hover:bg-gray-800/50 border border-transparent'}`}
               >
                   <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-white">{t.name}</span>
@@ -1147,7 +1161,7 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
                   <Icon.Store/> {t.store}
                   {t.master && <><span className="text-gray-700">·</span><Icon.User/> {t.master}</>}
                   {t.empId && workHours?.[t.empId] != null && (
-                    <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 tabular-nums whitespace-nowrap">⏱ {workHours[t.empId].hours}工时</span>
+                    <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded border tabular-nums whitespace-nowrap ${warning ? 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30' : 'bg-amber-500/10 text-amber-300 border-amber-500/20'}`}>⏱ {workHours[t.empId].hours}工时</span>
                   )}
                 </div>
                 <div className="mt-2 flex items-center gap-2">
@@ -1351,7 +1365,7 @@ function calcNoCheckInStreak(t, today) {
   return { days, label: `连续${days}天未打卡` };
 }
 
-function DashboardView({ trainees, stores, onUpdateNote }) {
+function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
   const [filterStore, setFilterStore] = useState('');
   const [filterRoute, setFilterRoute] = useState('');
   const [sortBy, setSortBy] = useState('progress');
@@ -1367,7 +1381,6 @@ function DashboardView({ trainees, stores, onUpdateNote }) {
     if (sortBy === 'progress') list.sort((a, b) => b._progress.percent - a._progress.percent);
     else if (sortBy === 'name') list.sort((a, b) => a.name.localeCompare(b.name));
     else if (sortBy === 'store') list.sort((a, b) => a.store.localeCompare(b.store));
-    else if (sortBy === 'certs') list.sort((a, b) => countCerts(b) - countCerts(a));
     return list;
   }, [trainees, filterStore, filterRoute, sortBy]);
 
@@ -1471,6 +1484,18 @@ function DashboardView({ trainees, stores, onUpdateNote }) {
     return { yesterdayChecked, yesterdayUnchecked, todayChecked, yesterday, today };
   }, [trainees]);
 
+  const hourWarnings = useMemo(() => {
+    return trainees
+      .map(t => {
+        const h = workHours?.[t.empId]?.hours;
+        const w = getWorkHoursWarning(t, h);
+        return w ? { ...t, _warning: w, _progress: calcProgress(t) } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => b._warning.hours - a._warning.hours);
+  }, [trainees, workHours]);
+
+
   return (
     <div className="overflow-y-auto scrollbar-thin h-[calc(100vh-60px)]">
       <div className="max-w-6xl mx-auto p-6">
@@ -1507,6 +1532,30 @@ function DashboardView({ trainees, stores, onUpdateNote }) {
             <div className="text-3xl font-bold text-purple-400 mt-1">{stats.avgProgress}%</div>
           </div>
         </div>
+
+        {/* 工时预警 */}
+        {hourWarnings.length > 0 && (
+          <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-4 mb-6">
+            <h3 className="text-sm font-medium text-yellow-300 mb-3 flex items-center gap-2"><Icon.Clock/> 工时预警</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {hourWarnings.map(t => (
+                <div key={t.id} className="flex items-center justify-between bg-gray-900/50 border border-yellow-500/15 rounded-lg px-3 py-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-white font-medium">{t.name}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-300">{t._warning.isPartTime ? '兼职' : '全职'}</span>
+                    </div>
+                    <div className="text-xs text-gray-500 truncate">{t.store} · 进度 {t._progress.percent}%</div>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <div className="text-sm font-bold text-yellow-300 tabular-nums">{t._warning.hours}h</div>
+                    <div className="text-[10px] text-gray-500">上限 {t._warning.limit}h</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Yesterday + Today Check-in Panel */}
         <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-5 mb-6">
@@ -1674,7 +1723,6 @@ function DashboardView({ trainees, stores, onUpdateNote }) {
                 <option value="progress">按进度排序</option>
                 <option value="name">按姓名排序</option>
                 <option value="store">按门店排序</option>
-                <option value="certs">按证书数排序</option>
               </select>
             </div>
           </div>
@@ -1687,7 +1735,6 @@ function DashboardView({ trainees, stores, onUpdateNote }) {
                   <th className="text-left px-4 py-3 font-medium">门店</th>
                   <th className="text-left px-4 py-3 font-medium">路线</th>
                   <th className="text-left px-4 py-3 font-medium">师傅</th>
-                  <th className="text-left px-4 py-3 font-medium">证书数</th>
                   <th className="text-left px-4 py-3 font-medium">当前阶段</th>
                   <th className="text-left px-4 py-3 font-medium">进度</th>
                   <th className="text-left px-4 py-3 font-medium">完成/总天数</th>
@@ -1697,7 +1744,7 @@ function DashboardView({ trainees, stores, onUpdateNote }) {
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan="9" className="text-center text-gray-500 py-8">暂无数据</td>
+                    <td colSpan="8" className="text-center text-gray-500 py-8">暂无数据</td>
                   </tr>
                 ) : filtered.map(t => {
                   const route = TRAINING_DATA.routes.find(r => r.id === t.route);
@@ -1723,9 +1770,6 @@ function DashboardView({ trainees, stores, onUpdateNote }) {
                         <td className="px-4 py-3 text-gray-400">{t.store}</td>
                         <td className="px-4 py-3"><span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400">{getRouteName(t.route, t.subRoute)}</span></td>
                         <td className="px-4 py-3 text-gray-400">{t.master || '-'}</td>
-                        <td className="px-4 py-3">
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30">{countCerts(t)}</span>
-                        </td>
                         <td className="px-4 py-3 text-gray-400 text-xs">
                           {cd ? `${cd.monthName} · ${cd.phaseName} · 第${cd.day}天` : '已完成'}
                         </td>
@@ -1744,7 +1788,7 @@ function DashboardView({ trainees, stores, onUpdateNote }) {
                       </tr>
                       {expandedRow === t.id && (
                         <tr className="bg-gray-900/40">
-                          <td colSpan="9" className="px-4 py-4">
+                          <td colSpan="8" className="px-4 py-4">
                             <div className="space-y-1.5">
                               {allDays.map(d => {
                                 const dp = t.progress?.[d.key];
@@ -1781,7 +1825,7 @@ function DashboardView({ trainees, stores, onUpdateNote }) {
 }
 
 // ============ Region Manager Dashboard ============
-function RegionDashboardView({ trainees, stores, config }) {
+function RegionDashboardView({ trainees, stores, config, workHours }) {
   const today = localDateStr(new Date().toISOString());
   const yesterday = yesterdayStr();
   const [filterArea, setFilterArea] = useState('');
@@ -1811,7 +1855,7 @@ function RegionDashboardView({ trainees, stores, config }) {
       });
       if (hasYesterday) checkedYesterday++;
     });
-    return { total, inProgress, completed, notStarted, avgProgress, checkedYesterday, uncheckedYesterday: total - checkedYesterday, totalCerts: visibleTrainees.reduce((s, t) => s + countCerts(t), 0) };
+    return { total, inProgress, completed, notStarted, avgProgress, checkedYesterday, uncheckedYesterday: total - checkedYesterday };
   }, [visibleTrainees, today]);
 
   const areaStats = useMemo(() => {
@@ -1819,10 +1863,10 @@ function RegionDashboardView({ trainees, stores, config }) {
       const list = trainees.filter(t => (t.area || '000') === c.id);
       const progressList = list.map(t => calcProgress(t));
       const total = list.length;
-      const avg = total > 0 ? Math.round(progressList.reduce((s, p) => s + p.percent, 0) / total) : 0;
       const completed = progressList.filter(p => p.percent === 100).length;
       const inProgress = progressList.filter(p => p.percent > 0 && p.percent < 100).length;
-      return { ...c, total, avg, completed, inProgress };
+      const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
+      return { ...c, total, avg: completionRate, completed, inProgress };
     });
   }, [trainees, config]);
 
@@ -1859,6 +1903,18 @@ function RegionDashboardView({ trainees, stores, config }) {
     });
     return Object.entries(phases).filter(([k, v]) => v > 0);
   }, [visibleTrainees]);
+
+  const hourWarnings = useMemo(() => {
+    return visibleTrainees
+      .map(t => {
+        const h = workHours?.[t.empId]?.hours;
+        const w = getWorkHoursWarning(t, h);
+        return w ? { ...t, _warning: w, _progress: calcProgress(t) } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => b._warning.hours - a._warning.hours);
+  }, [visibleTrainees, workHours]);
+
 
   const yesterdayAndTodayStats = useMemo(() => {
     const yesterdayChecked = [];
@@ -1959,7 +2015,44 @@ function RegionDashboardView({ trainees, stores, config }) {
         <StatCard label="未开始" value={stats.notStarted} color="gray"/>
         <StatCard label="平均进度" value={`${stats.avgProgress}%`} color="indigo"/>
         <StatCard label="覆盖区域" value={areaStats.filter(a => a.total > 0).length} sub={`共 ${areaStats.length} 个区域`} color="sky"/>
-        <StatCard label="总证书数" value={stats.totalCerts} color="amber"/>
+      </div>
+
+      {/* 工时预警 */}
+      <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
+        <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2"><Icon.Clock/> 工时预警</h3>
+        {hourWarnings.length === 0 ? (
+          <p className="text-sm text-gray-500 text-center py-4">暂无工时预警</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-gray-500 border-b border-gray-800">
+                  <th className="text-left px-3 py-2 font-medium">区域</th>
+                  <th className="text-left px-3 py-2 font-medium">学员</th>
+                  <th className="text-left px-3 py-2 font-medium">门店</th>
+                  <th className="text-left px-3 py-2 font-medium">用工类型</th>
+                  <th className="text-left px-3 py-2 font-medium">当前工时 / 上限</th>
+                  <th className="text-left px-3 py-2 font-medium">带训进度</th>
+                </tr>
+              </thead>
+              <tbody>
+                {hourWarnings.map(t => {
+                  const areaCfg = config.find(c => c.id === (t.area || '000'));
+                  return (
+                    <tr key={t.id} className="border-b border-yellow-500/10 bg-yellow-500/5">
+                      <td className="px-3 py-2 text-xs text-gray-400">{areaCfg?.name?.replace('区域带训追踪系统', '') || t.area || '000'}</td>
+                      <td className="px-3 py-2 text-white font-medium">{t.name}</td>
+                      <td className="px-3 py-2 text-xs text-gray-400">{t.store}</td>
+                      <td className="px-3 py-2 text-xs text-yellow-300">{t._warning.isPartTime ? '兼职' : '全职'}</td>
+                      <td className="px-3 py-2 text-xs text-yellow-300 tabular-nums">{t._warning.hours} / {t._warning.limit}h</td>
+                      <td className="px-3 py-2 text-xs text-gray-400">{t._progress.percent}%</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -2024,6 +2117,7 @@ function RegionDashboardView({ trainees, stores, config }) {
                   <th className="text-left px-3 py-2 font-medium">门店</th>
                   <th className="text-left px-3 py-2 font-medium">当前阶段</th>
                   <th className="text-left px-3 py-2 font-medium">进度</th>
+                  <th className="text-left px-3 py-2 font-medium">工时</th>
                   <th className="text-left px-3 py-2 font-medium">未打卡</th>
                   <th className="text-left px-3 py-2 font-medium">备注</th>
                 </tr>
@@ -2046,12 +2140,13 @@ function RegionDashboardView({ trainees, stores, config }) {
                           <span className={`text-xs ${t._progress.percent < 30 ? 'text-red-400' : 'text-gray-400'}`}>{t._progress.percent}%</span>
                         </div>
                       </td>
+                      <td className="px-3 py-2 text-xs text-gray-400 tabular-nums">{t.empId && workHours?.[t.empId] != null ? `${workHours[t.empId].hours}h` : '—'}</td>
                       <td className="px-3 py-2"><span className="text-xs px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-400">{t._streak.label}</span></td>
                       <td className="px-3 py-2 text-xs text-amber-300/80 max-w-[180px] truncate" title={t.note || ''}>{t.note || '—'}</td>
                     </tr>
                   );
                 })}
-                {incompleteList.length === 0 && <tr><td colSpan="7" className="text-center text-gray-500 py-6">暂无数据</td></tr>}
+                {incompleteList.length === 0 && <tr><td colSpan="8" className="text-center text-gray-500 py-6">暂无数据</td></tr>}
               </tbody>
             </table>
           </div>
@@ -2078,23 +2173,6 @@ function RegionDashboardView({ trainees, stores, config }) {
                 </div>
               );
             })}
-          </div>
-        </div>
-
-        {/* Cert Ranking */}
-        <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
-          <h3 className="text-sm font-medium text-gray-300 mb-4 flex items-center gap-2"><Icon.Award/> 证书获得排名 TOP10</h3>
-          <div className="space-y-3">
-            {certRanking.length === 0 ? (
-              <p className="text-sm text-gray-500 text-center py-4">暂无数据</p>
-            ) : certRanking.map((t, idx) => (
-              <div key={t.id} className="flex items-center gap-3">
-                <span className={`text-xs w-5 font-bold ${idx < 3 ? 'text-amber-400' : 'text-gray-500'}`}>{idx + 1}</span>
-                <span className="text-xs text-gray-300 flex-1 truncate">{t.name}</span>
-                <span className="text-xs text-gray-500">{t.store}</span>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30">{t._certs} 证书</span>
-              </div>
-            ))}
           </div>
         </div>
 
@@ -2171,9 +2249,8 @@ function RegionDashboardView({ trainees, stores, config }) {
                   <th className="text-left px-3 py-2 font-medium">已完成</th>
                   <th className="text-left px-3 py-2 font-medium">带训中</th>
                   <th className="text-left px-3 py-2 font-medium">未开始</th>
-                  <th className="text-left px-3 py-2 font-medium">平均进度</th>
+                  <th className="text-left px-3 py-2 font-medium">完成率</th>
                   <th className="text-left px-3 py-2 font-medium">昨日打卡</th>
-                  <th className="text-left px-3 py-2 font-medium">总证书数</th>
                 </tr>
               </thead>
               <tbody>
@@ -2191,7 +2268,6 @@ function RegionDashboardView({ trainees, stores, config }) {
                     });
                     if (hasYesterday) checkedYesterday++;
                   });
-                  const certs = list.reduce((s, t) => s + countCerts(t), 0);
                   return (
                     <tr key={a.id} className="border-b border-gray-800/50 hover:bg-gray-800/20 cursor-pointer" onClick={() => setFilterArea(filterArea === a.id ? '' : a.id)}>
                       <td className="px-3 py-2 text-white font-medium">{a.name.replace('区域带训追踪系统', '')}</td>
@@ -2208,7 +2284,6 @@ function RegionDashboardView({ trainees, stores, config }) {
                         </div>
                       </td>
                       <td className="px-3 py-2 text-gray-400">{checkedYesterday}/{a.total}</td>
-                      <td className="px-3 py-2 text-amber-400">{certs}</td>
                     </tr>
                   );
                 })}
@@ -3182,10 +3257,10 @@ function App() {
         />
       )}
       {view === 'dashboard' && !isManager && (
-        <DashboardView trainees={visibleTrainees} stores={stores} onUpdateNote={(id, note) => handleEditTrainee(id, { note })} />
+        <DashboardView trainees={visibleTrainees} stores={stores} workHours={workHours} onUpdateNote={(id, note) => handleEditTrainee(id, { note })} />
       )}
       {view === 'region_dashboard' && isManager && (
-        <RegionDashboardView trainees={data.trainees} stores={stores} config={AREA_CONFIG} />
+        <RegionDashboardView trainees={data.trainees} stores={stores} config={AREA_CONFIG} workHours={workHours} />
       )}
 
       {/* 密码弹窗 */}

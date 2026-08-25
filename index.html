@@ -10,6 +10,7 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/lz-string@1.4.4/libs/lz-string.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="training-data.js"></script>
   <style>
     * { -webkit-tap-highlight-color: transparent; }
@@ -95,6 +96,7 @@ function seedAreaRoster(areaId) {
     startDate: today,
     master: '',
     area: areaId,
+    empId: '',
     createdAt: new Date().toISOString(),
     progress: {}
   }));
@@ -136,6 +138,7 @@ function rowToTrainee(row) {
     master: row.master,
     area: row.area || '000',
     note: row.note || '',
+    empId: row.emp_id || '',
     progress: row.progress || {},
     createdAt: row.created_at || new Date().toISOString(),
     _updatedAt: row.updated_at || 0
@@ -153,10 +156,47 @@ function traineeToRow(t) {
     master: t.master || '',
     area: t.area || '000',
     note: t.note || '',
+    emp_id: t.empId || '',
     progress: t.progress || {},
     deleted: false,
     updated_at: t._updatedAt || Date.now()
   };
+}
+
+// ============ Work Hours (工时) ============
+const WORK_HOURS_CACHE_KEY = 'training_tracker_work_hours';
+
+function loadWorkHoursCache() {
+  try { return JSON.parse(localStorage.getItem(WORK_HOURS_CACHE_KEY)) || {}; }
+  catch(e) { return {}; }
+}
+function saveWorkHoursCache(map) {
+  try { localStorage.setItem(WORK_HOURS_CACHE_KEY, JSON.stringify(map)); } catch(e) {}
+}
+
+// 拉取云端全量工时表 { empId: { hours, updatedAt } }
+async function sbFetchWorkHours() {
+  const { data, error } = await supabase
+    .from('work_hours')
+    .select('emp_id, hours, updated_at');
+  if (error) throw error;
+  const map = {};
+  for (const r of (data || [])) {
+    map[r.emp_id] = { hours: Number(r.hours) || 0, updatedAt: r.updated_at || 0 };
+  }
+  return map;
+}
+
+// 批量覆盖写入工时（emp_id 为主键，onConflict 覆盖）
+async function sbUpsertWorkHours(rows) {
+  if (!rows || rows.length === 0) return true;
+  for (let i = 0; i < rows.length; i += 100) {
+    const { error } = await supabase
+      .from('work_hours')
+      .upsert(rows.slice(i, i + 100), { onConflict: 'emp_id' });
+    if (error) throw error;
+  }
+  return true;
 }
 
 // Merge trainees at progress-day level (prevents data loss from concurrent edits)
@@ -446,6 +486,7 @@ const Icon = {
   Edit: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
   Lock: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>,
   Clock: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
+  IdCard: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="2" y="4" width="20" height="16" rx="2"/><circle cx="8" cy="10" r="2"/><path d="M14 9h5M14 13h5M5.5 16a3 3 0 016 0"/></svg>,
   Dashboard: (p) => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>,
   Calendar: (p) => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
   Search: (p) => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
@@ -555,6 +596,7 @@ function TraineeModal({ open, onClose, onSave, editing, stores }) {
   const [subRoute, setSubRoute] = useState('');
   const [startDate, setStartDate] = useState('');
   const [master, setMaster] = useState('');
+  const [empId, setEmpId] = useState('');
 
   const selectedRoute = useMemo(() => TRAINING_DATA.routes.find(r => r.id === route), [route]);
   const hasSubRoutes = !!selectedRoute?.subRoutes;
@@ -567,10 +609,11 @@ function TraineeModal({ open, onClose, onSave, editing, stores }) {
       setSubRoute(editing.subRoute || '');
       setStartDate(editing.startDate || '');
       setMaster(editing.master || '');
+      setEmpId(editing.empId || '');
     } else {
       setName(''); setStore(''); setRoute('front_to_back'); setSubRoute('');
       const today = new Date().toISOString().slice(0, 10);
-      setStartDate(today); setMaster('');
+      setStartDate(today); setMaster(''); setEmpId('');
     }
   }, [editing, open]);
 
@@ -596,7 +639,8 @@ function TraineeModal({ open, onClose, onSave, editing, stores }) {
       route,
       subRoute: hasSubRoutes ? subRoute : '',
       startDate,
-      master: master.trim()
+      master: master.trim(),
+      empId: empId.trim()
     });
     onClose();
   };
@@ -618,6 +662,12 @@ function TraineeModal({ open, onClose, onSave, editing, stores }) {
           <datalist id="store-list">
             {stores.map(s => <option key={s} value={s} />)}
           </datalist>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-1.5">工号 <span className="text-xs text-gray-500 font-normal">（用于匹配工时，建议填写）</span></label>
+          <input type="text" value={empId} onChange={e=>setEmpId(e.target.value)}
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 tabular-nums"
+            placeholder="如：10086"/>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-1.5">带训路线 <span className="text-red-400">*</span></label>
@@ -892,7 +942,7 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, trai
 }
 
 // ============ Trainee Tracker View ============
-function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEditTrainee, onDeleteTrainee, onUpdateProgress, stores }) {
+function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEditTrainee, onDeleteTrainee, onUpdateProgress, stores, workHours }) {
   const [search, setSearch] = useState('');
   const [filterStore, setFilterStore] = useState('');
   const [filterRoute, setFilterRoute] = useState('');
@@ -1096,6 +1146,9 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
                 <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
                   <Icon.Store/> {t.store}
                   {t.master && <><span className="text-gray-700">·</span><Icon.User/> {t.master}</>}
+                  {t.empId && workHours?.[t.empId] != null && (
+                    <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 tabular-nums whitespace-nowrap">⏱ {workHours[t.empId].hours}工时</span>
+                  )}
                 </div>
                 <div className="mt-2 flex items-center gap-2">
                   <div className="flex-1 h-5 bg-gray-800 rounded-full overflow-hidden relative">
@@ -1141,6 +1194,12 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
                     <span className="flex items-center gap-1"><Icon.Store/> {selected.store}</span>
                     {selected.master && <span className="flex items-center gap-1"><Icon.User/> 师傅: {selected.master}</span>}
                     {selected.startDate && <span className="flex items-center gap-1"><Icon.Calendar width={14} height={14}/> 入职: {selected.startDate}</span>}
+                    {selected.empId && <span className="flex items-center gap-1 tabular-nums"><Icon.IdCard width={14} height={14}/> 工号: {selected.empId}</span>}
+                    {selected.empId && workHours?.[selected.empId] != null && (
+                      <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/25 text-amber-300 tabular-nums">
+                        <Icon.Clock width={14} height={14}/> 累计工时: <span className="font-semibold">{workHours[selected.empId].hours}</span>
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -2218,6 +2277,188 @@ function PasswordModal({ onSuccess, onClose }) {
 }
 
 // ============ Sync Modal (Real-time) ============
+// ============ 工时导入弹窗（仅 000 账号可见） ============
+function WorkHoursImportModal({ trainees, onClose, onImported }) {
+  const [parseResult, setParseResult] = useState(null); // {rows, matched, unmatched, invalid, total}
+  const [importing, setImporting] = useState(false);
+  const [importDone, setImportDone] = useState(false);
+  const [errMsg, setErrMsg] = useState('');
+  const [fileName, setFileName] = useState('');
+
+  const downloadTemplate = () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['工号', '姓名', '工时'],
+      ['10086', '张三（示例，可删）', 120],
+      ['10087', '李四（示例，可删）', 96.5]
+    ]);
+    ws['!cols'] = [{ wch: 14 }, { wch: 22 }, { wch: 10 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '工时表');
+    XLSX.writeFile(wb, '工时导入模板.xlsx');
+  };
+
+  const normKey = (k) => String(k || '').replace(/[\s:：()（）]/g, '');
+
+  const handleFile = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setErrMsg(''); setImportDone(false); setParseResult(null);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+        // 找到工号/工时列（兼容"员工工号""累计工时(h)"等表头写法）
+        let idKey = null, nameKey = null, hoursKey = null;
+        if (json.length > 0) {
+          for (const k of Object.keys(json[0])) {
+            const nk = normKey(k);
+            if (!idKey && /工号|员工号|empid/i.test(nk)) idKey = k;
+            else if (!hoursKey && /工时/.test(nk)) hoursKey = k;
+            else if (!nameKey && /姓名|名字/.test(nk)) nameKey = k;
+          }
+        }
+        if (!idKey || !hoursKey) {
+          setErrMsg('表格里找不到「工号」和「工时」列，请按模板格式填写（表头必须是：工号、姓名、工时）');
+          return;
+        }
+
+        // 学员工号索引（去重：同工号多行取最后一行）
+        const byEmp = new Map(trainees.filter(t => (t.empId || '').trim()).map(t => [String(t.empId).trim(), t]));
+        const rowsMap = new Map(); // emp_id -> row
+        const unmatched = [], invalid = [];
+        for (const r of json) {
+          const empId = String(r[idKey] ?? '').trim();
+          const nameRaw = nameKey ? String(r[nameKey] ?? '').trim() : '';
+          const hoursRaw = String(r[hoursKey] ?? '').trim();
+          if (!empId && !hoursRaw) continue; // 空行跳过
+          const hours = parseFloat(hoursRaw);
+          if (!empId) { invalid.push({ empId: '(空)', name: nameRaw, hours: hoursRaw, reason: '工号为空' }); continue; }
+          if (isNaN(hours) || hours < 0) { invalid.push({ empId, name: nameRaw, hours: hoursRaw, reason: '工时不是有效数字' }); continue; }
+          if (!byEmp.has(empId)) { unmatched.push({ empId, name: nameRaw, hours: hoursRaw }); continue; }
+          rowsMap.set(empId, { emp_id: empId, hours, name: byEmp.get(empId).name, updated_at: Date.now() });
+        }
+        setFileName(file.name);
+        setParseResult({
+          rows: [...rowsMap.values()],
+          matched: rowsMap.size,
+          unmatched, invalid,
+          total: rowsMap.size + unmatched.length + invalid.length
+        });
+      } catch (err) {
+        setErrMsg('文件解析失败：' + (err.message || '请确认是 .xlsx / .xls / .csv 文件'));
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = '';
+  };
+
+  const doImport = async () => {
+    if (!parseResult || parseResult.rows.length === 0) return;
+    setImporting(true); setErrMsg('');
+    try {
+      await sbUpsertWorkHours(parseResult.rows.map(({ name, ...r }) => r));
+      setImportDone(true);
+      if (onImported) onImported();
+    } catch (err) {
+      setErrMsg('导入失败：' + (err.message || '请检查网络后重试'));
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <Modal open={true} onClose={onClose} title="导入工时数据">
+      <div className="space-y-4">
+        {/* 步骤说明 */}
+        <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3 text-xs text-gray-400 leading-relaxed">
+          <p><span className="text-indigo-300 font-medium">①</span> 下载模板，按格式填写（或用你自己的表，表头含 <span className="text-white">工号、工时</span> 即可，姓名列仅作核对）</p>
+          <p className="mt-1"><span className="text-indigo-300 font-medium">②</span> 上传表格，系统按工号自动匹配学员</p>
+          <p className="mt-1"><span className="text-indigo-300 font-medium">③</span> 确认无误后导入，工时为<span className="text-white">覆盖更新</span>，导入后全员可见</p>
+        </div>
+
+        {/* 操作区 */}
+        <div className="flex gap-3">
+          <button onClick={downloadTemplate}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-gray-600 text-gray-300 hover:text-white hover:border-gray-400 text-sm font-medium transition">
+            <Icon.Download width={15} height={15}/> 下载模板
+          </button>
+          <label className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition cursor-pointer">
+            <Icon.Upload width={15} height={15}/> 选择工时表格
+            <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} className="hidden"/>
+          </label>
+        </div>
+
+        {errMsg && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm text-red-300">{errMsg}</div>
+        )}
+
+        {/* 解析结果 */}
+        {parseResult && !importDone && (
+          <div className="border border-gray-700 rounded-lg overflow-hidden">
+            <div className="bg-gray-800/70 px-4 py-2.5 text-xs text-gray-400 flex items-center justify-between">
+              <span className="truncate">📄 {fileName}</span>
+              <span>共识别 {parseResult.total} 行</span>
+            </div>
+            <div className="p-4 space-y-3 text-sm">
+              <div className="flex items-center gap-4">
+                <span className="text-emerald-300">✓ 可导入：{parseResult.matched} 人</span>
+                {parseResult.unmatched.length > 0 && <span className="text-amber-300">⚠ 未匹配：{parseResult.unmatched.length} 人</span>}
+                {parseResult.invalid.length > 0 && <span className="text-red-300">✗ 格式错误：{parseResult.invalid.length} 行</span>}
+              </div>
+
+              {parseResult.unmatched.length > 0 && (
+                <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3">
+                  <p className="text-xs text-amber-300 font-medium mb-2">以下工号在系统里没找到对应学员（已跳过）：</p>
+                  <div className="max-h-32 overflow-y-auto scrollbar-thin text-xs text-gray-400 space-y-1">
+                    {parseResult.unmatched.map((u, i) => (
+                      <div key={i} className="flex justify-between">
+                        <span>工号 {u.empId} {u.name && <span className="text-gray-600">（{u.name}）</span>}</span>
+                        <span>工时 {u.hours}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-gray-500 mt-2">提示：可能是工号填错，或该学员档案里没录工号</p>
+                </div>
+              )}
+
+              {parseResult.invalid.length > 0 && (
+                <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-3">
+                  <p className="text-xs text-red-300 font-medium mb-2">以下行格式有误（已跳过）：</p>
+                  <div className="max-h-24 overflow-y-auto scrollbar-thin text-xs text-gray-400 space-y-1">
+                    {parseResult.invalid.map((u, i) => (
+                      <div key={i}>工号 {u.empId} — {u.reason}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-1">
+                <button onClick={onClose} className="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 text-sm transition">取消</button>
+                <button onClick={doImport} disabled={importing || parseResult.matched === 0}
+                  className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition">
+                  {importing ? '导入中...' : `确认导入 ${parseResult.matched} 人的工时`}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 导入成功 */}
+        {importDone && (
+          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-4 text-center">
+            <p className="text-emerald-300 font-medium">🎉 导入成功！已更新 {parseResult.matched} 名学员的工时</p>
+            <p className="text-xs text-gray-400 mt-1">各门店登录后即可看到最新工时数据</p>
+            <button onClick={onClose} className="mt-3 px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition">完成</button>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 function SyncModal({ data, syncStatus, lastSyncTime, setLastSyncTime, onClose, onImport, isRemoteUpdate }) {
   const [status, setStatus] = useState({ type: '', msg: '' });
   const [busy, setBusy] = useState(false);
@@ -2556,12 +2797,37 @@ function App() {
   const [dashboardUnlocked, setDashboardUnlocked] = useState(false);
   const [showPwdModal, setShowPwdModal] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
+  const [showHoursModal, setShowHoursModal] = useState(false);
+  const [workHours, setWorkHours] = useState(() => loadWorkHoursCache());
   const [syncStatus, setSyncStatus] = useState('connecting');
   const [lastSyncTime, setLastSyncTime] = useState(null);
   const [pushStatus, setPushStatus] = useState({ type: '', msg: '' });
   const isRemoteUpdate = useRef(false);
   const sbReady = useRef(false);
   const prevDataRef = useRef(null);
+
+  // 拉取云端工时表（登录/打开页面时 + 每 5 分钟 + 切回页面时自动刷新）
+  const refreshWorkHours = useCallback(async () => {
+    try {
+      if (!(await _sbHasSession())) return;
+      const map = await sbFetchWorkHours();
+      setWorkHours(map);
+      saveWorkHoursCache(map);
+    } catch(e) { /* 工时拉取失败不打扰主流程 */ }
+  }, []);
+
+  useEffect(() => {
+    refreshWorkHours();
+    const t = setInterval(() => {
+      if (document.visibilityState === 'visible') refreshWorkHours();
+    }, 5 * 60 * 1000);
+    const onVis = () => { if (document.visibilityState === 'visible') refreshWorkHours(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [currentUser, refreshWorkHours]);
 
   // Save to localStorage + push changed rows to Supabase
   useEffect(() => {
@@ -2825,6 +3091,14 @@ function App() {
               >
                 <Icon.Dashboard width={16} height={16}/> 管理看板
               </button>
+              {currentUser.id === '000' && (
+                <button
+                  onClick={() => setShowHoursModal(true)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-gray-400 hover:text-white hover:bg-gray-800"
+                >
+                  <Icon.Clock width={16} height={16}/> 导入工时
+                </button>
+              )}
               <button
                 onClick={() => setShowSyncModal(true)}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-gray-400 hover:text-white hover:bg-gray-800"
@@ -2862,6 +3136,7 @@ function App() {
           onDeleteTrainee={handleDeleteTrainee}
           onUpdateProgress={handleUpdateProgress}
           stores={stores}
+          workHours={workHours}
         />
       )}
       {view === 'dashboard' && !isManager && (
@@ -2880,6 +3155,15 @@ function App() {
             setView(isManager ? 'region_dashboard' : 'dashboard');
           }}
           onClose={() => setShowPwdModal(false)}
+        />
+      )}
+
+      {/* 工时导入弹窗（仅 000 账号） */}
+      {showHoursModal && (
+        <WorkHoursImportModal
+          trainees={data.trainees}
+          onClose={() => setShowHoursModal(false)}
+          onImported={refreshWorkHours}
         />
       )}
 

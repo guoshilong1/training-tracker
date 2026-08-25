@@ -535,6 +535,8 @@ function getCurrentDay(trainee) {
   return null; // All completed
 }
 
+function isCertified(trainee) { return getCurrentDay(trainee) === null; }
+
 function isDayUnlocked(trainee, dayKey) {
   const allDays = getAllDays(trainee.route, trainee.subRoute).filter(d => d.items.length > 0);
   const idx = allDays.findIndex(d => d.key === dayKey);
@@ -1130,6 +1132,9 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
             <div className="text-center text-gray-500 text-sm py-8">暂无学员数据</div>
           )           : filtered.map(t => {
             const prog = calcProgress(t);
+            const certified = isCertified(t);
+            const displayPercent = certified ? 100 : prog.percent;
+            const displayCompleted = certified ? prog.total : prog.completed;
             const route = TRAINING_DATA.routes.find(r => r.id === t.route);
             const isSelected = t.id === selectedId;
             const warning = getWorkHoursWarning(t, workHours?.[t.empId]?.hours);
@@ -1166,13 +1171,16 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
                 </div>
                 <div className="mt-2 flex items-center gap-2">
                   <div className="flex-1 h-5 bg-gray-800 rounded-full overflow-hidden relative">
-                    <div className={`h-full progress-bar-fill rounded-full flex items-center justify-end pr-2 ${prog.percent === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{width: `${Math.max(prog.percent, 6)}%`}}>
-                      {prog.percent >= 35 && (
-                        <span className="text-[10px] font-medium text-white/90 tabular-nums">{prog.completed}/{prog.total}</span>
+                    <div className={`h-full progress-bar-fill rounded-full flex items-center justify-end pr-2 ${displayPercent === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{width: `${Math.max(displayPercent, 6)}%`}}>
+                      {displayPercent >= 35 && prog.total > 0 && (
+                        <span className="text-[10px] font-medium text-white/90 tabular-nums">{displayCompleted}/{prog.total}</span>
+                      )}
+                      {displayPercent === 100 && prog.total === 0 && (
+                        <span className="text-[10px] font-medium text-white/90 tabular-nums">已认证</span>
                       )}
                     </div>
-                    {prog.percent < 35 && (
-                      <span className="absolute inset-y-0 right-2 flex items-center text-[10px] text-gray-500 tabular-nums">{prog.completed}/{prog.total}</span>
+                    {displayPercent < 35 && prog.total > 0 && (
+                      <span className="absolute inset-y-0 right-2 flex items-center text-[10px] text-gray-500 tabular-nums">{displayCompleted}/{prog.total}</span>
                     )}
                   </div>
                 </div>
@@ -1398,20 +1406,18 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
     return { total, inProgress, completed, notStarted, avgProgress };
   }, [trainees]);
 
-  // Group by store (exclude already certified/completed trainees)
+  // Group by store (total includes certified trainees; completion rate = certified / total)
   const storeStats = useMemo(() => {
     const map = {};
-    trainees
-      .filter(t => calcProgress(t).percent < 100)
-      .forEach(t => {
-        if (!map[t.store]) map[t.store] = { store: t.store, total: 0, completed: 0, inProgress: 0, sumPercent: 0 };
-        const p = calcProgress(t);
-        map[t.store].total++;
-        map[t.store].sumPercent += p.percent;
-        if (p.percent === 100) map[t.store].completed++;
-        else if (p.completed > 0) map[t.store].inProgress++;
-      });
-    return Object.values(map).map(s => ({ ...s, avgPercent: Math.round(s.sumPercent / s.total) }));
+    trainees.forEach(t => {
+      if (!map[t.store]) map[t.store] = { store: t.store, total: 0, certified: 0, inProgress: 0 };
+      const certified = isCertified(t);
+      const p = calcProgress(t);
+      map[t.store].total++;
+      if (certified) map[t.store].certified++;
+      else if (p.completed > 0) map[t.store].inProgress++;
+    });
+    return Object.values(map).map(s => ({ ...s, completionRate: s.total > 0 ? Math.round((s.certified / s.total) * 100) : 0 }));
   }, [trainees]);
 
   // Phase distribution
@@ -1667,10 +1673,10 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
                   <div key={s.store}>
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-sm text-gray-300">{s.store}</span>
-                      <span className="text-xs text-gray-500">未认证 {s.total} 人 · 平均进度 {s.avgPercent}%</span>
+                      <span className="text-xs text-gray-500">总人数 {s.total} 人 · 已认证 {s.certified} 人 · 完成率 {s.completionRate}%</span>
                     </div>
                     <div className="h-2.5 bg-gray-800 rounded-full overflow-hidden">
-                      <div className="h-full bg-gradient-to-r from-indigo-500 to-indigo-400 progress-bar-fill rounded-full" style={{width: `${s.avgPercent}%`}}></div>
+                      <div className="h-full bg-gradient-to-r from-indigo-500 to-indigo-400 progress-bar-fill rounded-full" style={{width: `${s.completionRate}%`}}></div>
                     </div>
                   </div>
                 ))}
@@ -1873,10 +1879,9 @@ function RegionDashboardView({ trainees, stores, config, workHours }) {
   const areaStats = useMemo(() => {
     return config.filter(c => c.role === 'area').map(c => {
       const list = trainees.filter(t => (t.area || '000') === c.id);
-      const progressList = list.map(t => calcProgress(t));
       const total = list.length;
-      const completed = progressList.filter(p => p.percent === 100).length;
-      const inProgress = progressList.filter(p => p.percent > 0 && p.percent < 100).length;
+      const completed = list.filter(t => isCertified(t)).length;
+      const inProgress = list.filter(t => !isCertified(t) && calcProgress(t).percent > 0).length;
       const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
       return { ...c, total, avg: completionRate, completed, inProgress };
     });

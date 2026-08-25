@@ -3001,6 +3001,39 @@ function App() {
     setDashboardUnlocked(false);
   };
 
+  // 导出所有区域「正在带训」学员的工号表（已认证/已完成全部带训天的不导出）
+  const handleExportEmpIds = () => {
+    const list = data.trainees
+      .filter(t => getCurrentDay(t) !== null)
+      .sort((a, b) => {
+        const aa = a.area || '000', bb = b.area || '000';
+        if (aa !== bb) return aa.localeCompare(bb, undefined, { numeric: true });
+        return String(a.store || '').localeCompare(String(b.store || ''), 'zh');
+      });
+    const aoa = [['工号', '姓名', '门店', '区域', '带训进度', '备注']];
+    for (const t of list) {
+      const cfg = AREA_MAP[t.area || '000'];
+      const areaName = cfg ? cfg.name.replace('区域带训追踪系统', '') : (t.area || '000');
+      const prog = calcProgress(t);
+      aoa.push([
+        t.empId || '',
+        t.name || '',
+        t.store || '',
+        areaName,
+        prog.percent + '%',
+        t.empId ? '' : '工号未填，请补录'
+      ]);
+    }
+    if (list.length === 0) { alert('当前没有正在带训的学员，无需导出'); return; }
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{ wch: 14 }, { wch: 12 }, { wch: 22 }, { wch: 10 }, { wch: 10 }, { wch: 20 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '带训学员工号');
+    const d = new Date();
+    const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    XLSX.writeFile(wb, `带训学员工号表_${stamp}.xlsx`);
+  };
+
   const handleAddTrainee = (trainee) => {
     const newTrainee = {
       id: genId(),
@@ -3097,6 +3130,15 @@ function App() {
                   className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-gray-400 hover:text-white hover:bg-gray-800"
                 >
                   <Icon.Clock width={16} height={16}/> 导入工时
+                </button>
+              )}
+              {currentUser.id === '000' && (
+                <button
+                  onClick={handleExportEmpIds}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-gray-400 hover:text-white hover:bg-gray-800"
+                  title="导出所有区域正在带训学员的工号表（已认证不导出）"
+                >
+                  <Icon.Download width={16} height={16}/> 导出工号
                 </button>
               )}
               <button

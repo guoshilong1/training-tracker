@@ -299,11 +299,21 @@ function _sbNotifyStatus(status) {
 
 // DB row → trainee object
 function rowToTrainee(row) {
+  let subRoute = row.sub_route || row.progress?._meta?.subRoute || '';
+  // 兼容旧数据：subRoute 未单独持久化时，从 progress 的 day key 反推
+  if (!subRoute && row.route === 'part_time' && row.progress) {
+    const keys = Object.keys(row.progress).filter(k => k.startsWith('part_time_'));
+    if (keys.length > 0) {
+      const m = keys[0].match(/^part_time_(.+?)_\d+-\d+-\d+$/);
+      if (m) subRoute = m[1];
+    }
+  }
   return {
     id: row.id,
     name: row.name,
     store: row.store,
     route: row.route,
+    subRoute: subRoute || '',
     startDate: row.start_date,
     master: row.master,
     area: row.area || '000',
@@ -317,6 +327,9 @@ function rowToTrainee(row) {
 
 // trainee object → DB row
 function traineeToRow(t) {
+  // 数据库暂无 sub_route 列，先把 subRoute 存进 progress._meta，保证多设备同步不丢
+  const progress = { ...(t.progress || {}) };
+  progress._meta = { ...(progress._meta || {}), subRoute: t.subRoute || '' };
   return {
     id: t.id,
     name: t.name || '',
@@ -327,7 +340,7 @@ function traineeToRow(t) {
     area: t.area || '000',
     note: t.note || '',
     emp_id: t.empId || '',
-    progress: t.progress || {},
+    progress: progress,
     deleted: false,
     updated_at: t._updatedAt || Date.now()
   };
@@ -375,6 +388,11 @@ function mergeDayProgress(lProgress, rProgress) {
   const allDays = new Set([...Object.keys(lProgress || {}), ...Object.keys(rProgress || {})]);
   const merged = {};
   for (const day of allDays) {
+    // _meta 是进度元数据（如 subRoute），不参与 day 级合并
+    if (day === '_meta') {
+      merged._meta = { ...(lProgress?._meta || {}), ...(rProgress?._meta || {}) };
+      continue;
+    }
     const lp = lProgress?.[day] || {};
     const rp = rProgress?.[day] || {};
 

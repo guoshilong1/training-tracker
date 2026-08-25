@@ -1137,7 +1137,7 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
               <button
                 key={t.id}
                 onClick={() => onSelectTrainee(t.id)}
-                className={`group w-full text-left p-3 rounded-lg transition ${isSelected ? 'bg-indigo-600/20 border border-indigo-500/40' : warning ? 'bg-yellow-500/10 border border-yellow-500/30 hover:bg-yellow-500/15' : 'hover:bg-gray-800/50 border border-transparent'}`}
+                className={`group w-full text-left p-3 rounded-lg transition ${isSelected ? 'bg-indigo-600/20 border border-indigo-500/40' : warning ? 'bg-yellow-500/25 border border-yellow-500/50 hover:bg-yellow-500/35' : 'hover:bg-gray-800/50 border border-transparent'}`}
               >
                   <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-white">{t.name}</span>
@@ -1161,7 +1161,7 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
                   <Icon.Store/> {t.store}
                   {t.master && <><span className="text-gray-700">·</span><Icon.User/> {t.master}</>}
                   {t.empId && workHours?.[t.empId] != null && (
-                    <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded border tabular-nums whitespace-nowrap ${warning ? 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30' : 'bg-amber-500/10 text-amber-300 border-amber-500/20'}`}>⏱ {workHours[t.empId].hours}工时</span>
+                    <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded border tabular-nums whitespace-nowrap ${warning ? 'bg-yellow-500/25 text-yellow-200 border-yellow-500/50' : 'bg-amber-500/10 text-amber-300 border-amber-500/20'}`}>⏱ {workHours[t.empId].hours}工时</span>
                   )}
                 </div>
                 <div className="mt-2 flex items-center gap-2">
@@ -1377,7 +1377,9 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
       if (filterRoute && t.route !== filterRoute) return false;
       return true;
     });
-    list = list.map(t => ({ ...t, _progress: calcProgress(t), _currentDay: getCurrentDay(t) }));
+    list = list
+      .filter(t => calcProgress(t).percent < 100) // 看板明细只显示未完成（未认证）学员
+      .map(t => ({ ...t, _progress: calcProgress(t), _currentDay: getCurrentDay(t) }));
     if (sortBy === 'progress') list.sort((a, b) => b._progress.percent - a._progress.percent);
     else if (sortBy === 'name') list.sort((a, b) => a.name.localeCompare(b.name));
     else if (sortBy === 'store') list.sort((a, b) => a.store.localeCompare(b.store));
@@ -1396,17 +1398,19 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
     return { total, inProgress, completed, notStarted, avgProgress };
   }, [trainees]);
 
-  // Group by store
+  // Group by store (exclude already certified/completed trainees)
   const storeStats = useMemo(() => {
     const map = {};
-    trainees.forEach(t => {
-      if (!map[t.store]) map[t.store] = { store: t.store, total: 0, completed: 0, inProgress: 0, sumPercent: 0 };
-      const p = calcProgress(t);
-      map[t.store].total++;
-      map[t.store].sumPercent += p.percent;
-      if (p.percent === 100) map[t.store].completed++;
-      else if (p.completed > 0) map[t.store].inProgress++;
-    });
+    trainees
+      .filter(t => calcProgress(t).percent < 100)
+      .forEach(t => {
+        if (!map[t.store]) map[t.store] = { store: t.store, total: 0, completed: 0, inProgress: 0, sumPercent: 0 };
+        const p = calcProgress(t);
+        map[t.store].total++;
+        map[t.store].sumPercent += p.percent;
+        if (p.percent === 100) map[t.store].completed++;
+        else if (p.completed > 0) map[t.store].inProgress++;
+      });
     return Object.values(map).map(s => ({ ...s, avgPercent: Math.round(s.sumPercent / s.total) }));
   }, [trainees]);
 
@@ -1465,7 +1469,7 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
           }
         }
       });
-      const baseEntry = { id: t.id, name: t.name, store: t.store, note: t.note || '' };
+      const baseEntry = { id: t.id, name: t.name, store: t.store, note: t.note || '', empId: t.empId, route: t.route, subRoute: t.subRoute };
       const yEntry = { ...baseEntry, count: yCount, lastTime: yLastTime, completedDay: yCompletedDay };
       const tEntry = { ...baseEntry, count: tCount, lastTime: tLastTime, completedDay: tCompletedDay };
       // 已打卡必须以至少勾选1项为准，仅确认完成但没勾选项不算打卡
@@ -1537,7 +1541,7 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
         {hourWarnings.length > 0 && (
           <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-4 mb-6">
             <h3 className="text-sm font-medium text-yellow-300 mb-3 flex items-center gap-2"><Icon.Clock/> 工时预警</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-64 overflow-y-auto scrollbar-thin pr-1">
               {hourWarnings.map(t => (
                 <div key={t.id} className="flex items-center justify-between bg-gray-900/50 border border-yellow-500/15 rounded-lg px-3 py-2">
                   <div className="min-w-0">
@@ -1580,6 +1584,8 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
                       <span className="text-xs text-gray-500 truncate">{p.store}</span>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
+                      {p.empId && workHours?.[p.empId] != null && <span className="text-xs text-amber-300/80 tabular-nums">⏱ {workHours[p.empId].hours}h</span>}
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">{countCerts(p)}证</span>
                       <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">勾了{p.count}项</span>
                       {p.lastTime && <span className="text-xs text-gray-500">{timeStr(p.lastTime)}</span>}
                     </div>
@@ -1603,6 +1609,8 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
                       <span className="text-xs text-gray-500 truncate">{p.store}</span>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
+                      {p.empId && workHours?.[p.empId] != null && <span className="text-xs text-amber-300/80 tabular-nums">⏱ {workHours[p.empId].hours}h</span>}
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">{countCerts(p)}证</span>
                       <span className="text-xs px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300">勾了{p.count}项</span>
                       {p.lastTime && <span className="text-xs text-gray-500">{timeStr(p.lastTime)}</span>}
                     </div>
@@ -1626,12 +1634,16 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
                     <span className="text-sm text-gray-300 font-medium">{p.name}</span>
                     <span className="text-xs text-gray-600 truncate">{p.store}</span>
                   </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {p.empId && workHours?.[p.empId] != null && <span className="text-xs text-amber-300/80 tabular-nums">⏱ {workHours[p.empId].hours}h</span>}
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">{countCerts(p)}证</span>
+                  </div>
                   <input
                     type="text"
                     defaultValue={p.note}
                     onBlur={e => onUpdateNote && onUpdateNote(p.id, e.target.value.trim())}
                     placeholder="备注原因"
-                    className="w-28 md:w-40 bg-gray-800/60 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 placeholder-gray-600 focus:border-rose-400/50 focus:outline-none"
+                    className="w-28 md:w-48 bg-gray-800/60 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 placeholder-gray-600 focus:border-rose-400/50 focus:outline-none"
                   />
                   <span className="text-xs px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 flex-shrink-0">{p.streakLabel}</span>
                 </div>
@@ -1655,7 +1667,7 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
                   <div key={s.store}>
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-sm text-gray-300">{s.store}</span>
-                      <span className="text-xs text-gray-500">{s.completed}/{s.total}完成 · {s.avgPercent}%</span>
+                      <span className="text-xs text-gray-500">未认证 {s.total} 人 · 平均进度 {s.avgPercent}%</span>
                     </div>
                     <div className="h-2.5 bg-gray-800 rounded-full overflow-hidden">
                       <div className="h-full bg-gradient-to-r from-indigo-500 to-indigo-400 progress-bar-fill rounded-full" style={{width: `${s.avgPercent}%`}}></div>
@@ -1872,8 +1884,8 @@ function RegionDashboardView({ trainees, stores, config, workHours }) {
 
   const incompleteList = useMemo(() => {
     return visibleTrainees
-      .filter(t => calcProgress(t).percent < 100)
-      .map(t => ({ ...t, _progress: calcProgress(t), _streak: calcNoCheckInStreak(t, today) }))
+      .filter(t => calcProgress(t).percent < 100 && getCurrentDay(t) !== null) // 已完成/已认证人员不显示
+      .map(t => ({ ...t, _progress: calcProgress(t), _streak: calcNoCheckInStreak(t, today), _certs: countCerts(t) }))
       .filter(t => t._streak.days > 0) // 排除今日已打卡人员，避免影响分析
       .sort((a, b) => {
         // 优先按连续未打卡天数从大到小排；天数相同再按区域排序
@@ -2118,6 +2130,7 @@ function RegionDashboardView({ trainees, stores, config, workHours }) {
                   <th className="text-left px-3 py-2 font-medium">当前阶段</th>
                   <th className="text-left px-3 py-2 font-medium">进度</th>
                   <th className="text-left px-3 py-2 font-medium">工时</th>
+                  <th className="text-left px-3 py-2 font-medium">证书数</th>
                   <th className="text-left px-3 py-2 font-medium">未打卡</th>
                   <th className="text-left px-3 py-2 font-medium">备注</th>
                 </tr>
@@ -2141,12 +2154,13 @@ function RegionDashboardView({ trainees, stores, config, workHours }) {
                         </div>
                       </td>
                       <td className="px-3 py-2 text-xs text-gray-400 tabular-nums">{t.empId && workHours?.[t.empId] != null ? `${workHours[t.empId].hours}h` : '—'}</td>
+                      <td className="px-3 py-2 text-xs text-amber-300/80 tabular-nums">{t._certs || 0}</td>
                       <td className="px-3 py-2"><span className="text-xs px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-400">{t._streak.label}</span></td>
                       <td className="px-3 py-2 text-xs text-amber-300/80 max-w-[180px] truncate" title={t.note || ''}>{t.note || '—'}</td>
                     </tr>
                   );
                 })}
-                {incompleteList.length === 0 && <tr><td colSpan="8" className="text-center text-gray-500 py-6">暂无数据</td></tr>}
+                {incompleteList.length === 0 && <tr><td colSpan="9" className="text-center text-gray-500 py-6">暂无数据</td></tr>}
               </tbody>
             </table>
           </div>
@@ -2176,7 +2190,7 @@ function RegionDashboardView({ trainees, stores, config, workHours }) {
           </div>
         </div>
 
-        {/* Row 1: 昨日已打卡 | 今日已打卡 */}
+        {/* Row 1: 昨日已打卡 | 今日已打卡 | 昨日未打卡 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Yesterday's Check-in */}
         <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
@@ -2191,7 +2205,11 @@ function RegionDashboardView({ trainees, stores, config, workHours }) {
                   <span className="text-xs text-gray-600 truncate">{t.store}</span>
                   <span className="text-xs text-indigo-400/80">{t.areaName}</span>
                 </div>
-                {t.lastTime && <span className="text-xs text-gray-500 flex-shrink-0">{timeStr(t.lastTime)}</span>}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {t.empId && workHours?.[t.empId] != null && <span className="text-xs text-amber-300/80 tabular-nums">⏱ {workHours[t.empId].hours}h</span>}
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">{countCerts(t)}证</span>
+                  {t.lastTime && <span className="text-xs text-gray-500">{timeStr(t.lastTime)}</span>}
+                </div>
               </div>
             ))}
           </div>
@@ -2210,15 +2228,18 @@ function RegionDashboardView({ trainees, stores, config, workHours }) {
                   <span className="text-xs text-gray-600 truncate">{t.store}</span>
                   <span className="text-xs text-indigo-400/80">{t.areaName}</span>
                 </div>
-                {t.lastTime && <span className="text-xs text-gray-500 flex-shrink-0">{timeStr(t.lastTime)}</span>}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {t.empId && workHours?.[t.empId] != null && <span className="text-xs text-amber-300/80 tabular-nums">⏱ {workHours[t.empId].hours}h</span>}
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">{countCerts(t)}证</span>
+                  {t.lastTime && <span className="text-xs text-gray-500">{timeStr(t.lastTime)}</span>}
+                </div>
               </div>
             ))}
           </div>
         </div>
-        </div>
 
         {/* Row 2: 昨日未打卡 */}
-        <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
+        <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4 lg:col-span-2">
           <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2"><Icon.Calendar/> 昨日未打卡 ({yesterdayAndTodayStats.yesterdayUnchecked.length})</h3>
           <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
             {yesterdayAndTodayStats.yesterdayUnchecked.length === 0 ? (
@@ -2230,11 +2251,16 @@ function RegionDashboardView({ trainees, stores, config, workHours }) {
                   <span className="text-xs text-gray-600 truncate">{t.store}</span>
                   <span className="text-xs text-indigo-400/80">{t.areaName}</span>
                 </div>
-                {t.note && <span className="text-xs text-amber-300/80 truncate max-w-[140px]" title={t.note}>📝 {t.note}</span>}
-                <span className="text-xs px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 flex-shrink-0">{t.streakLabel}</span>
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  {t.empId && workHours?.[t.empId] != null && <span className="text-xs text-amber-300/80 tabular-nums">⏱ {workHours[t.empId].hours}h</span>}
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">{countCerts(t)}证</span>
+                  {t.note && <span className="text-xs text-amber-300/80 truncate max-w-[260px]" title={t.note}>📝 {t.note}</span>}
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300">{t.streakLabel}</span>
+                </div>
               </div>
             ))}
           </div>
+        </div>
         </div>
 
         {/* Area Comparison Table */}
@@ -2300,8 +2326,9 @@ function RegionDashboardView({ trainees, stores, config, workHours }) {
 // ============ Main App ============
 // ============ Password Modal ============
 const DASHBOARD_PASSWORD = '415';
+const ADMIN_PASSWORD = '1216';
 
-function PasswordModal({ onSuccess, onClose }) {
+function PasswordModal({ password = DASHBOARD_PASSWORD, title = '管理看板验证', description = '请输入密码进入后台', onSuccess, onClose }) {
   const [pwd, setPwd] = useState('');
   const [error, setError] = useState(false);
   const inputRef = useRef(null);
@@ -2312,7 +2339,7 @@ function PasswordModal({ onSuccess, onClose }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (pwd === DASHBOARD_PASSWORD) {
+    if (pwd === password) {
       onSuccess();
     } else {
       setError(true);
@@ -2329,8 +2356,8 @@ function PasswordModal({ onSuccess, onClose }) {
             <Icon.Lock width={20} height={20} className="text-indigo-400"/>
           </div>
           <div>
-            <h3 className="text-base font-bold text-white">管理看板验证</h3>
-            <p className="text-xs text-gray-500">请输入密码进入后台</p>
+            <h3 className="text-base font-bold text-white">{title}</h3>
+            <p className="text-xs text-gray-500">{description}</p>
           </div>
         </div>
         <input
@@ -2873,6 +2900,8 @@ function App() {
   const [showPwdModal, setShowPwdModal] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [showHoursModal, setShowHoursModal] = useState(false);
+  const [showAdminPwdModal, setShowAdminPwdModal] = useState(false);
+  const [pendingAdminAction, setPendingAdminAction] = useState(null); // 'import_hours' | 'export_empids'
   const [workHours, setWorkHours] = useState(() => loadWorkHoursCache());
   const [syncStatus, setSyncStatus] = useState('connecting');
   const [lastSyncTime, setLastSyncTime] = useState(null);
@@ -3201,7 +3230,7 @@ function App() {
               </button>
               {currentUser.id === '000' && (
                 <button
-                  onClick={() => setShowHoursModal(true)}
+                  onClick={() => { setPendingAdminAction('import_hours'); setShowAdminPwdModal(true); }}
                   className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-gray-400 hover:text-white hover:bg-gray-800"
                 >
                   <Icon.Clock width={16} height={16}/> 导入工时
@@ -3209,7 +3238,7 @@ function App() {
               )}
               {currentUser.id === '000' && (
                 <button
-                  onClick={handleExportEmpIds}
+                  onClick={() => { setPendingAdminAction('export_empids'); setShowAdminPwdModal(true); }}
                   className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-gray-400 hover:text-white hover:bg-gray-800"
                   title="导出所有区域正在带训学员的工号表（已认证不导出）"
                 >
@@ -3272,6 +3301,22 @@ function App() {
             setView(isManager ? 'region_dashboard' : 'dashboard');
           }}
           onClose={() => setShowPwdModal(false)}
+        />
+      )}
+
+      {/* 管理员操作密码验证（导入工时 / 导出工号） */}
+      {showAdminPwdModal && (
+        <PasswordModal
+          password={ADMIN_PASSWORD}
+          title="管理员操作验证"
+          description="请输入密码后继续"
+          onSuccess={() => {
+            setShowAdminPwdModal(false);
+            if (pendingAdminAction === 'import_hours') setShowHoursModal(true);
+            else if (pendingAdminAction === 'export_empids') handleExportEmpIds();
+            setPendingAdminAction(null);
+          }}
+          onClose={() => { setShowAdminPwdModal(false); setPendingAdminAction(null); }}
         />
       )}
 

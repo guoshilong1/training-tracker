@@ -9,6 +9,7 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/lz-string@1.4.4/libs/lz-string.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="training-data.js"></script>
   <style>
     * { -webkit-tap-highlight-color: transparent; }
@@ -103,299 +104,59 @@ function saveData(data) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
-// ============ GitHub Issues API Sync (Pure HTTP, CORS *, works on all networks) ============
-const GH_TOKEN = 'DLWiJ1dzzSENNemEUcatKXwGozKK8Rw8DXcV_phg'.split('').reverse().join('');
-const GH_OWNER = 'guoshilong1';
-const GH_REPO = 'training-tracker';
-const GH_ISSUE_NUMBER = 1;
-const GH_COMMENTS_URL = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/issues/${GH_ISSUE_NUMBER}/comments`;
-const GH_COMMENT_URL = (id) => `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/issues/comments/${id}`;
+// ============ Supabase Sync (PostgreSQL, 每学员一行) ============
+const SUPABASE_URL = 'https://micunbanfan.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_KrCOzlUPTcrb8S4-ajTjww_EhKibtaC';
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-let _ghCommentId = null;
-let _ghCommentUpdatedAt = '';
-let _ghSaveTimer = null;
-let _ghConnected = false;
-let _ghPushing = false;
-let _ghPushTimer = null;
-let _ghBackoffUntil = 0; // GitHub secondary rate limit backoff: skip requests until this timestamp
-let _lastPushErrorMsg = ''; // Last push error message, surfaced in the sync modal
-const _ghListeners = new Set();
-const _ghStatusListeners = new Set();
-const _ghPushStatusListeners = new Set();
+let _sbReady = false;
+let _sbPushing = false;
+let _sbSaveTimer = null;
+let _lastPushErrorMsg = '';
+const _sbListeners = new Set();
+const _sbStatusListeners = new Set();
+const _sbPushStatusListeners = new Set();
 
-function _ghNotifyPushStatus(status, msg) {
+function _sbNotifyPushStatus(status, msg) {
   if (status === 'error' && msg) _lastPushErrorMsg = msg;
-  _ghPushStatusListeners.forEach(cb => cb(status, msg));
+  _sbPushStatusListeners.forEach(cb => cb(status, msg));
+}
+function _sbNotifyStatus(status) {
+  _sbStatusListeners.forEach(cb => cb(status));
 }
 
-function initGitHubSync() {
-  _ghStatusListeners.forEach(cb => cb('connecting'));
-  ghFetchData().then(() => {
-    _ghConnected = true;
-    _ghStatusListeners.forEach(cb => cb('connected'));
-  }).catch(e => {
-    console.warn('[GitHub] Init error:', e.message);
-    _ghConnected = true;
-    _ghStatusListeners.forEach(cb => cb('connected'));
-  });
+// DB row → trainee object
+function rowToTrainee(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    store: row.store,
+    route: row.route,
+    startDate: row.start_date,
+    master: row.master,
+    area: row.area || '000',
+    note: row.note || '',
+    progress: row.progress || {},
+    createdAt: row.created_at || new Date().toISOString(),
+    _updatedAt: row.updated_at || 0
+  };
 }
 
-// Fetch raw remote data WITHOUT triggering listeners (used by push to merge before overwriting)
-async function _ghFetchRaw() {
-  try {
-    // Always fetch fresh — no ETag. ETag on this endpoint was causing false 304s and stale merges.
-    const url = `${GH_COMMENTS_URL}?per_page=1&sort=created&direction=desc&_t=${Date.now()}`;
-    const res = await fetch(url, {
-      headers: {
-        'Authorization': `token ${GH_TOKEN}`,
-        'Accept': 'application/vnd.github.v3+json'
-      },
-      cache: 'no-cache'
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const comments = await res.json();
-    if (!comments || comments.length === 0) return null;
-    for (const c of comments) {
-      try {
-        let body = c.body.trim();
-        if (body.startsWith('LZ:')) body = LZString.decompressFromBase64(body.slice(3));
-        const data = JSON.parse(body);
-        _ghCommentId = c.id;
-        _ghCommentUpdatedAt = c.updated_at;
-        console.log('[GitHub] Raw fetch got', (data.trainees || []).length, 'trainees, updated_at:', c.updated_at);
-        return data;
-      } catch(e) { continue; }
-    }
-    return null;
-  } catch(e) {
-    console.warn('[GitHub] Raw fetch error:', e.message);
-    return null;
-  }
-}
-
-async function ghFetchData() {
-  try {
-    // Always fetch fresh — compare updated_at to detect changes. ETag caused false 304s.
-    const url = `${GH_COMMENTS_URL}?per_page=1&sort=created&direction=desc&_t=${Date.now()}`;
-    const res = await fetch(url, {
-      headers: {
-        'Authorization': `token ${GH_TOKEN}`,
-        'Accept': 'application/vnd.github.v3+json'
-      },
-      cache: 'no-cache'
-    });
-    if (!res.ok) {
-      if (res.status === 403 || res.status === 429) {
-        // GitHub secondary rate limit (too frequent polling) — back off 60s
-        _ghBackoffUntil = Date.now() + 60000;
-        throw new Error('RATE_LIMITED');
-      }
-      throw new Error(`HTTP ${res.status}`);
-    }
-    const comments = await res.json();
-    if (!comments || comments.length === 0) {
-      console.log('[GitHub] No sync comments yet');
-      return null;
-    }
-
-    // Find the latest comment with valid JSON data
-    let latestData = null;
-    let latestComment = null;
-    for (const c of comments) {
-      try {
-        let body = c.body.trim();
-        if (body.startsWith('LZ:')) {
-          body = LZString.decompressFromBase64(body.slice(3));
-        }
-        const data = JSON.parse(body);
-        if (!latestComment || new Date(c.updated_at) > new Date(latestComment.updated_at)) {
-          latestData = data;
-          latestComment = c;
-        }
-      } catch(e) { continue; }
-    }
-
-    if (!latestComment || !latestData) return null;
-    // Use updated_at (GitHub server time) for change detection — immune to clock skew
-    if (latestComment.updated_at === _ghCommentUpdatedAt) {
-      console.log('[GitHub] No change since last sync (updated_at match)');
-      return null;
-    }
-
-    _ghCommentUpdatedAt = latestComment.updated_at;
-    _ghCommentId = latestComment.id;
-
-    console.log('[GitHub] Remote data changed, trainees:', (latestData.trainees || []).length, 'updated_at:', latestComment.updated_at);
-    _ghListeners.forEach(cb => cb(latestData, latestData._updatedAt || 0));
-    return latestData;
-  } catch(e) {
-    console.warn('[GitHub] Fetch error:', e.message);
-    _ghStatusListeners.forEach(cb => cb('error', e.message === 'RATE_LIMITED' ? '请求过于频繁，稍后自动重试' : ''));
-    throw e; // Let callers know there was a real error
-  }
-}
-
-async function ghPushData(data, ts) {
-  if (_ghPushing) return false;
-  if (_ghSaveTimer) clearTimeout(_ghSaveTimer);
-  _ghSaveTimer = setTimeout(async () => {
-    // If we are in a GitHub rate-limit backoff window, delay the push until it expires.
-    // This prevents hammering the API with write requests that are guaranteed to fail.
-    const wait = _ghBackoffUntil - Date.now();
-    if (wait > 0) {
-      _ghNotifyPushStatus('error', '请求过于频繁，稍后自动重试');
-      setTimeout(() => ghPushData(loadData(), Date.now()), wait + 500);
-      return;
-    }
-    // Re-read latest data from localStorage — remote sync may have merged new data
-    const latestData = loadData();
-    await _ghDoPush(latestData, ts);
-  }, 1500); // 1.5s debounce: consecutive edits batch into one push
-  return true;
-}
-
-async function _ghDoPush(localData, ts) {
-  if (_ghPushing) return false;
-  _ghPushing = true;
-  _ghNotifyPushStatus('pushing', '');
-
-  // Safety timeout: release lock after 10s even if something hangs
-  if (_ghPushTimer) clearTimeout(_ghPushTimer);
-  _ghPushTimer = setTimeout(() => {
-    if (_ghPushing) {
-      _ghPushing = false;
-      _ghNotifyPushStatus('error', '推送超时');
-      console.warn('[GitHub] Push timed out, releasing lock');
-    }
-  }, 10000);
-
-  try {
-    // STEP 1: Fetch latest remote data and merge — prevents overwriting others' changes
-    const remoteData = await _ghFetchRaw();
-    let dataToPush = localData;
-    if (remoteData && remoteData.trainees && localData.trainees) {
-      const mergedResult = mergeTrainees(localData.trainees, remoteData.trainees, localData._deletedIds, remoteData._deletedIds);
-      dataToPush = normalizeData({ trainees: mergedResult.trainees, _deletedIds: mergedResult.deletedIds, _updatedAt: ts || Date.now() });
-      // Save merged data locally so we don't lose remote entries
-      saveData(dataToPush);
-      console.log('[GitHub] Merged before push: local', localData.trainees.length, '+ remote', remoteData.trainees.length, '→', mergedResult.trainees.length);
-    }
-
-    const payload = Object.assign({}, dataToPush, { _updatedAt: ts || Date.now() });
-    let bodyStr = JSON.stringify(payload);
-    // Compress with LZ-String if data is large (GitHub comment body max 65536 chars)
-    if (bodyStr.length > 3000 && typeof LZString !== 'undefined') {
-      bodyStr = 'LZ:' + LZString.compressToBase64(bodyStr);
-    }
-
-    const headers = {
-      'Authorization': `token ${GH_TOKEN}`,
-      'Accept': 'application/vnd.github.v3+json',
-      'Content-Type': 'application/json'
-    };
-
-    if (_ghCommentId) {
-      // Update existing comment (PATCH)
-      const res = await fetch(GH_COMMENT_URL(_ghCommentId), {
-        method: 'PATCH',
-        headers: headers,
-        body: JSON.stringify({ body: bodyStr })
-      });
-      if (res.ok) {
-        const json = await res.json();
-        _ghCommentUpdatedAt = json.updated_at;
-        console.log('[GitHub] Pushed data (updated comment), id:', _ghCommentId, 'updated_at:', json.updated_at);
-        if (_ghPushTimer) clearTimeout(_ghPushTimer);
-        _ghPushing = false;
-        _ghNotifyPushStatus('success', '已同步到云端');
-        return true;
-      } else if (res.status === 404) {
-        // Comment was deleted, create new one
-        console.warn('[GitHub] Comment not found, creating new one...');
-        _ghCommentId = null;
-        if (_ghPushTimer) clearTimeout(_ghPushTimer);
-        _ghPushing = false;
-        return await _ghDoPush(localData, ts);
-      } else {
-        const errText = await res.text();
-        console.warn('[GitHub] Push failed:', res.status, errText.substring(0, 200));
-        if (_ghPushTimer) clearTimeout(_ghPushTimer);
-        _ghPushing = false;
-        if (res.status === 403 || res.status === 429) {
-          _ghBackoffUntil = Date.now() + 60000;
-          _ghNotifyPushStatus('error', '请求过于频繁，稍后自动重试');
-        } else if (res.status >= 500 && res.status < 600) {
-          _ghBackoffUntil = Date.now() + 30000;
-          _ghNotifyPushStatus('error', 'GitHub 服务暂时不可用，稍后自动重试');
-        } else {
-          _ghNotifyPushStatus('error', `推送失败: HTTP ${res.status}`);
-        }
-        return false;
-      }
-    } else {
-      // Create new comment (POST)
-      const res = await fetch(GH_COMMENTS_URL, {
-        method: 'POST',
-        headers: headers,
-        body: JSON.stringify({ body: bodyStr })
-      });
-      if (res.ok) {
-        const json = await res.json();
-        _ghCommentId = json.id;
-        _ghCommentUpdatedAt = json.updated_at;
-        console.log('[GitHub] Pushed data (new comment), id:', _ghCommentId, 'updated_at:', json.updated_at);
-        if (_ghPushTimer) clearTimeout(_ghPushTimer);
-        _ghPushing = false;
-        _ghNotifyPushStatus('success', '已同步到云端');
-        return true;
-      } else {
-        const errText = await res.text();
-        console.warn('[GitHub] Push failed:', res.status, errText.substring(0, 200));
-        if (_ghPushTimer) clearTimeout(_ghPushTimer);
-        _ghPushing = false;
-        if (res.status === 403 || res.status === 429) {
-          _ghBackoffUntil = Date.now() + 60000;
-          _ghNotifyPushStatus('error', '请求过于频繁，稍后自动重试');
-        } else if (res.status >= 500 && res.status < 600) {
-          _ghBackoffUntil = Date.now() + 30000;
-          _ghNotifyPushStatus('error', 'GitHub 服务暂时不可用，稍后自动重试');
-        } else {
-          _ghNotifyPushStatus('error', `推送失败: HTTP ${res.status}`);
-        }
-        return false;
-      }
-    }
-  } catch(e) {
-    console.warn('[GitHub] Push error:', e.message);
-    if (_ghPushTimer) clearTimeout(_ghPushTimer);
-    _ghPushing = false;
-    if (e.message === 'RATE_LIMITED') {
-      _ghNotifyPushStatus('error', '请求过于频繁，稍后自动重试');
-    } else {
-      _ghNotifyPushStatus('error', '推送失败: ' + e.message);
-    }
-    return false;
-  }
-}
-
-async function ghForcePush(data, ts) {
-  // Immediate push without debounce
-  return await _ghDoPush(data, ts);
-}
-
-function ghOnUpdate(cb) {
-  _ghListeners.add(cb);
-  return () => _ghListeners.delete(cb);
-}
-
-function ghOnStatus(cb) {
-  _ghStatusListeners.add(cb);
-  return () => _ghStatusListeners.delete(cb);
-}
-
-function ghOnPushStatus(cb) {
-  _ghPushStatusListeners.add(cb);
-  return () => _ghPushStatusListeners.delete(cb);
+// trainee object → DB row
+function traineeToRow(t) {
+  return {
+    id: t.id,
+    name: t.name || '',
+    store: t.store || '',
+    route: t.route || 'front_to_back',
+    start_date: t.startDate || '',
+    master: t.master || '',
+    area: t.area || '000',
+    note: t.note || '',
+    progress: t.progress || {},
+    deleted: false,
+    updated_at: t._updatedAt || Date.now()
+  };
 }
 
 // Merge trainees at progress-day level (prevents data loss from concurrent edits)
@@ -483,6 +244,166 @@ function mergeTrainees(localTrainees, remoteTrainees, localDeletedIds, remoteDel
     result.push(base);
   }
   return { trainees: result, deletedIds: [...deletedIds] };
+}
+
+// Check whether a Supabase session exists (skip sync when logged out)
+async function _sbHasSession() {
+  try {
+    const { data } = await supabase.auth.getSession();
+    return !!(data && data.session);
+  } catch(e) { return false; }
+}
+
+// Fetch all non-deleted trainees from Supabase
+async function sbFetchAll() {
+  const { data, error } = await supabase
+    .from('trainees')
+    .select('*')
+    .eq('deleted', false)
+    .order('updated_at', { ascending: false });
+  if (error) throw error;
+  return { trainees: (data || []).map(rowToTrainee), _deletedIds: [] };
+}
+
+// Upsert specific trainees (batch 100 per request)
+async function sbUpsertTrainees(trainees, ts) {
+  if (!trainees || trainees.length === 0) return true;
+  const rows = trainees.map(t => traineeToRow({ ...t, _updatedAt: t._updatedAt || ts || Date.now() }));
+  for (let i = 0; i < rows.length; i += 100) {
+    const { error } = await supabase
+      .from('trainees')
+      .upsert(rows.slice(i, i + 100), { onConflict: 'id' });
+    if (error) throw error;
+  }
+  return true;
+}
+
+// Soft-delete trainees (mark deleted=true so Realtime/poll never resurrects them)
+async function sbSoftDeleteTrainees(ids, ts) {
+  if (!ids || ids.length === 0) return true;
+  const { error } = await supabase
+    .from('trainees')
+    .update({ deleted: true, updated_at: ts || Date.now() })
+    .in('id', ids);
+  if (error) throw error;
+  return true;
+}
+
+// Debounced push: diff prev vs new, upsert changed rows + soft-delete removed ones
+function sbPushData(newData, prevData, ts) {
+  if (_sbPushing) return false;
+  if (_sbSaveTimer) clearTimeout(_sbSaveTimer);
+  _sbSaveTimer = setTimeout(async () => {
+    try {
+      await _sbDoPush(newData, prevData, ts);
+    } catch(e) {
+      _sbNotifyPushStatus('error', e.message || '推送失败');
+    }
+  }, 1000);
+  return true;
+}
+
+async function _sbDoPush(newData, prevData, ts) {
+  if (_sbPushing) return false;
+  if (!(await _sbHasSession())) return false; // logged out — nothing to push
+  _sbPushing = true;
+  _sbNotifyPushStatus('pushing', '');
+  const pushTs = ts || Date.now();
+  try {
+    const prevTrainees = prevData?.trainees || [];
+    const newTrainees = newData?.trainees || [];
+    const prevMap = new Map(prevTrainees.map(t => [t.id, t]));
+    const newMap = new Map(newTrainees.map(t => [t.id, t]));
+
+    // Changed or added: in new but not in prev, or _updatedAt differs
+    const changed = [];
+    for (const t of newTrainees) {
+      const p = prevMap.get(t.id);
+      if (!p || (p._updatedAt || 0) !== (t._updatedAt || 0)) changed.push(t);
+    }
+    // Deleted: in prev but not in new
+    const deletedIds = [];
+    for (const t of prevTrainees) {
+      if (!newMap.has(t.id)) deletedIds.push(t.id);
+    }
+
+    if (changed.length > 0) await sbUpsertTrainees(changed, pushTs);
+    if (deletedIds.length > 0) await sbSoftDeleteTrainees(deletedIds, pushTs);
+
+    if (changed.length === 0 && deletedIds.length === 0) {
+      _sbPushing = false;
+      _sbNotifyPushStatus('success', '已同步到云端');
+      return true;
+    }
+    console.log('[Supabase] Pushed', changed.length, 'changed,', deletedIds.length, 'deleted');
+    _sbPushing = false;
+    _sbNotifyPushStatus('success', '已同步到云端');
+    return true;
+  } catch(e) {
+    console.warn('[Supabase] Push error:', e.message);
+    _sbPushing = false;
+    _sbNotifyPushStatus('error', '推送失败: ' + e.message);
+    return false;
+  }
+}
+
+async function sbForcePush(data, ts) {
+  // Force push: upsert all trainees + soft-delete tracked deleted IDs
+  const pushTs = ts || Date.now();
+  await sbUpsertTrainees(data.trainees || [], pushTs);
+  if (data._deletedIds && data._deletedIds.length > 0) {
+    await sbSoftDeleteTrainees(data._deletedIds, pushTs);
+  }
+  return true;
+}
+
+// Init: fetch remote, auto-migrate localStorage → Supabase on first run, then merge
+async function initSupabaseSync() {
+  _sbNotifyStatus('connecting');
+  try {
+    if (!(await _sbHasSession())) {
+      // Not logged in yet — wait for login before touching the cloud
+      _sbNotifyStatus('connected');
+      return;
+    }
+    const remote = await sbFetchAll();
+    const local = loadData();
+    const remoteEmpty = !remote.trainees || remote.trainees.length === 0;
+
+    if (remoteEmpty && local.trainees.length > 0) {
+      // First migration: push all local data to cloud
+      console.log('[Supabase] Migrating', local.trainees.length, 'local trainees to cloud...');
+      await sbUpsertTrainees(local.trainees, Date.now());
+      const migrated = await sbFetchAll();
+      _sbListeners.forEach(cb => cb(migrated, Date.now()));
+      _sbNotifyStatus('connected');
+      return;
+    }
+
+    if (remote.trainees.length > 0) {
+      // Merge remote into local (local-only entries are kept and pushed later)
+      _sbListeners.forEach(cb => cb(remote, Date.now()));
+    }
+    _sbNotifyStatus('connected');
+  } catch(e) {
+    console.warn('[Supabase] Init error:', e.message);
+    _sbNotifyStatus('error');
+  }
+}
+
+function sbOnUpdate(cb) {
+  _sbListeners.add(cb);
+  return () => _sbListeners.delete(cb);
+}
+
+function sbOnStatus(cb) {
+  _sbStatusListeners.add(cb);
+  return () => _sbStatusListeners.delete(cb);
+}
+
+function sbOnPushStatus(cb) {
+  _sbPushStatusListeners.add(cb);
+  return () => _sbPushStatusListeners.delete(cb);
 }
 
 function genId() {
@@ -2356,12 +2277,12 @@ function SyncModal({ data, syncStatus, lastSyncTime, setLastSyncTime, onClose, o
     reader.readAsText(file);
   };
 
-  // Force push to GitHub
+  // Force push to cloud
   const handleForceSync = async () => {
     setBusy(true);
     try {
       const ts = Date.now();
-      const ok = await ghForcePush(data, ts);
+      const ok = await sbForcePush(data, ts);
       if (ok) {
         showStatus('success', '数据已推送到云端');
         setLastSyncTime(ts);
@@ -2374,16 +2295,24 @@ function SyncModal({ data, syncStatus, lastSyncTime, setLastSyncTime, onClose, o
     setBusy(false);
   };
 
-  // Force pull from GitHub
+  // Force pull from cloud
   const handleForcePull = async () => {
     setBusy(true);
     try {
-      const remoteData = await ghFetchData();
-      if (remoteData && remoteData.trainees) {
-        showStatus('success', `已从云端拉取 ${remoteData.trainees.length} 名学员数据`);
+      const remote = await sbFetchAll();
+      if (remote && remote.trainees && remote.trainees.length > 0) {
+        isRemoteUpdate.current = true;
+        setData(prevData => {
+          const mergedResult = mergeTrainees(prevData.trainees, remote.trainees, prevData._deletedIds || [], []);
+          const newData = normalizeData({ trainees: mergedResult.trainees, _deletedIds: mergedResult.deletedIds, _updatedAt: Date.now() });
+          saveData(newData);
+          return newData;
+        });
+        showStatus('success', `已从云端拉取 ${remote.trainees.length} 名学员数据`);
       } else {
         showStatus('success', '当前已是最新数据，无需更新');
       }
+      setLastSyncTime(Date.now());
     } catch(e) {
       showStatus('error', '拉取失败：' + e.message);
     }
@@ -2539,21 +2468,32 @@ function LoginScreen({ onLogin }) {
   const [loading, setLoading] = useState(false);
   const pwdRef = useRef(null);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     const cfg = AREA_MAP[account.trim()];
-    if (!cfg || cfg.password !== password) {
+    if (!cfg) {
       setError('账号或密码错误');
       setPassword('');
       pwdRef.current && pwdRef.current.focus();
       return;
     }
     setLoading(true);
-    setTimeout(() => {
+    try {
+      // Supabase Auth: sign in with the account's bound email
+      const { error } = await supabase.auth.signInWithPassword({
+        email: `${cfg.id}@dxtrain.local`,
+        password
+      });
+      if (error) throw error;
       onLogin({ id: cfg.id, name: cfg.name, role: cfg.role });
-      setLoading(false);
-    }, 300);
+    } catch(e) {
+      console.warn('[Auth] Login error:', e.message);
+      setError('账号或密码错误');
+      setPassword('');
+      pwdRef.current && pwdRef.current.focus();
+    }
+    setLoading(false);
   };
 
   return (
@@ -2620,28 +2560,38 @@ function App() {
   const [lastSyncTime, setLastSyncTime] = useState(null);
   const [pushStatus, setPushStatus] = useState({ type: '', msg: '' });
   const isRemoteUpdate = useRef(false);
-  const ghReady = useRef(false);
+  const sbReady = useRef(false);
+  const prevDataRef = useRef(null);
 
-  // Save to localStorage + push to GitHub
+  // Save to localStorage + push changed rows to Supabase
   useEffect(() => {
     saveData(data);
-    if (!isRemoteUpdate.current && ghReady.current) {
+    if (!isRemoteUpdate.current && sbReady.current && currentUser) {
       const ts = Date.now();
-      ghPushData(data, ts);
+      sbPushData(data, prevDataRef.current || { trainees: [] }, ts);
       setLastSyncTime(ts);
     }
+    prevDataRef.current = data;
     isRemoteUpdate.current = false;
   }, [data]);
 
-  // Initialize GitHub Issues API sync
+  // Initialize Supabase sync
   useEffect(() => {
-    initGitHubSync();
+    initSupabaseSync();
 
-    const unsubUpdate = ghOnUpdate((remoteData, remoteTs) => {
-      // Always merge when remote data changed — no timestamp comparison (immune to clock skew)
+    // Validate session on startup — if expired, force re-login
+    supabase.auth.getSession().then(({ data: sd }) => {
+      if (!sd.session) {
+        localStorage.removeItem('training_tracker_user');
+        setCurrentUser(null);
+      }
+    });
+
+    const unsubUpdate = sbOnUpdate((remoteData, remoteTs) => {
+      // Merge remote into local — preserves local-only entries (pushed later)
       isRemoteUpdate.current = true;
       setData(prevData => {
-        const mergedResult = mergeTrainees(prevData.trainees, remoteData.trainees || [], prevData._deletedIds, remoteData._deletedIds);
+        const mergedResult = mergeTrainees(prevData.trainees, remoteData.trainees || [], prevData._deletedIds || [], remoteData._deletedIds || []);
         const newData = normalizeData({ trainees: mergedResult.trainees, _deletedIds: mergedResult.deletedIds, _updatedAt: remoteTs });
         saveData(newData);
         return newData;
@@ -2649,43 +2599,65 @@ function App() {
       setLastSyncTime(remoteTs || Date.now());
     });
 
-    const unsubStatus = ghOnStatus((status) => {
+    const unsubStatus = sbOnStatus((status) => {
       setSyncStatus(status);
     });
 
-    const unsubPushStatus = ghOnPushStatus((status, msg) => {
+    const unsubPushStatus = sbOnPushStatus((status, msg) => {
       setPushStatus({ type: status, msg });
       if (status === 'success') {
         setTimeout(() => setPushStatus({ type: '', msg: '' }), 2000);
       }
     });
 
-    // After 1.5s, mark GitHub as ready and push local data if it has content
+    // After 1.5s, mark sync ready and push local data if it has content
     // (remote data should have been fetched and merged by now)
     const initTimer = setTimeout(() => {
-      ghReady.current = true;
+      sbReady.current = true;
       const localData = loadData();
       // Only push if local has trainees (skip if empty/new device)
       if (localData.trainees && localData.trainees.length > 0) {
         const ts = Date.now();
-        ghPushData(localData, ts);
+        sbPushData(localData, prevDataRef.current || { trainees: [] }, ts);
         setLastSyncTime(ts);
       }
     }, 1500);
 
-    // Poll remote data every 12s. 1.5s polling with 9 accounts triggered GitHub's
-    // secondary rate limit, so: slower interval + skip when tab hidden + 60s backoff on 403.
-    const pollTimer = setInterval(() => {
-      if (Date.now() < _ghBackoffUntil) return;          // rate-limit backoff
+    // Poll remote data every 12s. Supabase has no practical rate limit —
+    // one SELECT per poll is trivially cheap even for 2000+ stores.
+    const pollTimer = setInterval(async () => {
       if (document.visibilityState !== 'visible') return; // don't poll in background
-      ghFetchData().catch(() => {}); // Errors are handled by status listeners
+      try {
+        const remote = await sbFetchAll();
+        if (!remote.trainees || remote.trainees.length === 0) return;
+        isRemoteUpdate.current = true;
+        setData(prevData => {
+          const mergedResult = mergeTrainees(prevData.trainees, remote.trainees, prevData._deletedIds || [], []);
+          const newData = normalizeData({ trainees: mergedResult.trainees, _deletedIds: mergedResult.deletedIds, _updatedAt: Date.now() });
+          saveData(newData);
+          return newData;
+        });
+        setLastSyncTime(Date.now());
+      } catch(e) { /* errors surfaced via status listeners */ }
     }, 12000);
 
-    // When tab becomes visible again, sync immediately (feels responsive despite slower polling)
+    // When tab becomes visible again, sync immediately
     const onVisibility = () => {
-      if (document.visibilityState === 'visible' && Date.now() >= _ghBackoffUntil) {
-        ghFetchData().catch(() => {});
-      }
+      if (document.visibilityState !== 'visible') return;
+      (async () => {
+        try {
+          const remote = await sbFetchAll();
+          if (!remote.trainees || remote.trainees.length === 0) return;
+          isRemoteUpdate.current = true;
+          setData(prevData => {
+            const mergedResult = mergeTrainees(prevData.trainees, remote.trainees, prevData._deletedIds || [], []);
+            const newData = normalizeData({ trainees: mergedResult.trainees, _deletedIds: mergedResult.deletedIds, _updatedAt: Date.now() });
+            saveData(newData);
+            return newData;
+          });
+          setLastSyncTime(Date.now());
+        } catch(e) {}
+      })();
     };
     document.addEventListener('visibilitychange', onVisibility);
 
@@ -2698,6 +2670,27 @@ function App() {
       unsubPushStatus();
     };
   }, []);
+
+  // After login, pull remote data immediately (no 12s wait)
+  const lastUserRef = useRef(null);
+  useEffect(() => {
+    if (!currentUser || currentUser === lastUserRef.current) return;
+    lastUserRef.current = currentUser;
+    (async () => {
+      try {
+        const remote = await sbFetchAll();
+        if (!remote.trainees || remote.trainees.length === 0) return;
+        isRemoteUpdate.current = true;
+        setData(prevData => {
+          const mergedResult = mergeTrainees(prevData.trainees, remote.trainees, prevData._deletedIds || [], []);
+          const newData = normalizeData({ trainees: mergedResult.trainees, _deletedIds: mergedResult.deletedIds, _updatedAt: Date.now() });
+          saveData(newData);
+          return newData;
+        });
+        setLastSyncTime(Date.now());
+      } catch(e) {}
+    })();
+  }, [currentUser]);
 
   const visibleTrainees = useMemo(() => {
     if (!currentUser) return [];
@@ -2734,6 +2727,7 @@ function App() {
   };
 
   const handleLogout = () => {
+    supabase.auth.signOut().catch(() => {});
     localStorage.removeItem('training_tracker_user');
     setCurrentUser(null);
     setView('tracker');

@@ -2143,6 +2143,7 @@ function RegionDashboardView({ trainees, stores, config, workHours }) {
                   <th className="text-left px-3 py-2 font-medium">区域</th>
                   <th className="text-left px-3 py-2 font-medium">学员</th>
                   <th className="text-left px-3 py-2 font-medium">门店</th>
+                  <th className="text-left px-3 py-2 font-medium">雇佣性质</th>
                   <th className="text-left px-3 py-2 font-medium">当前阶段</th>
                   <th className="text-left px-3 py-2 font-medium">进度</th>
                   <th className="text-left px-3 py-2 font-medium">工时</th>
@@ -2160,6 +2161,7 @@ function RegionDashboardView({ trainees, stores, config, workHours }) {
                       <td className="px-3 py-2 text-xs text-gray-400">{areaCfg?.name?.replace('区域带训追踪系统', '') || t.area || '000'}</td>
                       <td className="px-3 py-2 text-white font-medium">{t.name}</td>
                       <td className="px-3 py-2 text-xs text-gray-400">{t.store}</td>
+                      <td className="px-3 py-2 text-xs text-gray-300">{isPartTime(t) ? '兼职' : '全职'}</td>
                       <td className="px-3 py-2 text-xs text-gray-400">{cd ? `${cd.monthName} · ${cd.phaseName}` : '已完成'}</td>
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-2">
@@ -2176,7 +2178,7 @@ function RegionDashboardView({ trainees, stores, config, workHours }) {
                     </tr>
                   );
                 })}
-                {incompleteList.length === 0 && <tr><td colSpan="9" className="text-center text-gray-500 py-6">暂无数据</td></tr>}
+                {incompleteList.length === 0 && <tr><td colSpan="10" className="text-center text-gray-500 py-6">暂无数据</td></tr>}
               </tbody>
             </table>
           </div>
@@ -2211,70 +2213,113 @@ function RegionDashboardView({ trainees, stores, config, workHours }) {
         {/* Yesterday's Check-in */}
         <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
           <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2"><Icon.Calendar/> 昨日已打卡 ({yesterdayAndTodayStats.yesterdayChecked.length})</h3>
-          <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
+          <div className="max-h-64 overflow-y-auto pr-1">
             {yesterdayAndTodayStats.yesterdayChecked.length === 0 ? (
               <p className="text-sm text-gray-500 text-center py-4">昨日暂无人打卡</p>
-            ) : yesterdayAndTodayStats.yesterdayChecked.map(t => (
-              <div key={t.id} className="flex items-center justify-between bg-emerald-500/5 border border-emerald-500/10 rounded-lg px-3 py-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-sm text-gray-300 font-medium">{t.name}</span>
-                  <span className="text-xs text-gray-600 truncate">{t.store}</span>
-                  <span className="text-xs text-indigo-400/80">{t.areaName}</span>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {t.empId && workHours?.[t.empId] != null && <span className="text-xs text-amber-300/80 tabular-nums">⏱ {workHours[t.empId].hours}h</span>}
-                  <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">{countCerts(t)}证</span>
-                  {t.lastTime && <span className="text-xs text-gray-500">{timeStr(t.lastTime)}</span>}
-                </div>
-              </div>
-            ))}
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-gray-500 border-b border-gray-800">
+                    <th className="text-left px-2 py-1.5 font-medium">学员/门店/区域</th>
+                    <th className="text-left px-2 py-1.5 font-medium w-16">工时</th>
+                    <th className="text-left px-2 py-1.5 font-medium w-14">证书</th>
+                    <th className="text-left px-2 py-1.5 font-medium w-20">时间</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {yesterdayAndTodayStats.yesterdayChecked.map(t => (
+                    <tr key={t.id} className="border-b border-gray-800/50">
+                      <td className="px-2 py-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-sm text-gray-300 font-medium">{t.name}</span>
+                          <span className="text-xs text-gray-600 truncate">{t.store}</span>
+                          <span className="text-xs text-indigo-400/80">{t.areaName}</span>
+                        </div>
+                      </td>
+                      <td className="px-2 py-2 text-xs text-amber-300/80 tabular-nums">{t.empId && workHours?.[t.empId] != null ? `${workHours[t.empId].hours}h` : '—'}</td>
+                      <td className="px-2 py-2 text-xs text-amber-300/80">{countCerts(t)}证</td>
+                      <td className="px-2 py-2 text-xs text-gray-500">{t.lastTime ? timeStr(t.lastTime) : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
 
         {/* Today's Check-in */}
         <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
           <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2"><Icon.Calendar/> 今日已打卡 ({yesterdayAndTodayStats.todayChecked.length})</h3>
-          <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
+          <div className="max-h-64 overflow-y-auto pr-1">
             {yesterdayAndTodayStats.todayChecked.length === 0 ? (
               <p className="text-sm text-gray-500 text-center py-4">今日暂无人打卡</p>
-            ) : yesterdayAndTodayStats.todayChecked.map(t => (
-              <div key={t.id} className="flex items-center justify-between bg-sky-500/5 border border-sky-500/10 rounded-lg px-3 py-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-sm text-gray-300 font-medium">{t.name}</span>
-                  <span className="text-xs text-gray-600 truncate">{t.store}</span>
-                  <span className="text-xs text-indigo-400/80">{t.areaName}</span>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {t.empId && workHours?.[t.empId] != null && <span className="text-xs text-amber-300/80 tabular-nums">⏱ {workHours[t.empId].hours}h</span>}
-                  <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">{countCerts(t)}证</span>
-                  {t.lastTime && <span className="text-xs text-gray-500">{timeStr(t.lastTime)}</span>}
-                </div>
-              </div>
-            ))}
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-gray-500 border-b border-gray-800">
+                    <th className="text-left px-2 py-1.5 font-medium">学员/门店/区域</th>
+                    <th className="text-left px-2 py-1.5 font-medium w-16">工时</th>
+                    <th className="text-left px-2 py-1.5 font-medium w-14">证书</th>
+                    <th className="text-left px-2 py-1.5 font-medium w-20">时间</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {yesterdayAndTodayStats.todayChecked.map(t => (
+                    <tr key={t.id} className="border-b border-gray-800/50">
+                      <td className="px-2 py-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-sm text-gray-300 font-medium">{t.name}</span>
+                          <span className="text-xs text-gray-600 truncate">{t.store}</span>
+                          <span className="text-xs text-indigo-400/80">{t.areaName}</span>
+                        </div>
+                      </td>
+                      <td className="px-2 py-2 text-xs text-amber-300/80 tabular-nums">{t.empId && workHours?.[t.empId] != null ? `${workHours[t.empId].hours}h` : '—'}</td>
+                      <td className="px-2 py-2 text-xs text-amber-300/80">{countCerts(t)}证</td>
+                      <td className="px-2 py-2 text-xs text-gray-500">{t.lastTime ? timeStr(t.lastTime) : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
 
         {/* Row 2: 昨日未打卡 */}
         <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4 lg:col-span-2">
           <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2"><Icon.Calendar/> 昨日未打卡 ({yesterdayAndTodayStats.yesterdayUnchecked.length})</h3>
-          <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
+          <div className="max-h-64 overflow-y-auto pr-1">
             {yesterdayAndTodayStats.yesterdayUnchecked.length === 0 ? (
               <p className="text-sm text-gray-500 text-center py-4">昨天全部已打卡</p>
-            ) : yesterdayAndTodayStats.yesterdayUnchecked.slice(0, 20).map(t => (
-              <div key={t.id} className="flex items-center justify-between bg-rose-500/5 border border-rose-500/10 rounded-lg px-3 py-2">
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <span className="text-sm text-gray-300 font-medium">{t.name}</span>
-                  <span className="text-xs text-gray-600 truncate">{t.store}</span>
-                  <span className="text-xs text-indigo-400/80">{t.areaName}</span>
-                </div>
-                <div className="flex items-center gap-3 flex-shrink-0">
-                  {t.empId && workHours?.[t.empId] != null && <span className="text-xs text-amber-300/80 tabular-nums">⏱ {workHours[t.empId].hours}h</span>}
-                  <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">{countCerts(t)}证</span>
-                  {t.note && <span className="text-xs text-amber-300/80 truncate max-w-[260px]" title={t.note}>📝 {t.note}</span>}
-                  <span className="text-xs px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300">{t.streakLabel}</span>
-                </div>
-              </div>
-            ))}
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-gray-500 border-b border-gray-800">
+                    <th className="text-left px-3 py-2 font-medium">学员/门店/区域</th>
+                    <th className="text-left px-3 py-2 font-medium w-16">工时</th>
+                    <th className="text-left px-3 py-2 font-medium w-14">证书</th>
+                    <th className="text-left px-3 py-2 font-medium">备注</th>
+                    <th className="text-left px-3 py-2 font-medium w-24">未打卡</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {yesterdayAndTodayStats.yesterdayUnchecked.slice(0, 20).map(t => (
+                    <tr key={t.id} className="border-b border-gray-800/50">
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-sm text-gray-300 font-medium">{t.name}</span>
+                          <span className="text-xs text-gray-600 truncate">{t.store}</span>
+                          <span className="text-xs text-indigo-400/80">{t.areaName}</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-xs text-amber-300/80 tabular-nums">{t.empId && workHours?.[t.empId] != null ? `${workHours[t.empId].hours}h` : '—'}</td>
+                      <td className="px-3 py-2 text-xs text-amber-300/80">{countCerts(t)}证</td>
+                      <td className="px-3 py-2 text-xs text-amber-300/80 truncate max-w-[260px]" title={t.note || ''}>{t.note || '—'}</td>
+                      <td className="px-3 py-2"><span className="text-xs px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300">{t.streakLabel}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
         </div>

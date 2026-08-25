@@ -497,10 +497,29 @@ async function sbFetchAll() {
   return { trainees: (data || []).map(rowToTrainee), _deletedIds: [] };
 }
 
+// 区域账号只对自己区域有写权限（RLS）。多账号共用一台浏览器时，本地会残留其他区域的学员，
+// 整批推送会被 RLS 42501 拒绝导致「推送失败」——推送前按当前账号过滤掉无权写入的行
+function _sbWritableArea() {
+  try {
+    const u = JSON.parse(localStorage.getItem('training_tracker_user') || 'null');
+    if (u && u.role === 'area' && u.id) return String(u.id);
+  } catch(e) {}
+  return null; // manager / 未登录 → 不限制
+}
+
 // Upsert specific trainees (batch 100 per request)
 async function sbUpsertTrainees(trainees, ts) {
   if (!trainees || trainees.length === 0) return true;
-  const rows = trainees.map(t => traineeToRow({ ...t, _updatedAt: t._updatedAt || ts || Date.now() }));
+  let list = trainees;
+  const areaId = _sbWritableArea();
+  if (areaId) {
+    list = trainees.filter(t => String(t.area || '') === areaId);
+    if (list.length < trainees.length) {
+      console.log('[Supabase] 跳过', trainees.length - list.length, '条非本区域学员（当前账号', areaId, '无写入权限，不影响本区域同步）');
+    }
+    if (list.length === 0) return true;
+  }
+  const rows = list.map(t => traineeToRow({ ...t, _updatedAt: t._updatedAt || ts || Date.now() }));
   for (let i = 0; i < rows.length; i += 100) {
     const { error } = await supabase
       .from('trainees')

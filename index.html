@@ -491,10 +491,13 @@ async function sbFetchAll() {
   const { data, error } = await supabase
     .from('trainees')
     .select('*')
-    .eq('deleted', false)
     .order('updated_at', { ascending: false });
   if (error) throw error;
-  return { trainees: (data || []).map(rowToTrainee), _deletedIds: [] };
+  const rows = data || [];
+  return {
+    trainees: rows.filter(r => !r.deleted).map(rowToTrainee),
+    _deletedIds: rows.filter(r => r.deleted).map(r => r.id)
+  };
 }
 
 // 区域账号只对自己区域有写权限（RLS）。多账号共用一台浏览器时，本地会残留其他区域的学员，

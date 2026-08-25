@@ -2450,11 +2450,11 @@ function WorkHoursImportModal({ trainees, onClose, onImported }) {
 
   const downloadTemplate = () => {
     const ws = XLSX.utils.aoa_to_sheet([
-      ['工号', '姓名', '工时'],
-      ['10086', '张三（示例，可删）', 120],
-      ['10087', '李四（示例，可删）', 96.5]
+      ['姓名', '工号', '工时'],
+      ['张三（示例，可删）', '10086', 120],
+      ['李四（示例，可删）', '10087', 96.5]
     ]);
-    ws['!cols'] = [{ wch: 14 }, { wch: 22 }, { wch: 10 }];
+    ws['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 10 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, '工时表');
     XLSX.writeFile(wb, '工时导入模板.xlsx');
@@ -2484,7 +2484,7 @@ function WorkHoursImportModal({ trainees, onClose, onImported }) {
           }
         }
         if (!idKey || !hoursKey) {
-          setErrMsg('表格里找不到「工号」和「工时」列，请按模板格式填写（表头必须是：工号、姓名、工时）');
+          setErrMsg('表格里找不到「工号」和「工时」列，请按模板格式填写（表头必须是：姓名、工号、工时）');
           return;
         }
 
@@ -2537,7 +2537,7 @@ function WorkHoursImportModal({ trainees, onClose, onImported }) {
       <div className="space-y-4">
         {/* 步骤说明 */}
         <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3 text-xs text-gray-400 leading-relaxed">
-          <p><span className="text-indigo-300 font-medium">①</span> 下载模板，按格式填写（或用你自己的表，表头含 <span className="text-white">工号、工时</span> 即可，姓名列仅作核对）</p>
+          <p><span className="text-indigo-300 font-medium">①</span> 下载模板，按格式填写（或用你自己的表，表头含 <span className="text-white">姓名、工号、工时</span> 即可，姓名列仅作核对）</p>
           <p className="mt-1"><span className="text-indigo-300 font-medium">②</span> 上传表格，系统按工号自动匹配学员</p>
           <p className="mt-1"><span className="text-indigo-300 font-medium">③</span> 确认无误后导入，工时为<span className="text-white">覆盖更新</span>，导入后全员可见</p>
         </div>

@@ -989,7 +989,7 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
   }, [trainees]);
 
   const filtered = useMemo(() => {
-    return trainees.filter(t => {
+    const list = trainees.filter(t => {
       if (search && !t.name.includes(search) && !t.store.includes(search)) return false;
       if (filterStore && t.store !== filterStore) return false;
       if (filterRoute && t.route !== filterRoute) return false;
@@ -998,7 +998,18 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
       if (certFilter === 'incomplete' && isCompleted) return false;
       return true;
     });
-  }, [trainees, search, filterStore, filterRoute, certFilter]);
+    // 工时预警置顶，再按工时降序
+    list.sort((a, b) => {
+      const hoursA = (a.empId && workHours?.[a.empId]?.hours) || 0;
+      const hoursB = (b.empId && workHours?.[b.empId]?.hours) || 0;
+      const warningA = !!getWorkHoursWarning(a, hoursA);
+      const warningB = !!getWorkHoursWarning(b, hoursB);
+      if (warningA && !warningB) return -1;
+      if (!warningA && warningB) return 1;
+      return hoursB - hoursA;
+    });
+    return list;
+  }, [trainees, search, filterStore, filterRoute, certFilter, workHours]);
 
   const handleSave = (data) => {
     if (editingTrainee) {
@@ -1400,8 +1411,8 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
       const p = calcProgress(t);
       return p.completed > 0 && p.percent < 100;
     }).length;
-    const completed = trainees.filter(t => calcProgress(t).percent === 100).length;
-    const notStarted = trainees.filter(t => calcProgress(t).completed === 0).length;
+    const completed = trainees.filter(t => isCertified(t)).length;
+    const notStarted = trainees.filter(t => !isCertified(t) && calcProgress(t).completed === 0).length;
     const avgProgress = total > 0 ? Math.round(trainees.reduce((sum, t) => sum + calcProgress(t).percent, 0) / total) : 0;
     return { total, inProgress, completed, notStarted, avgProgress };
   }, [trainees]);
@@ -1858,8 +1869,8 @@ function RegionDashboardView({ trainees, stores, config, workHours }) {
     const total = visibleTrainees.length;
     const progressList = visibleTrainees.map(t => calcProgress(t));
     const inProgress = progressList.filter(p => p.percent > 0 && p.percent < 100).length;
-    const completed = progressList.filter(p => p.percent === 100).length;
-    const notStarted = progressList.filter(p => p.percent === 0).length;
+    const completed = visibleTrainees.filter(t => isCertified(t)).length;
+    const notStarted = visibleTrainees.filter(t => !isCertified(t) && calcProgress(t).percent === 0).length;
     const avgProgress = total > 0 ? Math.round(progressList.reduce((s, p) => s + p.percent, 0) / total) : 0;
     let checkedYesterday = 0;
     visibleTrainees.forEach(t => {
@@ -2172,7 +2183,7 @@ function RegionDashboardView({ trainees, stores, config, workHours }) {
         </div>
 
         {/* Store Ranking */}
-        <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
+        <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4 lg:col-span-2">
           <h3 className="text-sm font-medium text-gray-300 mb-4 flex items-center gap-2"><Icon.Store/> 门店学员分布 TOP10</h3>
           <div className="space-y-3">
             {storeRanking.length === 0 ? (
@@ -2196,7 +2207,7 @@ function RegionDashboardView({ trainees, stores, config, workHours }) {
         </div>
 
         {/* Row 1: 昨日已打卡 | 今日已打卡 | 昨日未打卡 */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:col-span-2">
         {/* Yesterday's Check-in */}
         <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
           <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2"><Icon.Calendar/> 昨日已打卡 ({yesterdayAndTodayStats.yesterdayChecked.length})</h3>

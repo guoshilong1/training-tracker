@@ -2611,6 +2611,319 @@ function PasswordModal({ password = DASHBOARD_PASSWORD, title = '管理看板验
 
 // ============ Sync Modal (Real-time) ============
 // ============ 工时导入弹窗（仅 000 账号可见） ============
+// ============ 学员批量导入（仅 000 账号） ============
+const ROUTE_LABELS = { front_to_back: '前厅→后厨', back_to_front: '后厨→前厅' };
+
+function TraineesImportModal({ existingTrainees, onClose, onImport }) {
+  const [parseResult, setParseResult] = useState(null); // {valid, invalid, total}
+  const [importDone, setImportDone] = useState(0);
+  const [errMsg, setErrMsg] = useState('');
+  const [fileName, setFileName] = useState('');
+
+  // 区域账号 → 配置（仅小区/区域账号，大区经理账号不能作为学员归属）
+  const AREA_MAP = useMemo(() => {
+    const m = {};
+    for (const c of AREA_CONFIG) if (c.role === 'area') m[c.id] = c;
+    return m;
+  }, []);
+  // 小区账号 → 所属大区经理名（模板对照表用）
+  const AREA_MANAGER = useMemo(() => {
+    const m = {};
+    for (const c of AREA_CONFIG) {
+      if (c.role === 'manager' && Array.isArray(c.subAreas)) {
+        const mgrName = (c.name || '').replace('大区带训追踪系统', '');
+        for (const sub of c.subAreas) m[sub] = mgrName;
+      }
+    }
+    return m;
+  }, []);
+
+  const downloadTemplate = () => {
+    const aoa = [
+      ['区域账号', '学员姓名', '门店', '工号', '带训路线', '兼职岗位', '入职日期', '带训师傅'],
+      ['0026', '王小明（示例，可删）', '太原万达店', '10086', '前厅→后厨', '', '2026/8/25', '张师傅'],
+      ['0105', '李小红（示例，可删）', '长治八一店', '10087', '兼职', '后厨兼职', '2026/8/25', '王师傅']
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{ wch: 10 }, { wch: 20 }, { wch: 16 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 10 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '学员名单');
+
+    const tips = [
+      ['填写说明'],
+      ['1. 带训路线只能填：前厅→后厨 / 后厨→前厅 / 兼职'],
+      ['2. 路线填「兼职」时，请在「兼职岗位」填：前厅兼职 或 后厨兼职（不填默认前厅兼职）'],
+      ['3. 区域账号必填（0001-0147 新体系小区，或老区域 000-007），完整对照见「区域账号对照」sheet'],
+      ['4. 学员姓名、门店必填；同一区域同名学员会自动跳过（视为重复）'],
+      ['5. 工号选填（用于工时匹配），但不能与已有学员重复'],
+      ['6. 入职日期格式：2026/8/25 或 2026-08-25，不填默认今天'],
+      ['7. 带训师傅选填']
+    ];
+    const ws2 = XLSX.utils.aoa_to_sheet(tips);
+    ws2['!cols'] = [{ wch: 80 }];
+    XLSX.utils.book_append_sheet(wb, ws2, '填写说明');
+
+    const ref = [['区域账号', '负责人', '所属大区']];
+    const ids = Object.keys(AREA_MAP).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    for (const id of ids) {
+      ref.push([id, (AREA_MAP[id].name || '').replace('区域带训追踪系统', ''), AREA_MANAGER[id] || '—']);
+    }
+    const ws3 = XLSX.utils.aoa_to_sheet(ref);
+    ws3['!cols'] = [{ wch: 10 }, { wch: 12 }, { wch: 12 }];
+    XLSX.utils.book_append_sheet(wb, ws3, '区域账号对照');
+    XLSX.writeFile(wb, '学员批量导入模板.xlsx');
+  };
+
+  const normKey = (k) => String(k || '').replace(/[\s:：（）()]/g, '');
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const fmtDate = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+  // 解析入职日期：兼容 Excel 日期序列号 / Date / 2026-8-25 / 2026/8/25 / 2026年8月25日
+  const parseImportDate = (v) => {
+    if (v === null || v === undefined || v === '') return '';
+    if (v instanceof Date && !isNaN(v)) return fmtDate(v);
+    if (typeof v === 'number' && isFinite(v) && v > 20000 && v < 80000) {
+      const d = new Date(Math.round((v - 25569) * 86400000));
+      if (!isNaN(d)) return fmtDate(d);
+      return '';
+    }
+    const s = String(v).trim();
+    const m = s.match(/^(\d{4})[.\-\/年](\d{1,2})[.\-\/月](\d{1,2})日?$/);
+    if (m) return `${m[1]}-${pad2(m[2])}-${pad2(m[3])}`;
+    const d = new Date(s);
+    return isNaN(d) ? '' : fmtDate(d);
+  };
+
+  // 区域账号归一化：数字 26 → '0026'，文本原样；找不到就返回原值交校验报错
+  const normArea = (v) => {
+    let s = String(v ?? '').trim();
+    if (!s) return '';
+    if (AREA_MAP[s]) return s;
+    const digits = s.replace(/[^0-9]/g, '');
+    if (digits && /^\d+$/.test(digits)) {
+      const p4 = digits.padStart(4, '0');
+      if (AREA_MAP[p4]) return p4;
+      const p3 = digits.padStart(3, '0');
+      if (AREA_MAP[p3]) return p3;
+    }
+    return s;
+  };
+
+  // 带训路线识别：前厅→后厨 / 后厨→前厅 / 兼职（含子路线）
+  const resolveRoute = (rawRoute, rawSub) => {
+    const s = String(rawRoute || '').replace(/[\s\-—→\/]/g, '');
+    if (s.indexOf('兼职') >= 0) {
+      const sub = String(rawSub || '');
+      const subRoute = (sub.indexOf('后厨') >= 0 && sub.indexOf('前厅') < 0) ? 'back_part_time' : 'front_part_time';
+      return { route: 'part_time', subRoute };
+    }
+    if (s.indexOf('前厅') >= 0 && s.indexOf('后厨') >= 0) {
+      return { route: s.indexOf('前厅') < s.indexOf('后厨') ? 'front_to_back' : 'back_to_front', subRoute: '' };
+    }
+    return { route: '', subRoute: '' };
+  };
+
+  const handleFile = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setErrMsg(''); setImportDone(0); setParseResult(null);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array', cellDates: true });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+        // 模糊找列（兼容「学员姓名」「所属区域」等表头写法）
+        let areaKey = null, nameKey = null, storeKey = null, empKey = null, routeKey = null, subKey = null, dateKey = null, masterKey = null;
+        if (json.length > 0) {
+          for (const k of Object.keys(json[0])) {
+            const nk = normKey(k);
+            if (!areaKey && /账号|所属区域/.test(nk)) areaKey = k;
+            else if (!routeKey && /路线/.test(nk)) routeKey = k;
+            else if (!subKey && /岗位/.test(nk)) subKey = k;
+            else if (!nameKey && /姓名|学员/.test(nk)) nameKey = k;
+            else if (!storeKey && /门店/.test(nk)) storeKey = k;
+            else if (!empKey && /工号/.test(nk)) empKey = k;
+            else if (!dateKey && /日期|入职|开始/.test(nk)) dateKey = k;
+            else if (!masterKey && /师傅/.test(nk)) masterKey = k;
+          }
+        }
+        if (!areaKey || !nameKey || !storeKey || !routeKey) {
+          setErrMsg('表格缺少必需列（区域账号、学员姓名、门店、带训路线），请用「下载模板」的格式填写');
+          return;
+        }
+
+        // 已有学员索引（用于查重）
+        const existingByName = new Set();
+        const existingByEmp = new Map();
+        for (const t of existingTrainees) {
+          existingByName.add(`${t.area || '000'}|${(t.name || '').trim()}`);
+          const emp = String(t.empId || '').trim();
+          if (emp) existingByEmp.set(emp, t);
+        }
+
+        const seen = new Set();
+        const valid = [], invalid = [];
+        for (let i = 0; i < json.length; i++) {
+          const r = json[i];
+          const name = String(r[nameKey] ?? '').trim();
+          const rawArea = String(r[areaKey] ?? '').trim();
+          const store = String(r[storeKey] ?? '').trim();
+          if (!rawArea && !name && !store) continue; // 空行
+          if (name.indexOf('示例') >= 0 && name.indexOf('删') >= 0) continue; // 模板示例行
+          const line = i + 2; // Excel 实际行号（第1行是表头）
+          const area = normArea(rawArea);
+          const areaCfg = AREA_MAP[area];
+          if (!areaCfg) { invalid.push({ line, name: name || '(空)', area: rawArea, reason: '区域账号不存在（对照模板里的「区域账号对照」sheet）' }); continue; }
+          if (!name) { invalid.push({ line, area, name: '(空)', reason: '学员姓名为空' }); continue; }
+          if (!store) { invalid.push({ line, area, name, reason: '门店为空' }); continue; }
+          const routeRaw = routeKey ? String(r[routeKey] ?? '').trim() : '';
+          const subRaw = subKey ? String(r[subKey] ?? '').trim() : '';
+          const { route, subRoute } = resolveRoute(routeRaw, subRaw);
+          if (!route) { invalid.push({ line, area, name, reason: `带训路线「${routeRaw}」无法识别，只能填：前厅→后厨 / 后厨→前厅 / 兼职` }); continue; }
+          const empId = empKey ? String(r[empKey] ?? '').trim() : '';
+          if (empId && existingByEmp.has(empId)) {
+            const dup = existingByEmp.get(empId);
+            invalid.push({ line, area, name, reason: `工号 ${empId} 已被「${dup.name}」使用` }); continue;
+          }
+          const dupKey = `${area}|${name}`;
+          if (existingByName.has(dupKey) || seen.has(dupKey)) {
+            invalid.push({ line, area, name, reason: '该区域已存在同名学员，自动跳过' }); continue;
+          }
+          seen.add(dupKey);
+          valid.push({
+            area, areaName: (areaCfg.name || '').replace('区域带训追踪系统', ''),
+            name, store, empId, route, subRoute,
+            startDate: parseImportDate(dateKey ? r[dateKey] : ''),
+            master: masterKey ? String(r[masterKey] ?? '').trim() : '',
+            routeLabel: route === 'part_time' ? (subRoute === 'back_part_time' ? '兼职·后厨' : '兼职·前厅') : ROUTE_LABELS[route]
+          });
+        }
+        if (valid.length === 0 && invalid.length === 0) {
+          setErrMsg('表格里没有识别到任何数据行，请检查内容');
+          return;
+        }
+        setFileName(file.name);
+        setParseResult({ valid, invalid, total: valid.length + invalid.length });
+      } catch (err) {
+        setErrMsg('文件解析失败：' + (err.message || '请确认是 .xlsx / .xls / .csv 文件'));
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = '';
+  };
+
+  const doImport = () => {
+    if (!parseResult || parseResult.valid.length === 0) return;
+    const n = onImport(parseResult.valid);
+    setImportDone(n);
+  };
+
+  return (
+    <Modal open={true} onClose={onClose} title="批量导入学员">
+      <div className="space-y-4">
+        {importDone > 0 ? (
+          <div className="text-center py-8 space-y-3">
+            <div className="w-14 h-14 mx-auto rounded-full bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center">
+              <Icon.Check width={26} height={26} className="text-emerald-400"/>
+            </div>
+            <div className="text-lg font-bold text-white">成功导入 {importDone} 名学员</div>
+            <p className="text-xs text-gray-500">数据已自动推送到云端，各区域账号刷新后即可看到自己的学员</p>
+            <button onClick={onClose}
+              className="mt-2 px-6 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition">完成</button>
+          </div>
+        ) : (
+          <>
+            <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3 text-xs text-gray-400 leading-relaxed">
+              <p><span className="text-indigo-300 font-medium">①</span> 下载模板，按格式填写（含全部区域账号对照表）</p>
+              <p className="mt-1"><span className="text-indigo-300 font-medium">②</span> 上传表格，系统自动校验区域账号、路线、重复学员</p>
+              <p className="mt-1"><span className="text-indigo-300 font-medium">③</span> 确认无误后一键导入，自动同步到所有区域</p>
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={downloadTemplate}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-gray-600 text-gray-300 hover:text-white hover:border-gray-400 text-sm font-medium transition">
+                <Icon.Download width={15} height={15}/> 下载模板
+              </button>
+              <label className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition cursor-pointer">
+                <Icon.Upload width={15} height={15}/> 选择学员表格
+                <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} className="hidden"/>
+              </label>
+            </div>
+
+            {errMsg && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm text-red-300">{errMsg}</div>
+            )}
+
+            {parseResult && (
+              <div className="border border-gray-700 rounded-lg overflow-hidden">
+                <div className="bg-gray-800/70 px-4 py-2.5 text-xs text-gray-400 flex items-center justify-between">
+                  <span className="truncate">📄 {fileName}</span>
+                  <span>共识别 {parseResult.total} 行</span>
+                </div>
+                <div className="p-4 space-y-3">
+                  <div className="flex items-center gap-4 flex-wrap text-sm">
+                    <span className="text-emerald-300">✓ 可导入：{parseResult.valid.length} 人</span>
+                    {parseResult.invalid.length > 0 && <span className="text-red-300">✗ 有问题：{parseResult.invalid.length} 行</span>}
+                  </div>
+
+                  {parseResult.valid.length > 0 && (
+                    <div className="max-h-56 overflow-auto border border-gray-700/60 rounded-lg">
+                      <table className="w-full text-xs">
+                        <thead className="bg-gray-800/80 sticky top-0">
+                          <tr className="text-gray-400 text-left">
+                            <th className="px-2 py-1.5">区域</th>
+                            <th className="px-2 py-1.5">姓名</th>
+                            <th className="px-2 py-1.5">门店</th>
+                            <th className="px-2 py-1.5">路线</th>
+                            <th className="px-2 py-1.5">师傅</th>
+                            <th className="px-2 py-1.5">入职</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-800">
+                          {parseResult.valid.map((t, i) => (
+                            <tr key={i} className="text-gray-300">
+                              <td className="px-2 py-1.5 whitespace-nowrap">{t.areaName}</td>
+                              <td className="px-2 py-1.5 whitespace-nowrap text-white">{t.name}</td>
+                              <td className="px-2 py-1.5 whitespace-nowrap">{t.store}</td>
+                              <td className="px-2 py-1.5 whitespace-nowrap">{t.routeLabel}</td>
+                              <td className="px-2 py-1.5 whitespace-nowrap">{t.master || '—'}</td>
+                              <td className="px-2 py-1.5 whitespace-nowrap">{t.startDate || '今天'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {parseResult.invalid.length > 0 && (
+                    <div className="max-h-40 overflow-auto bg-red-500/5 border border-red-500/20 rounded-lg p-2 space-y-1">
+                      {parseResult.invalid.map((v, i) => (
+                        <div key={i} className="text-xs text-red-300/90">
+                          第{v.line}行 · {v.name}{v.area ? `（${v.area}）` : ''}：{v.reason}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex justify-end gap-3 pt-1">
+                    <button onClick={onClose} className="px-4 py-2.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition text-sm">取消</button>
+                    <button onClick={doImport} disabled={parseResult.valid.length === 0}
+                      className={`px-5 py-2.5 rounded-lg text-sm font-medium transition ${parseResult.valid.length === 0 ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>
+                      导入 {parseResult.valid.length} 名学员
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 function WorkHoursImportModal({ trainees, onClose, onImported }) {
   const [parseResult, setParseResult] = useState(null); // {rows, matched, unmatched, invalid, total}
   const [importing, setImporting] = useState(false);
@@ -3132,7 +3445,8 @@ function App() {
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [showHoursModal, setShowHoursModal] = useState(false);
   const [showAdminPwdModal, setShowAdminPwdModal] = useState(false);
-  const [pendingAdminAction, setPendingAdminAction] = useState(null); // 'import_hours' | 'export_empids'
+  const [pendingAdminAction, setPendingAdminAction] = useState(null); // 'import_hours' | 'export_empids' | 'import_trainees'
+  const [showTraineesModal, setShowTraineesModal] = useState(false);
   const [workHours, setWorkHours] = useState(() => loadWorkHoursCache());
   const [syncStatus, setSyncStatus] = useState('connecting');
   const [lastSyncTime, setLastSyncTime] = useState(null);
@@ -3375,6 +3689,29 @@ function App() {
     XLSX.writeFile(wb, `带训学员工号表_${stamp}.xlsx`);
   };
 
+  // 批量导入学员（000 账号专用）：一次性灌入多区域学员，自动推送云端
+  const handleBatchImportTrainees = (rows) => {
+    const now = Date.now();
+    const today = new Date().toISOString().slice(0, 10);
+    const created = rows.map(r => ({
+      id: genId(),
+      name: r.name,
+      store: r.store,
+      route: r.route,
+      subRoute: r.subRoute || '',
+      startDate: r.startDate || today,
+      master: r.master || '',
+      empId: r.empId || '',
+      area: r.area,
+      note: '',
+      progress: {},
+      createdAt: new Date().toISOString(),
+      _updatedAt: now
+    }));
+    setData(d => ({ ...d, trainees: [...d.trainees, ...created] }));
+    return created.length;
+  };
+
   const handleAddTrainee = (trainee) => {
     const newTrainee = {
       id: genId(),
@@ -3467,6 +3804,15 @@ function App() {
               </button>
               {currentUser.id === '000' && (
                 <button
+                  onClick={() => { setPendingAdminAction('import_trainees'); setShowAdminPwdModal(true); }}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-gray-400 hover:text-white hover:bg-gray-800"
+                  title="用 Excel 一次性导入所有区域的学员"
+                >
+                  <Icon.User width={16} height={16}/> 导入学员
+                </button>
+              )}
+              {currentUser.id === '000' && (
+                <button
                   onClick={() => { setPendingAdminAction('import_hours'); setShowAdminPwdModal(true); }}
                   className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-gray-400 hover:text-white hover:bg-gray-800"
                 >
@@ -3551,9 +3897,19 @@ function App() {
             setShowAdminPwdModal(false);
             if (pendingAdminAction === 'import_hours') setShowHoursModal(true);
             else if (pendingAdminAction === 'export_empids') handleExportEmpIds();
+            else if (pendingAdminAction === 'import_trainees') setShowTraineesModal(true);
             setPendingAdminAction(null);
           }}
           onClose={() => { setShowAdminPwdModal(false); setPendingAdminAction(null); }}
+        />
+      )}
+
+      {/* 学员批量导入弹窗（仅 000 账号） */}
+      {showTraineesModal && (
+        <TraineesImportModal
+          existingTrainees={data.trainees}
+          onClose={() => setShowTraineesModal(false)}
+          onImport={handleBatchImportTrainees}
         />
       )}
 

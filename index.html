@@ -3646,7 +3646,7 @@ function App() {
       } catch(e) {}
     });
 
-    // Fallback poll every 3min when tab is visible (Realtime is the primary sync;
+    // Fallback poll every 12s when tab is visible (Realtime is the primary sync;
     // idle auto-close removes unattended pages, so a short poll stays cheap)
     const pollTimer = setInterval(async () => {
       if (document.visibilityState !== 'visible') return; // don't poll in background
@@ -3662,7 +3662,7 @@ function App() {
         });
         setLastSyncTime(Date.now());
       } catch(e) { /* errors surfaced via status listeners */ }
-    }, 180000);
+    }, 12000);
 
     // When tab becomes visible again, sync immediately
     const onVisibility = () => {

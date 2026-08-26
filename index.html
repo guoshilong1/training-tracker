@@ -38,6 +38,11 @@
 </head>
 <body class="bg-gray-950 text-gray-100">
   <div id="root"></div>
+  <div id="idle-overlay" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(2,6,23,0.93);align-items:center;justify-content:center;flex-direction:column;gap:14px;text-align:center;padding:24px;">
+    <div style="font-size:20px;font-weight:600;color:#fff;">页面即将自动关闭</div>
+    <div style="font-size:14px;color:rgba(255,255,255,0.75);">已连续 3 分钟没有操作，<span id="idle-countdown" style="color:#f59e0b;font-weight:600;">10</span> 秒后关闭</div>
+    <div style="font-size:13px;color:rgba(255,255,255,0.5);">动一下鼠标或按任意键即可继续使用</div>
+  </div>
   <script type="text/babel">
 
 const { useState, useEffect, useMemo, useCallback, useRef } = React;
@@ -3641,8 +3646,8 @@ function App() {
       } catch(e) {}
     });
 
-    // Fallback poll every 30min when tab is visible (Realtime handles instant sync;
-    // this is just a safety net in case Realtime is blocked on some networks)
+    // Fallback poll every 3min when tab is visible (Realtime is the primary sync;
+    // idle auto-close removes unattended pages, so a short poll stays cheap)
     const pollTimer = setInterval(async () => {
       if (document.visibilityState !== 'visible') return; // don't poll in background
       try {
@@ -3657,7 +3662,7 @@ function App() {
         });
         setLastSyncTime(Date.now());
       } catch(e) { /* errors surfaced via status listeners */ }
-    }, 1800000);
+    }, 180000);
 
     // When tab becomes visible again, sync immediately
     const onVisibility = () => {
@@ -4043,6 +4048,71 @@ function App() {
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+  <script>
+  // ============ Idle auto-close: 3min no activity -> 10s countdown -> close ============
+  (function initIdleAutoClose() {
+    var IDLE_MS = 3 * 60 * 1000;
+    var COUNTDOWN_MS = 10 * 1000;
+    var overlay = document.getElementById('idle-overlay');
+    var countdownEl = document.getElementById('idle-countdown');
+    var idleTimer = null;
+    var countdownTimer = null;
+    var lastActivity = 0;
+
+    function clearTimers() {
+      if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+      if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+    }
+
+    function closePage() {
+      try { window.location.replace('about:blank'); }
+      catch (e) { try { window.location.href = 'about:blank'; } catch (e2) {} }
+    }
+
+    function startCountdown() {
+      if (!overlay || overlay.style.display === 'flex') return;
+      overlay.style.display = 'flex';
+      var remain = Math.round(COUNTDOWN_MS / 1000);
+      if (countdownEl) countdownEl.textContent = String(remain);
+      countdownTimer = setInterval(function () {
+        remain -= 1;
+        if (countdownEl) countdownEl.textContent = String(remain);
+        if (remain <= 0) {
+          clearInterval(countdownTimer);
+          countdownTimer = null;
+          closePage();
+        }
+      }, 1000);
+    }
+
+    function resetIdle() {
+      if (document.visibilityState !== 'visible') return;
+      clearTimers();
+      if (overlay) overlay.style.display = 'none';
+      idleTimer = setTimeout(startCountdown, IDLE_MS);
+    }
+
+    function onActivity() {
+      var now = Date.now();
+      if (now - lastActivity < 500) return; // throttle mousemove/scroll
+      lastActivity = now;
+      resetIdle();
+    }
+
+    document.addEventListener('mousemove', onActivity, { passive: true });
+    document.addEventListener('mousedown', resetIdle, { passive: true });
+    document.addEventListener('keydown', resetIdle, { passive: true });
+    document.addEventListener('touchstart', resetIdle, { passive: true });
+    document.addEventListener('scroll', onActivity, { passive: true });
+    document.addEventListener('wheel', onActivity, { passive: true });
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') resetIdle();
+    });
+    if (overlay) overlay.addEventListener('mousedown', resetIdle);
+
+    resetIdle();
+  })();
   </script>
 </body>
 </html>

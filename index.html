@@ -1767,7 +1767,7 @@ function calcNoCheckInStreak(t, today) {
   return { days, label: `连续${days}天未打卡` };
 }
 
-// 延迟统计：累计延迟过的天数（用于看板显示"累计延期 N 次"）
+// 延迟统计：累计延迟过的天数（用于看板显示"累计延迟 N 次"）
 function calcDelayTotalDays(t) {
   const dates = new Set();
   const progress = t.progress || {};
@@ -1775,6 +1775,22 @@ function calcDelayTotalDays(t) {
     if (day.delayed && day.delayAt) dates.add(localDateStr(day.delayAt));
   });
   return { days: dates.size, label: dates.size > 0 ? `累计延迟 ${dates.size} 次` : '未延迟' };
+}
+
+// 连续延迟统计：从今天往前数，连续有延迟记录的天数（包含今天）
+function calcDelayStreakDays(t) {
+  const delayDates = new Set();
+  const progress = t.progress || {};
+  Object.values(progress).forEach(day => {
+    if (day.delayed && day.delayAt) delayDates.add(localDateStr(day.delayAt));
+  });
+  let streak = 0;
+  const d = new Date();
+  while (delayDates.has(localDateStr(d.toISOString()))) {
+    streak++;
+    d.setDate(d.getDate() - 1);
+  }
+  return { days: streak, label: streak > 0 ? `连续延迟 ${streak} 天` : '未延迟' };
 }
 
 function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
@@ -1896,8 +1912,8 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
       });
       const baseEntry = { id: t.id, name: t.name, store: t.store, note: t.note || '', empId: t.empId, route: t.route, subRoute: t.subRoute };
       const yEntry = { ...baseEntry, count: yCount, lastTime: yLastTime, completedDay: yCompletedDay };
-      const tEntry = { ...baseEntry, count: tCount, lastTime: tLastTime, completedDay: tCompletedDay };
-      // 已打卡必须以至少勾选1项为准，仅确认完成但没勾选项不算打卡
+      const tEntry = { ...baseEntry, count: tCount, lastTime: tLastTime, completedDay: tCompletedDay, isDelayed: dCount > 0 };
+      // 已打卡必须以至少勾选1项或今日已延迟为准，仅确认完成但没勾选项不算打卡
       if (yCount > 0) yesterdayChecked.push(yEntry);
       else {
         // 已完成全部带训的人员不再出现在未打卡列表中
@@ -1905,17 +1921,19 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
           // 但延迟数据依然入今日已延迟区
           if (dCount > 0) {
             const total = calcDelayTotalDays(t);
-            todayDelayed.push({ ...tEntry, delayCount: dCount, delayLastTime: dLastTime, delayNote: dLastNote, delayTotalDays: total.days, delayTotalLabel: total.label });
+            const streak = calcDelayStreakDays(t);
+            todayDelayed.push({ ...tEntry, delayCount: dCount, delayLastTime: dLastTime, delayNote: dLastNote, delayTotalDays: total.days, delayTotalLabel: total.label, delayStreakDays: streak.days, delayStreakLabel: streak.label });
           }
           return;
         }
         const streak = calcNoCheckInStreak(t, today);
         yesterdayUnchecked.push({ ...yEntry, streakDays: streak.days, streakLabel: streak.label });
       }
-      if (tCount > 0) todayChecked.push(tEntry);
+      if (tCount > 0 || dCount > 0) todayChecked.push(tEntry);
       if (dCount > 0) {
         const total = calcDelayTotalDays(t);
-        todayDelayed.push({ ...tEntry, delayCount: dCount, delayLastTime: dLastTime, delayNote: dLastNote, delayTotalDays: total.days, delayTotalLabel: total.label });
+        const streak = calcDelayStreakDays(t);
+        todayDelayed.push({ ...tEntry, delayCount: dCount, delayLastTime: dLastTime, delayNote: dLastNote, delayTotalDays: total.days, delayTotalLabel: total.label, delayStreakDays: streak.days, delayStreakLabel: streak.label });
       }
     });
     yesterdayChecked.sort((a, b) => b.count - a.count);
@@ -2048,7 +2066,11 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
                     <div className="flex items-center gap-2 flex-shrink-0">
                       {p.empId && workHours?.[p.empId] != null && <span className="text-xs text-amber-300/80 tabular-nums">⏱ {workHours[p.empId].hours}h</span>}
                       <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">{countCerts(p)}证</span>
-                      <span className="text-xs px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300">勾了{p.count}项</span>
+                      {p.isDelayed && p.count === 0 ? (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">已延迟</span>
+                      ) : (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300">勾了{p.count}项</span>
+                      )}
                       {p.lastTime && <span className="text-xs text-gray-500">{timeStr(p.lastTime)}</span>}
                     </div>
                   </div>
@@ -2111,6 +2133,7 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       {p.empId && workHours?.[p.empId] != null && <span className="text-xs text-amber-300/80 tabular-nums">⏱ {workHours[p.empId].hours}h</span>}
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-300">{p.delayStreakLabel}</span>
                       <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">{p.delayTotalLabel}</span>
                     </div>
                   </div>
@@ -2430,17 +2453,19 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
         if (getCurrentDay(t) === null) {
           if (dCount > 0) {
             const total = calcDelayTotalDays(t);
-            todayDelayed.push({ ...baseEntry, delayCount: dCount, delayLastTime: dLast, delayNote: dNote, delayTotalDays: total.days, delayTotalLabel: total.label });
+            const streak = calcDelayStreakDays(t);
+            todayDelayed.push({ ...baseEntry, delayCount: dCount, delayLastTime: dLast, delayNote: dNote, delayTotalDays: total.days, delayTotalLabel: total.label, delayStreakDays: streak.days, delayStreakLabel: streak.label });
           }
           return;
         }
         const streak = calcNoCheckInStreak(t, today);
         yesterdayUnchecked.push({ ...baseEntry, streakDays: streak.days, streakLabel: streak.label });
       }
-      if (tHas) todayChecked.push({ ...baseEntry, lastTime: tLast });
+      if (tHas || dCount > 0) todayChecked.push({ ...baseEntry, lastTime: tLast, isDelayed: dCount > 0 });
       if (dCount > 0) {
         const total = calcDelayTotalDays(t);
-        todayDelayed.push({ ...baseEntry, delayCount: dCount, delayLastTime: dLast, delayNote: dNote, delayTotalDays: total.days, delayTotalLabel: total.label });
+        const streak = calcDelayStreakDays(t);
+        todayDelayed.push({ ...baseEntry, delayCount: dCount, delayLastTime: dLast, delayNote: dNote, delayTotalDays: total.days, delayTotalLabel: total.label, delayStreakDays: streak.days, delayStreakLabel: streak.label });
       }
     });
     yesterdayChecked.sort((a, b) => (b.lastTime || '').localeCompare(a.lastTime || ''));
@@ -2731,7 +2756,7 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
                     <th className="text-left px-2 py-1.5 font-medium">学员/门店/区域</th>
                     <th className="text-left px-2 py-1.5 font-medium w-16">工时</th>
                     <th className="text-left px-2 py-1.5 font-medium w-14">证书</th>
-                    <th className="text-left px-2 py-1.5 font-medium w-20">时间</th>
+                    <th className="text-left px-2 py-1.5 font-medium w-20">状态</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2746,7 +2771,13 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
                       </td>
                       <td className="px-2 py-2 text-xs text-amber-300/80 tabular-nums">{t.empId && workHours?.[t.empId] != null ? `${workHours[t.empId].hours}h` : '—'}</td>
                       <td className="px-2 py-2 text-xs text-amber-300/80">{countCerts(t)}证</td>
-                      <td className="px-2 py-2 text-xs text-gray-500">{t.lastTime ? timeStr(t.lastTime) : '—'}</td>
+                      <td className="px-2 py-2">
+                        {t.isDelayed ? (
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">已延迟</span>
+                        ) : (
+                          <span className="text-xs text-gray-500">{t.lastTime ? timeStr(t.lastTime) : '—'}</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -2805,6 +2836,7 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
                     <tr className="text-xs text-gray-500 border-b border-gray-800">
                       <th className="text-left px-3 py-2 font-medium">学员/门店/区域</th>
                       <th className="text-left px-3 py-2 font-medium">延迟备注</th>
+                      <th className="text-left px-3 py-2 font-medium w-28">连续延迟</th>
                       <th className="text-left px-3 py-2 font-medium w-28">累计延迟</th>
                     </tr>
                   </thead>
@@ -2821,6 +2853,7 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
                         <td className="px-3 py-2 text-xs text-amber-300/80 max-w-[260px]" title={t.delayNote || ''}>
                           {t.delayNote || '—'}
                         </td>
+                        <td className="px-3 py-2"><span className="text-xs px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-300">{t.delayStreakLabel}</span></td>
                         <td className="px-3 py-2"><span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">{t.delayTotalLabel}</span></td>
                       </tr>
                     ))}

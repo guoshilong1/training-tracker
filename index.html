@@ -1823,7 +1823,8 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
     const completed = trainees.filter(t => isCertified(t)).length;
     const notStarted = trainees.filter(t => !isCertified(t) && calcProgress(t).completed === 0).length;
     const avgProgress = total > 0 ? Math.round(trainees.reduce((sum, t) => sum + calcProgress(t).percent, 0) / total) : 0;
-    return { total, inProgress, completed, notStarted, avgProgress };
+    const incompleteTotal = inProgress + notStarted; // 未带训完总人数（不含已认证）
+    return { total, inProgress, completed, notStarted, avgProgress, incompleteTotal };
   }, [trainees]);
 
   // Group by store (total includes certified trainees; completion rate = certified / total)
@@ -1968,14 +1969,14 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
             <div className="text-xs text-emerald-300/70">昨日已打卡</div>
             <div className="text-3xl font-bold text-emerald-400 mt-1">
               {yesterdayAndTodayStats.yesterdayChecked.length}
-              <span className="text-sm text-gray-500 font-normal">/{stats.total}</span>
+              <span className="text-sm text-gray-500 font-normal">/{stats.incompleteTotal}</span>
             </div>
           </div>
           <div className="bg-gradient-to-br from-rose-500/15 to-rose-600/5 border border-rose-500/20 rounded-xl p-4">
             <div className="text-xs text-rose-300/70">昨日未打卡</div>
             <div className="text-3xl font-bold text-rose-400 mt-1">
               {yesterdayAndTodayStats.yesterdayUnchecked.length}
-              <span className="text-sm text-gray-500 font-normal">/{stats.total}</span>
+              <span className="text-sm text-gray-500 font-normal">/{stats.incompleteTotal}</span>
             </div>
           </div>
           <div className="bg-gradient-to-br from-amber-500/20 to-amber-600/5 border border-amber-500/20 rounded-xl p-4">
@@ -1987,8 +1988,8 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
             <div className="text-3xl font-bold text-gray-300 mt-1">{stats.notStarted}</div>
           </div>
           <div className="bg-gradient-to-br from-purple-600/20 to-purple-700/5 border border-purple-500/20 rounded-xl p-4">
-            <div className="text-xs text-purple-300/70">平均进度</div>
-            <div className="text-3xl font-bold text-purple-400 mt-1">{stats.avgProgress}%</div>
+            <div className="text-xs text-purple-300/70">已认证人数</div>
+            <div className="text-3xl font-bold text-purple-400 mt-1">{stats.completed}</div>
           </div>
         </div>
 
@@ -2346,8 +2347,10 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
     const completed = visibleTrainees.filter(t => isCertified(t)).length;
     const notStarted = visibleTrainees.filter(t => !isCertified(t) && calcProgress(t).percent === 0).length;
     const avgProgress = total > 0 ? Math.round(progressList.reduce((s, p) => s + p.percent, 0) / total) : 0;
+    const incompleteTotal = inProgress + notStarted; // 未带训完总人数（不含已认证）
     let checkedYesterday = 0;
     visibleTrainees.forEach(t => {
+      if (isCertified(t)) return; // 已认证人员不计入昨日打卡统计
       const progress = t.progress || {};
       let hasYesterday = false;
       Object.values(progress).forEach(day => {
@@ -2358,7 +2361,7 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
       });
       if (hasYesterday) checkedYesterday++;
     });
-    return { total, inProgress, completed, notStarted, avgProgress, checkedYesterday, uncheckedYesterday: total - checkedYesterday };
+    return { total, inProgress, completed, notStarted, avgProgress, incompleteTotal, checkedYesterday, uncheckedYesterday: incompleteTotal - checkedYesterday };
   }, [visibleTrainees, today]);
 
   const areaStats = useMemo(() => {
@@ -2533,11 +2536,11 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
       {/* Top Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard label="学员总数" value={stats.total} color="white"/>
-        <StatCard label="昨日已打卡" value={stats.checkedYesterday} sub={`未打卡 ${stats.uncheckedYesterday}`} color="emerald"/>
+        <StatCard label="昨日已打卡" value={stats.checkedYesterday} sub={`未打卡 ${stats.uncheckedYesterday}/${stats.incompleteTotal}`} color="emerald"/>
         <StatCard label="带训中" value={stats.inProgress} color="amber"/>
         <StatCard label="已完成" value={stats.completed} color="emerald"/>
         <StatCard label="未开始" value={stats.notStarted} color="gray"/>
-        <StatCard label="平均进度" value={`${stats.avgProgress}%`} color="indigo"/>
+        <StatCard label="已认证人数" value={stats.completed} color="indigo"/>
         <StatCard label="覆盖区域" value={areaStats.filter(a => a.total > 0).length} sub={`共 ${areaStats.length} 个区域`} color="sky"/>
       </div>
 

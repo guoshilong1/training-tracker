@@ -3476,7 +3476,7 @@ function WorkHoursImportModal({ trainees, onClose, onImported }) {
   );
 }
 
-function SyncModal({ data, syncStatus, lastSyncTime, setLastSyncTime, onClose, onImport, isRemoteUpdate }) {
+function SyncModal({ data, syncStatus, lastSyncTime, setLastSyncTime, onClose, onImport, onPull, isRemoteUpdate }) {
   const [status, setStatus] = useState({ type: '', msg: '' });
   const [busy, setBusy] = useState(false);
   const fileInputRef = useRef(null);
@@ -3560,12 +3560,9 @@ function SyncModal({ data, syncStatus, lastSyncTime, setLastSyncTime, onClose, o
       const remote = await sbFetchAll();
       if (remote && remote.trainees && remote.trainees.length > 0) {
         isRemoteUpdate.current = true;
-        setData(prevData => {
-          const mergedResult = mergeTrainees(prevData.trainees, remote.trainees, prevData._deletedIds || [], []);
-          const newData = normalizeData({ trainees: mergedResult.trainees, _deletedIds: mergedResult.deletedIds, _updatedAt: Date.now() });
-          saveData(newData);
-          return newData;
-        });
+        if (typeof onPull === 'function') {
+          onPull(remote.trainees, remote._deletedIds || []);
+        }
         showStatus('success', `已从云端拉取 ${remote.trainees.length} 名学员数据`);
       } else {
         showStatus('success', '当前已是最新数据，无需更新');
@@ -4146,6 +4143,15 @@ function App() {
     setSelectedId(stamped.trainees.length > 0 ? stamped.trainees[0].id : null);
   };
 
+  const handlePull = (remoteTrainees, remoteDeletedIds) => {
+    setData(prevData => {
+      const mergedResult = mergeTrainees(prevData.trainees, remoteTrainees, prevData._deletedIds || [], remoteDeletedIds || []);
+      const newData = normalizeData({ trainees: mergedResult.trainees, _deletedIds: mergedResult.deletedIds, _updatedAt: Date.now() });
+      saveData(newData);
+      return newData;
+    });
+  };
+
   // Not logged in: show full-screen login
   if (!currentUser) {
     return <LoginScreen onLogin={handleLogin} />;
@@ -4320,6 +4326,7 @@ function App() {
           setLastSyncTime={setLastSyncTime}
           onClose={() => setShowSyncModal(false)}
           onImport={handleImportData}
+          onPull={handlePull}
           isRemoteUpdate={isRemoteUpdate}
         />
       )}

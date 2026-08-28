@@ -452,6 +452,15 @@ function mergeDayProgress(lProgress, rProgress) {
       }
     }
 
+    // 3c) Merge rest marker by restAt timestamp (same last-write-wins semantics)
+    if (lp.restAt || rp.restAt) {
+      const winner = (rp.restAt || '') >= (lp.restAt || '') ? rp : lp;
+      if (winner.restAt) {
+        dayMerged.rest = !!winner.rest;
+        dayMerged.restAt = winner.restAt;
+      }
+    }
+
     // 4) Preserve any other fields from the newer side
     for (const k of Object.keys(newer)) {
       if (!(k in dayMerged)) dayMerged[k] = newer[k];
@@ -1002,7 +1011,7 @@ function TraineeModal({ open, onClose, onSave, editing, stores }) {
 }
 
 // ============ Day Card ============
-function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, onDelayDay, onUndoDelay, trainee }) {
+function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, onDelayDay, onUndoDelay, onRestDay, onUndoRest, trainee }) {
   const [expanded, setExpanded] = useState(true);
   const [masterName, setMasterName] = useState(dayProgress?.masterSignature || trainee?.master || '');
   const [showDelayModal, setShowDelayModal] = useState(false);
@@ -1082,10 +1091,15 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, onDe
           </div>
           <div className="text-xs text-gray-500 mt-0.5">{day.monthName} · {day.phaseName} · {day.phaseFocus}</div>
         </div>
-        <div className="flex items-center gap-1.5 flex-shrink-0">
+        <div className="flex items-center gap-2 flex-shrink-0">
           {dayProgress?.delayed && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1" title={dayProgress.delayNote || ''}>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-300 border border-yellow-500/30 flex items-center gap-1" title={dayProgress.delayNote || ''}>
               <Icon.Clock width={11} height={11}/> 已延迟
+            </span>
+          )}
+          {dayProgress?.rest && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+              休息
             </span>
           )}
           <button
@@ -1093,13 +1107,29 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, onDe
               setDelayNoteInput(dayProgress?.delayNote || '');
               setShowDelayModal(true);
             }}
-            className={`px-2 py-1 rounded-lg text-xs transition border ${
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition border ${
               dayProgress?.delayed
-                ? 'bg-amber-500/15 text-amber-300 border-amber-500/30 hover:bg-amber-500/25'
+                ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40 hover:bg-yellow-500/30'
                 : 'bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700 hover:text-white'
             }`}
           >
-            {dayProgress?.delayed ? '修改' : '延迟'}
+            {dayProgress?.delayed ? '修改延迟' : '延迟'}
+          </button>
+          <button
+            onClick={() => {
+              if (dayProgress?.rest) {
+                onUndoRest(day.key);
+              } else {
+                onRestDay(day.key);
+              }
+            }}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition border ${
+              dayProgress?.rest
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
+                : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20'
+            }`}
+          >
+            {dayProgress?.rest ? '撤销休息' : '休息'}
           </button>
           {unlocked && day.items.length > 0 && (
             <button onClick={() => setExpanded(!expanded)} className="p-1.5 rounded-lg hover:bg-gray-800 text-gray-400 transition">
@@ -1448,6 +1478,32 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
     onUpdateProgress(selected.id, progress);
   };
 
+  // ============ 休息标记 ============
+  // 语义：今日学员休息，视同已打卡；不计入连续未打卡。
+  const handleRestDay = (dayKey) => {
+    if (!selected) return;
+    const progress = { ...(selected.progress || {}) };
+    const dayProg = { ...(progress[dayKey] || { items: {} }) };
+    dayProg.rest = true;
+    dayProg.restAt = new Date().toISOString();
+    dayProg._updatedAt = Date.now();
+    progress[dayKey] = dayProg;
+    onUpdateProgress(selected.id, progress);
+  };
+
+  const handleUndoRest = (dayKey) => {
+    if (!selected) return;
+    const progress = { ...(selected.progress || {}) };
+    const dayProg = { ...(progress[dayKey] || { items: {} }) };
+    if (!dayProg.rest) return;
+    if (!confirm('确认撤销本天休息标记？')) return;
+    dayProg.rest = false;
+    dayProg.restAt = new Date().toISOString();
+    dayProg._updatedAt = Date.now();
+    progress[dayKey] = dayProg;
+    onUpdateProgress(selected.id, progress);
+  };
+
   const allDays = selected ? getAllDays(selected.route, selected.subRoute).filter(d => d.items.length > 0) : [];
   const currentDay = selected ? getCurrentDay(selected) : null;
   const progressInfo = selected ? calcProgress(selected) : null;
@@ -1557,7 +1613,7 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
                 <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
                   <Icon.Store/> {t.store}
                   {t.master && <><span className="text-gray-700">·</span><Icon.User/> {t.master}</>}
-                  {t.empId && workHours?.[t.empId] != null && (
+                  {t.empId && !certified && workHours?.[t.empId] != null && (
                     <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded border tabular-nums whitespace-nowrap ${warning ? 'bg-yellow-500/25 text-yellow-200 border-yellow-500/50' : 'bg-amber-500/10 text-amber-300 border-amber-500/20'}`}>⏱ {workHours[t.empId].hours}工时</span>
                   )}
                 </div>
@@ -1609,7 +1665,7 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
                     {selected.master && <span className="flex items-center gap-1"><Icon.User/> 师傅: {selected.master}</span>}
                     {selected.startDate && <span className="flex items-center gap-1"><Icon.Calendar width={14} height={14}/> 入职: {selected.startDate}</span>}
                     {selected.empId && <span className="flex items-center gap-1 tabular-nums"><Icon.IdCard width={14} height={14}/> 工号: {selected.empId}</span>}
-                    {selected.empId && workHours?.[selected.empId] != null && (
+                    {selected.empId && !isCertified(selected) && workHours?.[selected.empId] != null && (
                       <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/25 text-amber-300 tabular-nums">
                         <Icon.Clock width={14} height={14}/> 累计工时: <span className="font-semibold">{workHours[selected.empId].hours}</span>
                       </span>
@@ -1681,6 +1737,8 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
                       onCompleteDay={handleCompleteDay}
                       onDelayDay={handleDelayDay}
                       onUndoDelay={handleUndoDelay}
+                      onRestDay={handleRestDay}
+                      onUndoRest={handleUndoRest}
                       trainee={selected}
                     />
                   </div>
@@ -1750,6 +1808,8 @@ function calcNoCheckInStreak(t, today) {
       if (item.checked && item.checkedAt) dates.add(localDateStr(item.checkedAt));
     });
     if (day.completed && day.completedAt) dates.add(localDateStr(day.completedAt));
+    // 休息视同打卡，不计入连续未打卡
+    if (day.rest && day.restAt) dates.add(localDateStr(day.restAt));
   });
 
   if (dates.size === 0) {
@@ -1791,6 +1851,21 @@ function calcDelayStreakDays(t) {
     d.setDate(d.getDate() - 1);
   }
   return { days: streak, label: streak > 0 ? `连续延迟 ${streak} 天` : '未延迟' };
+}
+
+// 休息统计：本月累计休息天数
+function calcRestTotalDays(t) {
+  const now = new Date();
+  const yearMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  const progress = t.progress || {};
+  let count = 0;
+  Object.values(progress).forEach(day => {
+    if (day.rest && day.restAt) {
+      const ds = localDateStr(day.restAt);
+      if (ds.startsWith(yearMonth)) count++;
+    }
+  });
+  return { days: count, label: count > 0 ? `本月累计休息 ${count} 次` : '本月未休息' };
 }
 
 function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
@@ -1876,6 +1951,9 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
       let dCount = 0;
       let dLastTime = '';
       let dLastNote = '';
+      // Today rest
+      let rCount = 0;
+      let rLastTime = '';
       const progress = t.progress || {};
       Object.values(progress).forEach(day => {
         Object.values(day.items || {}).forEach(item => {
@@ -1910,27 +1988,35 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
             }
           }
         }
+        if (day.rest && day.restAt) {
+          const ds = localDateStr(day.restAt);
+          if (ds === today) {
+            rCount++;
+            if (day.restAt > rLastTime) rLastTime = day.restAt;
+          }
+        }
       });
-      const baseEntry = { id: t.id, name: t.name, store: t.store, note: t.note || '', empId: t.empId, route: t.route, subRoute: t.subRoute };
+      const baseEntry = { id: t.id, name: t.name, store: t.store, note: t.note || '', empId: t.empId, route: t.route, subRoute: t.subRoute, progress: t.progress };
       const yEntry = { ...baseEntry, count: yCount, lastTime: yLastTime, completedDay: yCompletedDay };
-      const tEntry = { ...baseEntry, count: tCount, lastTime: tLastTime, completedDay: tCompletedDay, isDelayed: dCount > 0 };
+      const tEntry = { ...baseEntry, count: tCount, lastTime: tLastTime || rLastTime, completedDay: tCompletedDay, isDelayed: dCount > 0, isRest: rCount > 0 };
       // 已打卡必须以至少勾选1项或今日已延迟为准，仅确认完成但没勾选项不算打卡
       if (yCount > 0) yesterdayChecked.push(yEntry);
       else {
         // 已完成全部带训的人员不再出现在未打卡列表中
         if (getCurrentDay(t) === null) {
-          // 但延迟数据依然入今日已延迟区
+          // 但延迟/休息数据依然入今日已延迟/已打卡区
           if (dCount > 0) {
             const total = calcDelayTotalDays(t);
             const streak = calcDelayStreakDays(t);
             todayDelayed.push({ ...tEntry, delayCount: dCount, delayLastTime: dLastTime, delayNote: dLastNote, delayTotalDays: total.days, delayTotalLabel: total.label, delayStreakDays: streak.days, delayStreakLabel: streak.label });
           }
+          if (rCount > 0) todayChecked.push(tEntry);
           return;
         }
         const streak = calcNoCheckInStreak(t, today);
         yesterdayUnchecked.push({ ...yEntry, streakDays: streak.days, streakLabel: streak.label });
       }
-      if (tCount > 0 || dCount > 0) todayChecked.push(tEntry);
+      if (tCount > 0 || dCount > 0 || rCount > 0) todayChecked.push(tEntry);
       if (dCount > 0) {
         const total = calcDelayTotalDays(t);
         const streak = calcDelayStreakDays(t);
@@ -1946,6 +2032,7 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
 
   const hourWarnings = useMemo(() => {
     return trainees
+      .filter(t => !isCertified(t))
       .map(t => {
         const h = workHours?.[t.empId]?.hours;
         const w = getWorkHoursWarning(t, h);
@@ -2040,7 +2127,7 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
                       <span className="text-xs text-gray-500 truncate">{p.store}</span>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      {p.empId && workHours?.[p.empId] != null && <span className="text-xs text-amber-300/80 tabular-nums">⏱ {workHours[p.empId].hours}h</span>}
+                      {p.empId && !isCertified(p) && workHours?.[p.empId] != null && <span className="text-xs text-amber-300/80 tabular-nums">⏱ {workHours[p.empId].hours}h</span>}
                       <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">{countCerts(p)}证</span>
                       <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">勾了{p.count}项</span>
                       {p.lastTime && <span className="text-xs text-gray-500">{timeStr(p.lastTime)}</span>}
@@ -2065,9 +2152,14 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
                       <span className="text-xs text-gray-500 truncate">{p.store}</span>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      {p.empId && workHours?.[p.empId] != null && <span className="text-xs text-amber-300/80 tabular-nums">⏱ {workHours[p.empId].hours}h</span>}
+                      {p.empId && !isCertified(p) && workHours?.[p.empId] != null && <span className="text-xs text-amber-300/80 tabular-nums">⏱ {workHours[p.empId].hours}h</span>}
                       <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">{countCerts(p)}证</span>
-                      {p.isDelayed && p.count === 0 ? (
+                      {p.isRest ? (
+                        <>
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">休息</span>
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">{calcRestTotalDays(p).label}</span>
+                        </>
+                      ) : p.isDelayed && p.count === 0 ? (
                         <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">已延迟</span>
                       ) : (
                         <span className="text-xs px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300">勾了{p.count}项</span>
@@ -2096,7 +2188,7 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
                       <span className="text-xs text-gray-600 truncate">{p.store}</span>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      {p.empId && workHours?.[p.empId] != null && <span className="text-xs text-amber-300/80 tabular-nums">⏱ {workHours[p.empId].hours}h</span>}
+                      {p.empId && !isCertified(p) && workHours?.[p.empId] != null && <span className="text-xs text-amber-300/80 tabular-nums">⏱ {workHours[p.empId].hours}h</span>}
                       <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">{countCerts(p)}证</span>
                     </div>
                     <input
@@ -2133,7 +2225,7 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
-                      {p.empId && workHours?.[p.empId] != null && <span className="text-xs text-amber-300/80 tabular-nums">⏱ {workHours[p.empId].hours}h</span>}
+                      {p.empId && !isCertified(p) && workHours?.[p.empId] != null && <span className="text-xs text-amber-300/80 tabular-nums">⏱ {workHours[p.empId].hours}h</span>}
                       <span className="text-xs px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-300">{p.delayStreakLabel}</span>
                       <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">{p.delayTotalLabel}</span>
                     </div>
@@ -2411,6 +2503,7 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
 
   const hourWarnings = useMemo(() => {
     return visibleTrainees
+      .filter(t => !isCertified(t))
       .map(t => {
         const h = workHours?.[t.empId]?.hours;
         const w = getWorkHoursWarning(t, h);
@@ -2431,6 +2524,7 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
       const areaName = areaCfg?.name?.replace('区域带训追踪系统', '') || (t.area || '000');
       let yHas = false; let yLast = ''; let tHas = false; let tLast = '';
       let dCount = 0; let dLast = ''; let dNote = '';
+      let rCount = 0; let rLast = '';
       const progress = t.progress || {};
       Object.values(progress).forEach(day => {
         Object.values(day.items || {}).forEach(item => {
@@ -2448,6 +2542,10 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
             dNote = day.delayNote || '';
           }
         }
+        if (day.rest && day.restAt && localDateStr(day.restAt) === today) {
+          rCount++;
+          if (day.restAt > rLast) rLast = day.restAt;
+        }
       });
       const baseEntry = { ...t, areaName };
       if (yHas) yesterdayChecked.push({ ...baseEntry, lastTime: yLast });
@@ -2459,12 +2557,13 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
             const streak = calcDelayStreakDays(t);
             todayDelayed.push({ ...baseEntry, delayCount: dCount, delayLastTime: dLast, delayNote: dNote, delayTotalDays: total.days, delayTotalLabel: total.label, delayStreakDays: streak.days, delayStreakLabel: streak.label });
           }
+          if (rCount > 0) todayChecked.push({ ...baseEntry, lastTime: rLast, isRest: true });
           return;
         }
         const streak = calcNoCheckInStreak(t, today);
         yesterdayUnchecked.push({ ...baseEntry, streakDays: streak.days, streakLabel: streak.label });
       }
-      if (tHas || dCount > 0) todayChecked.push({ ...baseEntry, lastTime: tLast, isDelayed: dCount > 0 });
+      if (tHas || dCount > 0 || rCount > 0) todayChecked.push({ ...baseEntry, lastTime: tLast || rLast, isDelayed: dCount > 0, isRest: rCount > 0 });
       if (dCount > 0) {
         const total = calcDelayTotalDays(t);
         const streak = calcDelayStreakDays(t);
@@ -2670,7 +2769,7 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
                           <span className={`text-xs ${t._progress.percent < 30 ? 'text-red-400' : 'text-gray-400'}`}>{t._progress.percent}%</span>
                         </div>
                       </td>
-                      <td className="px-3 py-2 text-xs text-gray-400 tabular-nums">{t.empId && workHours?.[t.empId] != null ? `${workHours[t.empId].hours}h` : '—'}</td>
+                      <td className="px-3 py-2 text-xs text-gray-400 tabular-nums">{t.empId && !isCertified(t) && workHours?.[t.empId] != null ? `${workHours[t.empId].hours}h` : '—'}</td>
                       <td className="px-3 py-2 text-xs text-amber-300/80 tabular-nums">{t._certs || 0}</td>
                       <td className="px-3 py-2"><span className="text-xs px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-400">{t._streak.label}</span></td>
                       <td className="px-3 py-2 text-xs text-amber-300/80 max-w-[180px] truncate" title={t.note || ''}>{t.note || '—'}</td>
@@ -2735,7 +2834,7 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
                           <span className="text-xs text-indigo-400/80">{t.areaName}</span>
                         </div>
                       </td>
-                      <td className="px-2 py-2 text-xs text-amber-300/80 tabular-nums">{t.empId && workHours?.[t.empId] != null ? `${workHours[t.empId].hours}h` : '—'}</td>
+                      <td className="px-2 py-2 text-xs text-amber-300/80 tabular-nums">{t.empId && !isCertified(t) && workHours?.[t.empId] != null ? `${workHours[t.empId].hours}h` : '—'}</td>
                       <td className="px-2 py-2 text-xs text-amber-300/80">{countCerts(t)}证</td>
                       <td className="px-2 py-2 text-xs text-gray-500">{t.lastTime ? timeStr(t.lastTime) : '—'}</td>
                     </tr>
@@ -2772,10 +2871,15 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
                           <span className="text-xs text-indigo-400/80">{t.areaName}</span>
                         </div>
                       </td>
-                      <td className="px-2 py-2 text-xs text-amber-300/80 tabular-nums">{t.empId && workHours?.[t.empId] != null ? `${workHours[t.empId].hours}h` : '—'}</td>
+                      <td className="px-2 py-2 text-xs text-amber-300/80 tabular-nums">{t.empId && !isCertified(t) && workHours?.[t.empId] != null ? `${workHours[t.empId].hours}h` : '—'}</td>
                       <td className="px-2 py-2 text-xs text-amber-300/80">{countCerts(t)}证</td>
                       <td className="px-2 py-2">
-                        {t.isDelayed ? (
+                        {t.isRest ? (
+                          <>
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">休息</span>
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 ml-1">{calcRestTotalDays(t).label}</span>
+                          </>
+                        ) : t.isDelayed ? (
                           <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">已延迟</span>
                         ) : (
                           <span className="text-xs text-gray-500">{t.lastTime ? timeStr(t.lastTime) : '—'}</span>
@@ -2817,7 +2921,7 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
                             <span className="text-xs text-indigo-400/80">{t.areaName}</span>
                           </div>
                         </td>
-                        <td className="px-3 py-2 text-xs text-amber-300/80 tabular-nums">{t.empId && workHours?.[t.empId] != null ? `${workHours[t.empId].hours}h` : '—'}</td>
+                        <td className="px-3 py-2 text-xs text-amber-300/80 tabular-nums">{t.empId && !isCertified(t) && workHours?.[t.empId] != null ? `${workHours[t.empId].hours}h` : '—'}</td>
                         <td className="px-3 py-2 text-xs text-amber-300/80">{countCerts(t)}证</td>
                         <td className="px-3 py-2 text-xs text-amber-300/80 truncate max-w-[260px]" title={t.note || ''}>{t.note || '—'}</td>
                         <td className="px-3 py-2"><span className="text-xs px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300">{t.streakLabel}</span></td>
@@ -2889,6 +2993,7 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
                   const list = trainees.filter(t => (t.area || '000') === a.id);
                   let checkedYesterday = 0;
                   list.forEach(t => {
+                    if (isCertified(t)) return; // 已认证人员不计入昨日打卡统计
                     const progress = t.progress || {};
                     let hasYesterday = false;
                     Object.values(progress).forEach(day => {

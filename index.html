@@ -2724,9 +2724,6 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
         </div>
       </div>
 
-      {/* 企微机器人推送配置 */}
-      <BotSettingsCard config={config} subAreas={subAreas}/>
-
       {/* Top Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard label="学员总数" value={stats.total} color="white"/>
@@ -2776,7 +2773,7 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
         )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Area Progress */}
         <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
           <h3 className="text-sm font-medium text-gray-300 mb-4 flex items-center gap-2"><Icon.TrendUp/> 各小区进度对比</h3>
@@ -2796,6 +2793,9 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
             ))}
           </div>
         </div>
+
+        {/* 企微机器人推送配置 */}
+        <BotSettingsCard config={config} subAreas={subAreas}/>
 
         {/* Phase Distribution */}
         <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">

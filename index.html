@@ -2724,6 +2724,9 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
         </div>
       </div>
 
+      {/* 企微机器人推送配置 */}
+      <BotSettingsCard config={config} subAreas={subAreas}/>
+
       {/* Top Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard label="学员总数" value={stats.total} color="white"/>
@@ -3120,6 +3123,166 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
           </div>
           <p className="text-xs text-gray-600 mt-2">点击表格行可筛选上方所有模块为单个区域</p>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ============ 企微机器人推送配置卡片（每小区独立机器人） ============
+const BOT_PUSH_TIMES = ['21:00', '22:00', '23:00'];
+
+function BotSettingsCard({ config, subAreas }) {
+  const areas = useMemo(() => config.filter(c => c.role === 'area' && (!subAreas || subAreas.includes(c.id))), [config, subAreas]);
+  const [edits, setEdits] = useState({});     // area -> { enabled, webhook_url, push_time, push_content }
+  const [records, setRecords] = useState({}); // area -> { last_push_at, last_push_status, last_push_summary }
+  const [tableMissing, setTableMissing] = useState(false);
+  const [savingArea, setSavingArea] = useState('');
+  const [testingArea, setTestingArea] = useState('');
+  const [toast, setToast] = useState(null);   // { area, text, ok }
+
+  const load = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from('bot_settings').select('*');
+      if (error) { setTableMissing(true); return; }
+      const e = {}; const rec = {};
+      (data || []).forEach(r => {
+        e[r.area] = {
+          enabled: !!r.enabled,
+          webhook_url: r.webhook_url || '',
+          push_time: r.push_time || '22:00',
+          push_content: { unchecked: true, allChecked: true, ...(r.push_content || {}) },
+        };
+        rec[r.area] = { last_push_at: r.last_push_at, last_push_status: r.last_push_status, last_push_summary: r.last_push_summary };
+      });
+      setEdits(e); setRecords(rec); setTableMissing(false);
+    } catch (err) {
+      setTableMissing(true);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const getEdit = (area) => edits[area] || { enabled: false, webhook_url: '', push_time: '22:00', push_content: { unchecked: true, allChecked: true } };
+  const patch = (area, p) => setEdits(prev => ({ ...prev, [area]: { ...getEdit(area), ...p } }));
+
+  const showToast = (area, text, ok) => {
+    setToast({ area, text, ok });
+    setTimeout(() => setToast(null), 5000);
+  };
+
+  const handleSave = async (area) => {
+    const e = getEdit(area);
+    setSavingArea(area);
+    try {
+      const { error } = await supabase.from('bot_settings').upsert({
+        area, enabled: e.enabled, webhook_url: e.webhook_url.trim(),
+        push_time: e.push_time, push_content: e.push_content,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'area' });
+      if (error) throw error;
+      showToast(area, '已保存 ✓', true);
+      await load();
+    } catch (err) {
+      showToast(area, '保存失败：' + (err.message || '未知错误'), false);
+    }
+    setSavingArea('');
+  };
+
+  const handleTest = async (area, areaName) => {
+    const e = getEdit(area);
+    if (!e.webhook_url.trim()) { showToast(area, '请先填写 Webhook 地址', false); return; }
+    setTestingArea(area);
+    try {
+      const res = await fetch(e.webhook_url.trim(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ msgtype: 'text', text: { content: `【测试消息】「${areaName}」企微机器人连接成功 ✓` } }),
+      });
+      const j = await res.json();
+      if (j.errcode === 0) showToast(area, '测试消息已发送到群里 ✓', true);
+      else showToast(area, '推送失败：' + (j.errmsg || '未知错误'), false);
+    } catch (err) {
+      showToast(area, '推送失败（网络或跨域限制），可稍后由定时任务验证', false);
+    }
+    setTestingArea('');
+  };
+
+  return (
+    <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
+          <Icon.Cloud className="text-green-400"/> 企微机器人推送
+          <span className="text-xs text-gray-600">每小区独立机器人 · 到点自动推未打卡名单</span>
+        </h3>
+        <button onClick={load} className="text-xs text-indigo-400 hover:text-indigo-300">刷新</button>
+      </div>
+
+      {tableMissing && (
+        <div className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 mb-3">
+          数据库还没有 bot_settings 表，请先在 Supabase 控制台 SQL Editor 执行建表 SQL，然后点"刷新"。
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {areas.map(c => {
+          const areaName = c.name.replace('区域带训追踪系统', '');
+          const e = getEdit(c.id);
+          const rec = records[c.id];
+          const t = toast && toast.area === c.id ? toast : null;
+          const recText = rec && rec.last_push_at
+            ? (rec.last_push_status === 'ok' ? '成功' : rec.last_push_status === 'skip' ? '静默' : rec.last_push_status === 'error' ? '失败' : rec.last_push_status)
+            : '';
+          return (
+            <div key={c.id} className={`border rounded-lg p-3 ${e.enabled ? 'border-green-500/30 bg-green-500/5' : 'border-gray-800 bg-gray-800/20'}`}>
+              <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm text-white font-medium">{areaName}</span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded ${e.enabled ? 'bg-green-500/20 text-green-300' : 'bg-gray-700/50 text-gray-400'}`}>{e.enabled ? '已启用' : '未启用'}</span>
+                  {recText && (
+                    <span className="text-xs text-gray-500" title={rec?.last_push_summary || ''}>
+                      最近推送：{rec.last_push_at ? localDateStr(rec.last_push_at) : ''} · {recText}
+                    </span>
+                  )}
+                </div>
+                <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+                  启用推送
+                  <input type="checkbox" checked={e.enabled} onChange={ev => patch(c.id, { enabled: ev.target.checked })} className="accent-green-500 w-4 h-4"/>
+                </label>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
+                <input
+                  type="text" value={e.webhook_url} placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."
+                  onChange={ev => patch(c.id, { webhook_url: ev.target.value })}
+                  className="md:col-span-6 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-300 placeholder-gray-600 focus:border-indigo-500 outline-none"/>
+                <select value={e.push_time} onChange={ev => patch(c.id, { push_time: ev.target.value })}
+                  className="md:col-span-2 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-gray-300">
+                  {BOT_PUSH_TIMES.map(t => <option key={t} value={t}>每天 {t}</option>)}
+                </select>
+                <div className="md:col-span-4 flex items-center gap-3 text-xs text-gray-400">
+                  <label className="flex items-center gap-1 cursor-pointer">
+                    <input type="checkbox" checked={!!e.push_content.unchecked} onChange={ev => patch(c.id, { push_content: { ...e.push_content, unchecked: ev.target.checked } })} className="accent-indigo-500"/> 未打卡名单
+                  </label>
+                  <label className="flex items-center gap-1 cursor-pointer">
+                    <input type="checkbox" checked={!!e.push_content.allChecked} onChange={ev => patch(c.id, { push_content: { ...e.push_content, allChecked: ev.target.checked } })} className="accent-indigo-500"/> 全员报平安
+                  </label>
+                </div>
+              </div>
+              <div className="flex items-center justify-between mt-2 flex-wrap gap-2">
+                {t ? <span className={`text-xs ${t.ok ? 'text-green-400' : 'text-red-400'}`}>{t.text}</span> : <span className="text-xs text-gray-600">改动后点"保存"；保存不推送，到点自动推</span>}
+                <div className="flex gap-2">
+                  <button onClick={() => handleSave(c.id)} disabled={savingArea === c.id}
+                    className="text-xs px-3 py-1 rounded-lg bg-gray-800 border border-gray-700 text-gray-300 hover:bg-gray-700 disabled:opacity-50">
+                    {savingArea === c.id ? '保存中...' : '保存'}
+                  </button>
+                  <button onClick={() => handleTest(c.id, areaName)} disabled={testingArea === c.id}
+                    className="text-xs px-3 py-1 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50">
+                    {testingArea === c.id ? '发送中...' : '立即测试推送'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

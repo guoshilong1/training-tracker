@@ -3128,158 +3128,252 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
 // ============ 企微机器人推送配置卡片（每小区独立机器人） ============
 const BOT_PUSH_TIMES = ['21:00', '22:00', '23:00'];
 
-function BotSettingsCard({ config, subAreas }) {
-  const areas = useMemo(() => config.filter(c => c.role === 'area' && (!subAreas || subAreas.includes(c.id))), [config, subAreas]);
-  const [edits, setEdits] = useState({});     // area -> { enabled, webhook_url, push_time, push_content }
-  const [records, setRecords] = useState({}); // area -> { last_push_at, last_push_status, last_push_summary }
-  const [tableMissing, setTableMissing] = useState(false);
-  const [savingArea, setSavingArea] = useState('');
-  const [testingArea, setTestingArea] = useState('');
-  const [toast, setToast] = useState(null);   // { area, text, ok }
+function BotSettingsCard({ currentUser, config }) {
+  const AREA_MAP = useMemo(() => Object.fromEntries(config.map(c => [c.id, c])), [config]);
+  const isAdmin = currentUser?.id === '000';
+  const isManager = currentUser?.role === 'manager';
+  const ownerArea = currentUser?.id || '000';
 
-  const load = useCallback(async () => {
-    try {
-      const { data, error } = await supabase.from('bot_settings').select('*');
-      if (error) { setTableMissing(true); return; }
-      const e = {}; const rec = {};
-      (data || []).forEach(r => {
-        e[r.area] = {
-          enabled: !!r.enabled,
-          webhook_url: r.webhook_url || '',
-          push_time: r.push_time || '22:00',
-          push_content: { unchecked: true, allChecked: true, ...(r.push_content || {}) },
-        };
-        rec[r.area] = { last_push_at: r.last_push_at, last_push_status: r.last_push_status, last_push_summary: r.last_push_summary };
-      });
-      setEdits(e); setRecords(rec); setTableMissing(false);
-    } catch (err) {
-      setTableMissing(true);
+  // 可用推送范围
+  const scopeOptions = useMemo(() => {
+    if (isAdmin) {
+      const areas = config.filter(c => c.role === 'area').map(c => ({ id: c.id, name: c.name.replace('区域带训追踪系统', '') }));
+      return [{ id: 'all', name: '全部区域' }, ...areas];
     }
-  }, []);
+    if (isManager) {
+      const subs = (AREA_MAP[currentUser.id]?.subAreas || []).map(id => ({ id, name: AREA_MAP[id]?.name?.replace('区域带训追踪系统', '') || id }));
+      return [{ id: 'all', name: '全部区域' }, ...subs];
+    }
+    return [{ id: currentUser.id, name: currentUser.name?.replace('区域带训追踪系统', '') || currentUser.id }];
+  }, [currentUser, config, AREA_MAP, isAdmin, isManager]);
 
-  useEffect(() => { load(); }, [load]);
+  const defaultScope = scopeOptions[0]?.id || ownerArea;
+  const defaultTargets = useMemo(() => {
+    if (isAdmin && defaultScope === 'all') return ['all'];
+    if (isManager && defaultScope === 'all') return AREA_MAP[currentUser.id]?.subAreas || [currentUser.id];
+    return [defaultScope];
+  }, [isAdmin, isManager, defaultScope, AREA_MAP, currentUser.id]);
 
-  const getEdit = (area) => edits[area] || { enabled: false, webhook_url: '', push_time: '22:00', push_content: { unchecked: true, allChecked: true } };
-  const patch = (area, p) => setEdits(prev => ({ ...prev, [area]: { ...getEdit(area), ...p } }));
+  const [settings, setSettings] = useState({
+    enabled: false,
+    webhook_url: '',
+    push_time: '22:00',
+    push_scope: defaultScope,
+    push_content: { unchecked: true, allChecked: true, hourWarning: false, dailyBrief: false }
+  });
+  const [record, setRecord] = useState(null);
+  const [tableMissing, setTableMissing] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [toast, setToast] = useState(null);
 
-  const showToast = (area, text, ok) => {
-    setToast({ area, text, ok });
+  const showToast = (text, ok) => {
+    setToast({ text, ok });
     setTimeout(() => setToast(null), 5000);
   };
 
-  const handleSave = async (area) => {
-    const e = getEdit(area);
-    setSavingArea(area);
+  const load = useCallback(async () => {
+    setLoading(true);
     try {
+      const { data, error } = await supabase.from('bot_settings').select('*').eq('area', ownerArea).single();
+      if (error && error.code !== 'PGRST116') { setTableMissing(true); setLoading(false); return; }
+      setTableMissing(false);
+      const savedTargets = Array.isArray(data?.target_areas) && data.target_areas.length ? data.target_areas : defaultTargets;
+      const savedScope = savedTargets[0] === 'all' ? 'all' : (savedTargets[0] || defaultScope);
+      setSettings({
+        enabled: !!data?.enabled,
+        webhook_url: data?.webhook_url || '',
+        push_time: data?.push_time || '22:00',
+        push_scope: scopeOptions.find(o => o.id === savedScope) ? savedScope : defaultScope,
+        push_content: { unchecked: true, allChecked: true, hourWarning: false, dailyBrief: false, ...(data?.push_content || {}) }
+      });
+      setRecord(data ? { last_push_at: data.last_push_at, last_push_status: data.last_push_status, last_push_summary: data.last_push_summary } : null);
+    } catch (err) {
+      setTableMissing(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [ownerArea, defaultScope, defaultTargets, scopeOptions]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const patch = (p) => setSettings(prev => ({ ...prev, ...p }));
+  const patchContent = (key, val) => setSettings(prev => ({ ...prev, push_content: { ...prev.push_content, [key]: val } }));
+
+  const computeTargets = (scope) => {
+    if (isAdmin && scope === 'all') return ['all'];
+    if (isManager && scope === 'all') return AREA_MAP[currentUser.id]?.subAreas || [currentUser.id];
+    return [scope];
+  };
+
+  const handleSave = async () => {
+    if (!settings.webhook_url.trim()) { showToast('请填写 Webhook 地址', false); return; }
+    setSaving(true);
+    try {
+      const targetAreas = computeTargets(settings.push_scope);
       const { error } = await supabase.from('bot_settings').upsert({
-        area, enabled: e.enabled, webhook_url: e.webhook_url.trim(),
-        push_time: e.push_time, push_content: e.push_content,
+        area: ownerArea,
+        enabled: settings.enabled,
+        webhook_url: settings.webhook_url.trim(),
+        push_time: settings.push_time,
+        target_areas: targetAreas,
+        push_content: settings.push_content,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'area' });
       if (error) throw error;
-      showToast(area, '已保存 ✓', true);
+      showToast('保存成功 ✓', true);
       await load();
     } catch (err) {
-      showToast(area, '保存失败：' + (err.message || '未知错误'), false);
+      showToast('保存失败：' + (err.message || '未知错误'), false);
     }
-    setSavingArea('');
+    setSaving(false);
   };
 
-  const handleTest = async (area, areaName) => {
-    const e = getEdit(area);
-    if (!e.webhook_url.trim()) { showToast(area, '请先填写 Webhook 地址', false); return; }
-    setTestingArea(area);
+  const handleTest = async () => {
+    if (!settings.webhook_url.trim()) { showToast('请填写 Webhook 地址', false); return; }
+    setTesting(true);
     try {
-      const res = await fetch(e.webhook_url.trim(), {
+      const res = await fetch(settings.webhook_url.trim(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ msgtype: 'text', text: { content: `【测试消息】「${areaName}」企微机器人连接成功 ✓` } }),
+        body: JSON.stringify({ msgtype: 'text', text: { content: `【测试消息】企微机器人连接成功 ✓\n来自带训追踪系统` } }),
       });
-      const j = await res.json();
-      if (j.errcode === 0) showToast(area, '测试消息已发送到群里 ✓', true);
-      else showToast(area, '推送失败：' + (j.errmsg || '未知错误'), false);
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j.errcode === 0) {
+        showToast('测试消息已发送，请查看企业微信群 ✓', true);
+      } else if (res.ok && j.errcode !== 0) {
+        showToast('企业微信返回错误：' + (j.errmsg || '未知错误'), false);
+      } else {
+        showToast('浏览器跨域限制，测试无法直接发送；保存后由定时任务自动推送', false);
+      }
     } catch (err) {
-      showToast(area, '推送失败（网络或跨域限制），可稍后由定时任务验证', false);
+      showToast('浏览器跨域限制，测试无法直接发送；保存后由定时任务自动推送', false);
     }
-    setTestingArea('');
+    setTesting(false);
   };
+
+  const recText = record?.last_push_at
+    ? (record.last_push_status === 'ok' ? '成功' : record.last_push_status === 'skip' ? '静默' : record.last_push_status === 'error' ? '失败' : record.last_push_status)
+    : '';
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
-          <Icon.Cloud className="text-green-400"/> 机器人配置
-          <span className="text-xs text-gray-600">改动后点"保存"生效 · 到点自动推</span>
-        </h3>
-        <button onClick={load} className="text-xs text-indigo-400 hover:text-indigo-300">刷新</button>
-      </div>
-
       {tableMissing && (
-        <div className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 mb-3">
-          数据库还没有 bot_settings 表，请先在 Supabase 控制台 SQL Editor 执行建表 SQL，然后点"刷新"。
+        <div className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 mb-4">
+          数据库还没有 bot_settings 表或缺少 target_areas 字段，请先在 Supabase 控制台 SQL Editor 执行 bot-settings.sql，然后点"刷新"。
         </div>
       )}
 
-      <div className="space-y-3">
-        {areas.map(c => {
-          const areaName = c.name.replace('区域带训追踪系统', '');
-          const e = getEdit(c.id);
-          const rec = records[c.id];
-          const t = toast && toast.area === c.id ? toast : null;
-          const recText = rec && rec.last_push_at
-            ? (rec.last_push_status === 'ok' ? '成功' : rec.last_push_status === 'skip' ? '静默' : rec.last_push_status === 'error' ? '失败' : rec.last_push_status)
-            : '';
-          return (
-            <div key={c.id} className={`border rounded-lg p-3 ${e.enabled ? 'border-green-500/30 bg-green-500/5' : 'border-gray-800 bg-gray-800/20'}`}>
-              <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm text-white font-medium">{areaName}</span>
-                  <span className={`text-xs px-1.5 py-0.5 rounded ${e.enabled ? 'bg-green-500/20 text-green-300' : 'bg-gray-700/50 text-gray-400'}`}>{e.enabled ? '已启用' : '未启用'}</span>
-                  {recText && (
-                    <span className="text-xs text-gray-500" title={rec?.last_push_summary || ''}>
-                      最近推送：{rec.last_push_at ? localDateStr(rec.last_push_at) : ''} · {recText}
-                    </span>
-                  )}
-                </div>
-                <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
-                  启用推送
-                  <input type="checkbox" checked={e.enabled} onChange={ev => patch(c.id, { enabled: ev.target.checked })} className="accent-green-500 w-4 h-4"/>
-                </label>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
-                <input
-                  type="text" value={e.webhook_url} placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."
-                  onChange={ev => patch(c.id, { webhook_url: ev.target.value })}
-                  className="md:col-span-6 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-300 placeholder-gray-600 focus:border-indigo-500 outline-none"/>
-                <select value={e.push_time} onChange={ev => patch(c.id, { push_time: ev.target.value })}
-                  className="md:col-span-2 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-gray-300">
-                  {BOT_PUSH_TIMES.map(t => <option key={t} value={t}>每天 {t}</option>)}
+      <div className="bg-gray-800/30 border border-gray-700 rounded-xl p-5">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-green-500/15 flex items-center justify-center">
+              <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="10" rx="2"/>
+                <circle cx="12" cy="5" r="2"/>
+                <path d="M12 7v4"/>
+                <path d="M8 16h.01M16 16h.01"/>
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                企微机器人推送
+                {settings.enabled && <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-300 border border-green-500/30">已启用</span>}
+              </h3>
+              <p className="text-xs text-gray-500">到点自动推送 · 仅本账号可见</p>
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+            启用自动推送
+            <input type="checkbox" checked={settings.enabled} onChange={ev => patch({ enabled: ev.target.checked })} className="accent-green-500 w-5 h-5"/>
+          </label>
+        </div>
+
+        {loading ? (
+          <div className="text-sm text-gray-500 text-center py-8">加载配置中…</div>
+        ) : (
+          <div className="space-y-5">
+            {/* Webhook */}
+            <div>
+              <label className="block text-xs text-gray-500 mb-1.5">Webhook 地址</label>
+              <input
+                type="text" value={settings.webhook_url}
+                placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."
+                onChange={ev => patch({ webhook_url: ev.target.value })}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-gray-300 placeholder-gray-600 focus:border-green-500 outline-none"
+              />
+            </div>
+
+            {/* Push time & scope */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1.5">推送时间（每天）</label>
+                <select value={settings.push_time} onChange={ev => patch({ push_time: ev.target.value })}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-gray-300 focus:border-green-500 outline-none">
+                  {BOT_PUSH_TIMES.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
-                <div className="md:col-span-4 flex items-center gap-3 text-xs text-gray-400">
-                  <label className="flex items-center gap-1 cursor-pointer">
-                    <input type="checkbox" checked={!!e.push_content.unchecked} onChange={ev => patch(c.id, { push_content: { ...e.push_content, unchecked: ev.target.checked } })} className="accent-indigo-500"/> 未打卡名单
-                  </label>
-                  <label className="flex items-center gap-1 cursor-pointer">
-                    <input type="checkbox" checked={!!e.push_content.allChecked} onChange={ev => patch(c.id, { push_content: { ...e.push_content, allChecked: ev.target.checked } })} className="accent-indigo-500"/> 全员报平安
-                  </label>
-                </div>
               </div>
-              <div className="flex items-center justify-between mt-2 flex-wrap gap-2">
-                {t ? <span className={`text-xs ${t.ok ? 'text-green-400' : 'text-red-400'}`}>{t.text}</span> : <span className="text-xs text-gray-600">改动后点"保存"；保存不推送，到点自动推</span>}
-                <div className="flex gap-2">
-                  <button onClick={() => handleSave(c.id)} disabled={savingArea === c.id}
-                    className="text-xs px-3 py-1 rounded-lg bg-gray-800 border border-gray-700 text-gray-300 hover:bg-gray-700 disabled:opacity-50">
-                    {savingArea === c.id ? '保存中...' : '保存'}
-                  </button>
-                  <button onClick={() => handleTest(c.id, areaName)} disabled={testingArea === c.id}
-                    className="text-xs px-3 py-1 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50">
-                    {testingArea === c.id ? '发送中...' : '立即测试推送'}
-                  </button>
-                </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1.5">推送区域</label>
+                <select value={settings.push_scope} onChange={ev => patch({ push_scope: ev.target.value })}
+                  disabled={!isAdmin && !isManager}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-gray-300 focus:border-green-500 outline-none disabled:opacity-70">
+                  {scopeOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+                </select>
               </div>
             </div>
-          );
-        })}
+
+            {/* Push content */}
+            <div>
+              <label className="block text-xs text-gray-500 mb-2">推送内容</label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer bg-gray-800/50 border border-gray-700/50 rounded-lg px-3 py-2.5 hover:bg-gray-800 transition">
+                  <input type="checkbox" checked={!!settings.push_content.unchecked} onChange={ev => patchContent('unchecked', ev.target.checked)} className="accent-green-500 w-4 h-4"/>
+                  <span>今日未打卡名单</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer bg-gray-800/50 border border-gray-700/50 rounded-lg px-3 py-2.5 hover:bg-gray-800 transition">
+                  <input type="checkbox" checked={!!settings.push_content.allChecked} onChange={ev => patchContent('allChecked', ev.target.checked)} className="accent-green-500 w-4 h-4"/>
+                  <span>全员打卡报平安</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer bg-gray-800/50 border border-gray-700/50 rounded-lg px-3 py-2.5 hover:bg-gray-800 transition">
+                  <input type="checkbox" checked={!!settings.push_content.hourWarning} onChange={ev => patchContent('hourWarning', ev.target.checked)} className="accent-amber-500 w-4 h-4"/>
+                  <span>工时预警</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer bg-gray-800/50 border border-gray-700/50 rounded-lg px-3 py-2.5 hover:bg-gray-800 transition">
+                  <input type="checkbox" checked={!!settings.push_content.dailyBrief} onChange={ev => patchContent('dailyBrief', ev.target.checked)} className="accent-indigo-500 w-4 h-4"/>
+                  <span>每日数据简报</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Buttons */}
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              <button onClick={handleSave} disabled={saving}
+                className="py-2.5 rounded-lg text-sm font-medium bg-gray-800 border border-gray-700 text-white hover:bg-gray-700 disabled:opacity-50 transition">
+                {saving ? '保存中…' : '保存设置'}
+              </button>
+              <button onClick={handleTest} disabled={testing}
+                className="py-2.5 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50 transition">
+                {testing ? '发送中…' : '立即测试推送'}
+              </button>
+            </div>
+
+            {toast && (
+              <div className={`text-xs rounded-lg px-3 py-2 ${toast.ok ? 'bg-green-500/10 text-green-300 border border-green-500/20' : 'bg-red-500/10 text-red-300 border border-red-500/20'}`}>
+                {toast.text}
+              </div>
+            )}
+
+            {/* Recent push record */}
+            {record?.last_push_at && (
+              <div className="text-xs text-gray-500 border-t border-gray-700/50 pt-4">
+                最近推送：{localDateStr(record.last_push_at)} {new Date(record.last_push_at).getHours().toString().padStart(2,'0')}:{new Date(record.last_push_at).getMinutes().toString().padStart(2,'0')} · {record.last_push_summary || recText} · {recText}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -4726,7 +4820,7 @@ function App() {
               <button onClick={() => setShowBotModal(false)} className="text-gray-500 hover:text-white text-xl px-2">×</button>
             </div>
             <div className="p-5">
-              <BotSettingsCard config={AREA_CONFIG} subAreas={currentUser?.role === 'manager' ? (AREA_MAP[currentUser.id]?.subAreas || []) : null}/>
+              <BotSettingsCard currentUser={currentUser} config={AREA_CONFIG}/>
             </div>
           </div>
         </div>

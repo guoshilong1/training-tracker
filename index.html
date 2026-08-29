@@ -1899,6 +1899,7 @@ function calcNoCheckInStreak(t, today) {
 function isCheckedToday(trainee) {
   const todayStr = localDateStr(new Date().toISOString());
   const progress = trainee.progress || {};
+  // 1) 任意 day 的时间戳命中今天 → 今天确实操作过
   for (const day of Object.values(progress)) {
     if (day.completedAt && localDateStr(day.completedAt) === todayStr) return true;
     if (day.restAt && localDateStr(day.restAt) === todayStr) return true;
@@ -1907,6 +1908,13 @@ function isCheckedToday(trainee) {
     for (const item of Object.values(items)) {
       if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === todayStr) return true;
     }
+  }
+  // 2) 当前应处理的天被标记为完成/休息/延迟，也算今日已处理
+  //    覆盖 currentDay 跨天、restAt/delayAt 缺失或时区边界的场景
+  const currentDay = getCurrentDay(trainee);
+  if (currentDay) {
+    const dp = progress[currentDay.key] || {};
+    if (dp.completed || dp.rest || dp.delayed) return true;
   }
   return false;
 }

@@ -1586,11 +1586,21 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
             const route = TRAINING_DATA.routes.find(r => r.id === t.route);
             const isSelected = t.id === selectedId;
             const warning = getWorkHoursWarning(t, workHours?.[t.empId]?.hours);
+            const cd = getCurrentDay(t);
+            const cdProgress = cd ? (t.progress?.[cd.key] || {}) : null;
+            const notCheckedToday = cd && !cdProgress.completed && !cdProgress.rest && !cdProgress.delayed;
+            const cardClass = isSelected
+              ? 'bg-indigo-600/20 border border-indigo-500/40'
+              : notCheckedToday
+                ? 'bg-red-500/15 border border-red-500/40 hover:bg-red-500/25'
+                : warning
+                  ? 'bg-yellow-500/25 border border-yellow-500/50 hover:bg-yellow-500/35'
+                  : 'hover:bg-gray-800/50 border border-transparent';
             return (
               <button
                 key={t.id}
                 onClick={() => onSelectTrainee(t.id)}
-                className={`group w-full text-left p-3 rounded-lg transition ${isSelected ? 'bg-indigo-600/20 border border-indigo-500/40' : warning ? 'bg-yellow-500/25 border border-yellow-500/50 hover:bg-yellow-500/35' : 'hover:bg-gray-800/50 border border-transparent'}`}
+                className={`group w-full text-left p-3 rounded-lg transition ${cardClass}`}
               >
                   <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-white">{t.name}</span>
@@ -1614,7 +1624,7 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
                   <Icon.Store/> {t.store}
                   {t.master && <><span className="text-gray-700">·</span><Icon.User/> {t.master}</>}
                   {t.empId && !certified && workHours?.[t.empId] != null && (
-                    <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded border tabular-nums whitespace-nowrap ${warning ? 'bg-yellow-500/25 text-yellow-200 border-yellow-500/50' : 'bg-amber-500/10 text-amber-300 border-amber-500/20'}`}>⏱ {workHours[t.empId].hours}工时</span>
+                    <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded border tabular-nums whitespace-nowrap ${notCheckedToday ? 'bg-red-500/20 text-red-200 border-red-500/40' : warning ? 'bg-yellow-500/25 text-yellow-200 border-yellow-500/50' : 'bg-amber-500/10 text-amber-300 border-amber-500/20'}`}>⏱ {workHours[t.empId].hours}工时</span>
                   )}
                 </div>
                 <div className="mt-2 flex items-center gap-2">

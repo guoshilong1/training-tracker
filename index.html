@@ -1586,9 +1586,7 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
             const route = TRAINING_DATA.routes.find(r => r.id === t.route);
             const isSelected = t.id === selectedId;
             const warning = getWorkHoursWarning(t, workHours?.[t.empId]?.hours);
-            const cd = getCurrentDay(t);
-            const cdProgress = cd ? (t.progress?.[cd.key] || {}) : null;
-            const notCheckedToday = cd && !cdProgress.completed && !cdProgress.rest && !cdProgress.delayed;
+            const notCheckedToday = !isCertified(t) && !isCheckedToday(t);
             const cardClass = isSelected
               ? 'bg-indigo-600/20 border border-indigo-500/40'
               : notCheckedToday
@@ -1835,6 +1833,22 @@ function calcNoCheckInStreak(t, today) {
   if (lastDate >= today) return { days: 0, label: '今日已打卡' };
   const days = daysBetween(lastDate, today);
   return { days, label: `连续${days}天未打卡` };
+}
+
+// 今天是否打过卡（按日期判断，任意打勾/休息/延迟 命中今天都算打过）
+function isCheckedToday(trainee) {
+  const todayStr = localDateStr(new Date().toISOString());
+  const progress = trainee.progress || {};
+  for (const day of Object.values(progress)) {
+    if (day.completedAt && localDateStr(day.completedAt) === todayStr) return true;
+    if (day.restAt && localDateStr(day.restAt) === todayStr) return true;
+    if (day.delayAt && localDateStr(day.delayAt) === todayStr) return true;
+    const items = day.items || {};
+    for (const item of Object.values(items)) {
+      if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === todayStr) return true;
+    }
+  }
+  return false;
 }
 
 // 延迟统计：累计延迟过的天数（用于看板显示"累计延迟 N 次"）

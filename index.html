@@ -1337,6 +1337,7 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
   const [filterStore, setFilterStore] = useState('');
   const [filterRoute, setFilterRoute] = useState('');
   const [certFilter, setCertFilter] = useState('incomplete'); // 'incomplete' | 'completed'
+  const [expandUnchecked, setExpandUnchecked] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingTrainee, setEditingTrainee] = useState(null);
 
@@ -1385,6 +1386,17 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
     });
     return list;
   }, [trainees, search, filterStore, filterRoute, certFilter, workHours]);
+
+  // 今日未打卡学员（不受认证 tab 过滤影响，只看门店/路线/搜索）
+  const todayUnchecked = useMemo(() => {
+    return trainees.filter(t => {
+      if (search && !t.name.includes(search) && !t.store.includes(search)) return false;
+      if (filterStore && t.store !== filterStore) return false;
+      if (filterRoute && t.route !== filterRoute) return false;
+      if (isCertified(t)) return false;
+      return !isCheckedToday(t);
+    });
+  }, [trainees, search, filterStore, filterRoute]);
 
   const handleSave = (data) => {
     if (editingTrainee) {
@@ -1573,6 +1585,54 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
               </span>
             </button>
           </div>
+        </div>
+
+        {/* 今日未打卡面板 */}
+        <div className="px-3 py-2 border-b border-gray-800 bg-gray-900/30">
+          <button
+            onClick={() => setExpandUnchecked(v => !v)}
+            className="w-full flex items-center justify-between text-xs text-gray-300 hover:text-white transition"
+          >
+            <div className="flex items-center gap-2">
+              <span className="font-medium">今日未打卡</span>
+              {todayUnchecked.length > 0 ? (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/30">
+                  {todayUnchecked.length}人
+                </span>
+              ) : (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
+                  全部已打卡
+                </span>
+              )}
+            </div>
+            <span className={`transition-transform ${expandUnchecked ? 'rotate-0' : '-rotate-90'}`}>
+              <Icon.ChevronDown width={14} height={14}/>
+            </span>
+          </button>
+          {expandUnchecked && (
+            <div className="mt-2 space-y-1">
+              {todayUnchecked.length === 0 ? (
+                <div className="text-[11px] text-gray-500 py-1">当前筛选范围内，所有未认证学员今日均已打卡。</div>
+              ) : (
+                todayUnchecked.map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => onSelectTrainee(t.id)}
+                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition ${t.id === selectedId ? 'bg-red-500/20 border border-red-500/40' : 'bg-red-500/10 border border-red-500/20 hover:bg-red-500/15'}`}
+                  >
+                    <div className="w-6 h-6 rounded-full bg-red-500/20 text-red-300 flex items-center justify-center text-[10px] font-medium flex-shrink-0">
+                      {t.name.slice(0,1)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-white truncate">{t.name}</div>
+                      <div className="text-[10px] text-gray-500 truncate">{t.store}{t.master ? ` · ${t.master}` : ''}</div>
+                    </div>
+                    <Icon.ChevronRight width={12} height={12} className="text-gray-600"/>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto scrollbar-thin p-2 space-y-1">

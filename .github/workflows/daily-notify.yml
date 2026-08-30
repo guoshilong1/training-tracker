@@ -2,7 +2,7 @@ name: 每日未打卡推送企业微信
 
 on:
   schedule:
-    - cron: '0 13,14,15 * * *'
+- cron: '* * * * *'
   workflow_dispatch: {}
 
 jobs:

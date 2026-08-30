@@ -1036,6 +1036,9 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, onDe
   }, [dayProgress?.masterSignature, trainee?.master, dayProgress?.trainingTime, dayProgress?.trainingTimes]);
   const shiftStyle = getShiftStyle(day.shift);
   const isCompleted = dayProgress?.completed;
+  const dayLocked = !!dayProgress?.delayed || !!dayProgress?.rest; // 延迟/休息期间禁用勾选
+  const isDelayed = !!dayProgress?.delayed;
+  const isRest = !!dayProgress?.rest;
   const checkedItems = dayProgress?.items || {};
   const allItemsChecked = day.items.length > 0 && day.items.every((item, i) => {
     const state = checkedItems[i] || {};
@@ -1104,29 +1107,39 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, onDe
           )}
           <button
             onClick={() => {
+              if (isRest) { alert('本天已标记为休息，请先撤销休息'); return; }
               setDelayNoteInput(dayProgress?.delayNote || '');
               setShowDelayModal(true);
             }}
+            title={isRest ? '本天已休息，请先撤销休息' : ''}
+            disabled={isRest}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition border ${
               dayProgress?.delayed
                 ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40 hover:bg-yellow-500/30'
-                : 'bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700 hover:text-white'
+                : isRest
+                  ? 'bg-gray-800/40 text-gray-600 border-gray-700/40 opacity-50 cursor-not-allowed'
+                  : 'bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700 hover:text-white'
             }`}
           >
             {dayProgress?.delayed ? '修改延迟' : '延迟'}
           </button>
           <button
             onClick={() => {
+              if (isDelayed) { alert('本天已标记为延迟，请先撤销延迟标记'); return; }
               if (dayProgress?.rest) {
                 onUndoRest(day.key);
               } else {
                 onRestDay(day.key);
               }
             }}
+            title={isDelayed ? '本天已延迟，请先撤销延迟标记' : ''}
+            disabled={isDelayed}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition border ${
               dayProgress?.rest
                 ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
-                : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20'
+                : isDelayed
+                  ? 'bg-gray-800/40 text-gray-600 border-gray-700/40 opacity-50 cursor-not-allowed'
+                  : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20'
             }`}
           >
             {dayProgress?.rest ? '撤销休息' : '休息'}
@@ -1151,8 +1164,9 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, onDe
               <div key={idx} className={`flex items-start gap-3 p-2.5 rounded-lg ${isDone ? 'bg-gray-800/40' : 'bg-gray-800/20'} border border-gray-800/50`}>
                 {!item.choices && (
                   <button
-                    onClick={() => onToggleItem(day.key, idx, !itemState.checked)}
-                    className={`checkbox-custom mt-0.5 flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition ${itemState.checked ? 'bg-indigo-600 border-indigo-600' : 'border-gray-600 hover:border-indigo-500'}`}
+                    disabled={dayLocked}
+                    onClick={() => { if (!dayLocked) onToggleItem(day.key, idx, !itemState.checked); }}
+                    className={`checkbox-custom mt-0.5 flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition ${itemState.checked ? 'bg-indigo-600 border-indigo-600' : 'border-gray-600 hover:border-indigo-500'} ${dayLocked ? 'opacity-40 cursor-not-allowed' : ''}`}
                   >
                     {itemState.checked && <Icon.Check width={12} height={12} className="text-white"/>}
                   </button>
@@ -1170,8 +1184,9 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, onDe
                         {item.choices.map(choice => (
                           <button
                             key={choice}
-                            onClick={() => onToggleItem(day.key, idx, true, choice)}
-                            className={`px-3 py-1.5 rounded-lg text-xs border transition ${itemState.choice === choice ? 'bg-indigo-600 border-indigo-500 text-white' : 'border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-300'}`}
+                            disabled={dayLocked}
+                            onClick={() => { if (!dayLocked) onToggleItem(day.key, idx, true, choice); }}
+                            className={`px-3 py-1.5 rounded-lg text-xs border transition ${itemState.choice === choice ? 'bg-indigo-600 border-indigo-500 text-white' : 'border-gray-700 text-gray-400'} ${dayLocked ? 'opacity-40 cursor-not-allowed' : 'hover:border-indigo-500 hover:text-indigo-300'}`}
                           >
                             {choice}
                           </button>
@@ -1411,6 +1426,8 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
     if (!selected) return;
     const progress = { ...(selected.progress || {}) };
     const dayProg = { ...(progress[dayKey] || { items: {} }) };
+    // 延迟/休息期间禁止勾选（双保险：UI 已禁用）
+    if (dayProg.delayed || dayProg.rest) return;
     dayProg.items = { ...dayProg.items };
     const prev = { ...(dayProg.items[itemIdx] || {}) };
     if (checked) {
@@ -1468,6 +1485,8 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
     }
     const progress = { ...(selected.progress || {}) };
     const dayProg = { ...(progress[dayKey] || { items: {} }) };
+    // 互斥：休息未撤销前不允许标延迟（双保险：UI 已 disabled 拦截）
+    if (dayProg.rest) return;
     dayProg.delayed = true;
     dayProg.delayAt = new Date().toISOString();
     dayProg.delayNote = trimmed;
@@ -1496,6 +1515,8 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
     if (!selected) return;
     const progress = { ...(selected.progress || {}) };
     const dayProg = { ...(progress[dayKey] || { items: {} }) };
+    // 互斥：延迟未撤销前不允许标休息（双保险）
+    if (dayProg.delayed) return;
     dayProg.rest = true;
     dayProg.restAt = new Date().toISOString();
     dayProg._updatedAt = Date.now();
@@ -2035,6 +2056,11 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
       let yCount = 0;
       let yLastTime = '';
       let yCompletedDay = false;
+      // Yesterday delayed / rest（昨日店长操作也算"已打卡"）
+      let ydCount = 0;
+      let ydLastTime = '';
+      let yrCount = 0;
+      let yrLastTime = '';
       // Today
       let tCount = 0;
       let tLastTime = '';
@@ -2078,6 +2104,9 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
               dLastTime = day.delayAt;
               dLastNote = day.delayNote || '';
             }
+          } else if (ds === yesterday) {
+            ydCount++;
+            if (day.delayAt > ydLastTime) ydLastTime = day.delayAt;
           }
         }
         if (day.rest && day.restAt) {
@@ -2085,14 +2114,17 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
           if (ds === today) {
             rCount++;
             if (day.restAt > rLastTime) rLastTime = day.restAt;
+          } else if (ds === yesterday) {
+            yrCount++;
+            if (day.restAt > yrLastTime) yrLastTime = day.restAt;
           }
         }
       });
       const baseEntry = { id: t.id, name: t.name, store: t.store, note: t.note || '', empId: t.empId, route: t.route, subRoute: t.subRoute, progress: t.progress };
-      const yEntry = { ...baseEntry, count: yCount, lastTime: yLastTime, completedDay: yCompletedDay };
+      const yEntry = { ...baseEntry, count: yCount, lastTime: yLastTime || ydLastTime || yrLastTime, completedDay: yCompletedDay, isDelayed: ydCount > 0, isRest: yrCount > 0 };
       const tEntry = { ...baseEntry, count: tCount, lastTime: tLastTime || rLastTime, completedDay: tCompletedDay, isDelayed: dCount > 0, isRest: rCount > 0 };
-      // 已打卡必须以至少勾选1项或今日已延迟为准，仅确认完成但没勾选项不算打卡
-      if (yCount > 0) yesterdayChecked.push(yEntry);
+      // 昨日"已打卡"判定：勾选过项目、被标延迟、或被标休息，任一即算（只要店长有操作）
+      if (yCount > 0 || ydCount > 0 || yrCount > 0) yesterdayChecked.push(yEntry);
       else {
         // 已完成全部带训的人员不再出现在未打卡列表中
         if (getCurrentDay(t) === null) {
@@ -2221,7 +2253,13 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
                     <div className="flex items-center gap-2 flex-shrink-0">
                       {p.empId && !isCertified(p) && workHours?.[p.empId] != null && <span className="text-xs text-amber-300/80 tabular-nums">⏱ {workHours[p.empId].hours}h</span>}
                       <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">{countCerts(p)}证</span>
-                      <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">勾了{p.count}项</span>
+                      {p.isRest ? (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">休息</span>
+                      ) : p.isDelayed && p.count === 0 ? (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">已延迟</span>
+                      ) : (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">勾了{p.count}项</span>
+                      )}
                       {p.lastTime && <span className="text-xs text-gray-500">{timeStr(p.lastTime)}</span>}
                     </div>
                   </div>
@@ -2928,7 +2966,15 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
                       </td>
                       <td className="px-2 py-2 text-xs text-amber-300/80 tabular-nums">{t.empId && !isCertified(t) && workHours?.[t.empId] != null ? `${workHours[t.empId].hours}h` : '—'}</td>
                       <td className="px-2 py-2 text-xs text-amber-300/80">{countCerts(t)}证</td>
-                      <td className="px-2 py-2 text-xs text-gray-500">{t.lastTime ? timeStr(t.lastTime) : '—'}</td>
+                      <td className="px-2 py-2">
+                        {t.isRest ? (
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">休息</span>
+                        ) : t.isDelayed ? (
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">已延迟</span>
+                        ) : (
+                          <span className="text-xs text-gray-500">{t.lastTime ? timeStr(t.lastTime) : '—'}</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -3126,8 +3172,6 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
 }
 
 // ============ 企微机器人推送配置卡片（每小区独立机器人） ============
-const BOT_PUSH_TIMES = ['21:00', '22:00', '23:00'];
-
 function BotSettingsCard({ currentUser, config }) {
   const AREA_MAP = useMemo(() => Object.fromEntries(config.map(c => [c.id, c])), [config]);
   const isAdmin = currentUser?.id === '000';
@@ -3234,21 +3278,47 @@ function BotSettingsCard({ currentUser, config }) {
     if (!settings.webhook_url.trim()) { showToast('请填写 Webhook 地址', false); return; }
     setTesting(true);
     try {
-      const res = await fetch(settings.webhook_url.trim(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ msgtype: 'text', text: { content: `【测试消息】企微机器人连接成功 ✓\n来自带训追踪系统` } }),
-      });
-      const j = await res.json().catch(() => ({}));
-      if (res.ok && j.errcode === 0) {
-        showToast('测试消息已发送，请查看企业微信群 ✓', true);
-      } else if (res.ok && j.errcode !== 0) {
-        showToast('企业微信返回错误：' + (j.errmsg || '未知错误'), false);
-      } else {
-        showToast('浏览器跨域限制，测试无法直接发送；保存后由定时任务自动推送', false);
+      // 先保存当前设置，确保服务端用最新 webhook
+      const targetAreas = computeTargets(settings.push_scope);
+      const { error: saveErr } = await supabase.from('bot_settings').upsert({
+        area: ownerArea,
+        enabled: settings.enabled,
+        webhook_url: settings.webhook_url.trim(),
+        push_time: settings.push_time,
+        target_areas: targetAreas,
+        push_content: settings.push_content,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'area' });
+      if (saveErr) throw saveErr;
+
+      // 提交测试推送
+      const { data, error } = await supabase.rpc('push_test', { area_code: ownerArea });
+      if (error) throw error;
+      if (!data || !data.ok) {
+        showToast((data && data.errmsg) || '测试推送失败', false);
+        setTesting(false);
+        return;
       }
+
+      // 轮询结果
+      const requestId = data.request_id;
+      const maxPolls = 15;
+      let lastStatus = null;
+      for (let i = 0; i < maxPolls; i++) {
+        await new Promise(r => setTimeout(r, 1500));
+        const { data: status, error: statusErr } = await supabase.rpc('push_test_status', { request_id: requestId });
+        if (statusErr) continue;
+        lastStatus = status;
+        if (status && status.ready) {
+          showToast(status.errmsg, status.ok);
+          setTesting(false);
+          return;
+        }
+      }
+      // 轮询结束仍未拿到结果，给出“已提交”提示
+      showToast(lastStatus && lastStatus.errmsg ? lastStatus.errmsg : '测试消息已提交，请查看企业微信群确认', true);
     } catch (err) {
-      showToast('浏览器跨域限制，测试无法直接发送；保存后由定时任务自动推送', false);
+      showToast('测试推送失败：' + (err.message || '未知错误'), false);
     }
     setTesting(false);
   };
@@ -3310,10 +3380,11 @@ function BotSettingsCard({ currentUser, config }) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs text-gray-500 mb-1.5">推送时间（每天）</label>
-                <select value={settings.push_time} onChange={ev => patch({ push_time: ev.target.value })}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-gray-300 focus:border-green-500 outline-none">
-                  {BOT_PUSH_TIMES.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
+                <input
+                  type="time" value={settings.push_time}
+                  onChange={ev => patch({ push_time: ev.target.value })}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-gray-300 focus:border-green-500 outline-none"
+                />
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1.5">推送区域</label>

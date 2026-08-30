@@ -2198,8 +2198,21 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
       const yEntry = { ...baseEntry, count: yCount, lastTime: yLastTime || ydLastTime || yrLastTime, completedDay: yCompletedDay, isDelayed: ydCount > 0, isRest: yrCount > 0 };
       const tEntry = { ...baseEntry, count: tCount, lastTime: tLastTime || rLastTime, completedDay: tCompletedDay, isDelayed: dCount > 0, isRest: rCount > 0 };
       // 昨日"已打卡"判定：勾选过项目、被标延迟、或被标休息，任一即算（只要店长有操作）
-      if (yCount > 0 || ydCount > 0 || yrCount > 0) yesterdayChecked.push(yEntry);
-      else {
+      // 跨天补登：如果今天还在休息/延迟状态（昨天标了但今天才跨日），昨日也算打过卡，
+      //   避免「昨日标过休息、跨天后昨日卡失效、今日仍是休息状态」导致误判为昨日未打卡。
+      const todayStillRestOrDelay = dCount > 0 || rCount > 0;
+      const yesterdayActive = yCount > 0 || ydCount > 0 || yrCount > 0 || todayStillRestOrDelay;
+      if (yesterdayActive) {
+        // 跨天补登时把今天的休息/延迟时间回写到 yEntry，便于看板显示「最后一次操作时间」
+        if (yCount === 0 && ydCount === 0 && yrCount === 0) {
+          yEntry.count = Math.max(yCount, todayStillRestOrDelay ? 1 : 0);
+          yEntry.lastTime = yLastTime || ydLastTime || yrLastTime || (rCount > 0 ? rLastTime : '') || (dCount > 0 ? dLastTime : '');
+          yEntry.isDelayed = ydCount > 0 || dCount > 0;
+          yEntry.isRest = yrCount > 0 || rCount > 0;
+          yEntry._crossDayRestored = true; // 标记：跨天补登（昨天由今天的休息状态推断）
+        }
+        yesterdayChecked.push(yEntry);
+      } else {
         // 已完成全部带训的人员不再出现在未打卡列表中
         if (getCurrentDay(t) === null) {
           // 但延迟/休息数据依然入今日已延迟/已打卡区
@@ -2761,8 +2774,18 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
       });
       const baseEntry = { ...t, areaName };
       // 昨日"已打卡"判定：勾选过项目、被标延迟、或被标休息，任一即算（只要店长有操作）
-      if (yHas || ydCount > 0 || yrCount > 0) yesterdayChecked.push({ ...baseEntry, lastTime: yLast || ydLast || yrLast, isDelayed: ydCount > 0, isRest: yrCount > 0 });
-      else {
+      // 跨天补登：如果今天还在休息/延迟状态（昨天标了但今天才跨日），昨日也算打过卡
+      const todayStillRestOrDelay = dCount > 0 || rCount > 0;
+      if (yHas || ydCount > 0 || yrCount > 0 || todayStillRestOrDelay) {
+        const restoredTime = yHas ? yLast : (ydLast || yrLast || (rCount > 0 ? rLast : '') || (dCount > 0 ? dLast : ''));
+        yesterdayChecked.push({
+          ...baseEntry,
+          lastTime: restoredTime,
+          isDelayed: ydCount > 0 || dCount > 0,
+          isRest: yrCount > 0 || rCount > 0,
+          _crossDayRestored: !yHas && !ydCount && !yrCount && todayStillRestOrDelay
+        });
+      } else {
         // 已完成全部带训的人员不再出现在未打卡列表中
         if (getCurrentDay(t) === null) {
           if (dCount > 0) {
@@ -3217,15 +3240,25 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
                     if (isCertified(t)) return; // 已认证人员不计入昨日打卡统计
                     const progress = t.progress || {};
                     let hasYesterday = false;
+                    let todayStillActive = false;
                     Object.values(progress).forEach(day => {
                       Object.values(day.items || {}).forEach(item => {
                         if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === yesterday) hasYesterday = true;
+                        if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === today) todayStillActive = true;
                       });
                       if (day.completed && day.completedAt && localDateStr(day.completedAt) === yesterday) hasYesterday = true;
+                      if (day.completed && day.completedAt && localDateStr(day.completedAt) === today) todayStillActive = true;
                       // 昨日被标延迟/休息也算"已打卡"
                       if (delayedOnDate(day, yesterday) || restOnDate(day, yesterday)) hasYesterday = true;
+                      // 跨天补登：今天还在标延迟/休息（昨天也通常处于休息/延迟），昨日也算打过卡
+                      if (delayedOnDate(day, today) || restOnDate(day, today)) {
+                        todayStillActive = true;
+                        if (!hasYesterday) hasYesterday = true;
+                      }
                     });
                     if (hasYesterday) checkedYesterday++;
+                    // 抑制未使用变量警告（todayStillActive 当前仅用于标记诊断，可进一步扩展）
+                    void todayStillActive;
                   });
                   return (
                     <tr key={a.id} className="border-b border-gray-800/50 hover:bg-gray-800/20 cursor-pointer" onClick={() => setFilterArea(filterArea === a.id ? '' : a.id)}>

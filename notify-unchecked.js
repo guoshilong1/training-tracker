@@ -51,12 +51,24 @@ function safeGetAllDays(route, subRoute) {
 }
 
 // ---------- 核心：判断今天是否打过卡（与前端 isCheckedToday 完全一致） ----------
+// 注意：撤销操作会留下最新时间戳（tombstone），必须同时校验状态位，
+// 否则"勾了又撤/标了休息又撤"会被误判为今天已打卡而漏推。
+function restOnDate(day, ds) {
+  if (!day) return false;
+  if (Array.isArray(day.restDates)) return day.restDates.includes(ds);
+  return !!day.rest && !!day.restAt && localDateStr(day.restAt) === ds;
+}
+function delayedOnDate(day, ds) {
+  if (!day) return false;
+  if (Array.isArray(day.delayDates)) return day.delayDates.includes(ds);
+  return !!day.delayed && !!day.delayAt && localDateStr(day.delayAt) === ds;
+}
 function isCheckedToday(trainee, todayStr) {
   const progress = trainee.progress || {};
   for (const day of Object.values(progress)) {
-    if (day.completedAt && localDateStr(day.completedAt) === todayStr) return true;
-    if (day.restAt && localDateStr(day.restAt) === todayStr) return true;
-    if (day.delayAt && localDateStr(day.delayAt) === todayStr) return true;
+    if (day.completed && day.completedAt && localDateStr(day.completedAt) === todayStr) return true;
+    if (restOnDate(day, todayStr)) return true;
+    if (delayedOnDate(day, todayStr)) return true;
     const items = day.items || {};
     for (const item of Object.values(items)) {
       if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === todayStr) return true;
@@ -65,7 +77,8 @@ function isCheckedToday(trainee, todayStr) {
   const currentDay = getCurrentDay(trainee);
   if (currentDay) {
     const dp = progress[currentDay.key] || {};
-    if (dp.completed || dp.rest || dp.delayed) return true;
+    if (dp.completed) return true;
+    if (restOnDate(dp, todayStr) || delayedOnDate(dp, todayStr)) return true;
   }
   return false;
 }
@@ -97,7 +110,9 @@ function calcNoCheckInStreak(t, todayStr) {
       if (item.checked && item.checkedAt) dates.add(localDateStr(item.checkedAt));
     });
     if (day.completed && day.completedAt) dates.add(localDateStr(day.completedAt));
-    if (day.rest && day.restAt) dates.add(localDateStr(day.restAt));
+    // 休息视同打卡（含历史休息日期数组）
+    if (Array.isArray(day.restDates)) day.restDates.forEach(d => dates.add(d));
+    else if (day.rest && day.restAt) dates.add(localDateStr(day.restAt));
   });
   if (dates.size === 0) {
     if (t.startDate) {
@@ -325,6 +340,12 @@ async function updateSetting(area, status, summary) {
   }
 }
 
+// HH:MM → 分钟数（支持 '9:30' 这类未补零写法）
+function hhmmToMinutes(hhmm) {
+  const parts = String(hhmm || '22:00').split(':').map(Number);
+  return (parts[0] || 0) * 60 + (parts[1] || 0);
+}
+
 // ---------- 主流程 ----------
 async function main() {
   if (!SERVICE_KEY) { console.log('[SKIP] 未配置 SUPABASE_SERVICE_KEY，跳过推送。'); return; }
@@ -332,6 +353,7 @@ async function main() {
   const now = new Date();
   const todayStr = localDateStr(now.toISOString());
   const nowHHMM = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+  const nowMin = now.getHours() * 60 + now.getMinutes();
   console.log(`当前北京时间: ${todayStr} ${nowHHMM}`);
 
   // 读取机器人配置表
@@ -354,7 +376,16 @@ async function main() {
       if (!s.enabled) { console.log(`[配置 ${s.area}] 未启用，跳过`); continue; }
       if (!s.webhook_url) { console.log(`[配置 ${s.area}] 未配置 webhook，跳过`); continue; }
       const st = (s.push_time || '22:00');
-      if (st !== nowHHMM) { console.log(`[配置 ${s.area}] 配置时间 ${st} ≠ 当前 ${nowHHMM}，跳过`); continue; }
+      // 当日去重：今天已推送过（且不是失败）就不再推，配合定时任务每 10 分钟跑一次
+      const lastPushDay = s.last_push_at ? localDateStr(s.last_push_at) : '';
+      const alreadyDone = lastPushDay === todayStr && s.last_push_status !== 'error';
+      if (alreadyDone) { console.log(`[配置 ${s.area}] 今天已推送过（${s.last_push_status}），跳过`); continue; }
+      // 到点判定：当前时间 >= 配置时间才推（GitHub Actions cron 有几分钟延迟，用窗口而非精确匹配分钟）
+      if (nowMin < hhmmToMinutes(st)) { console.log(`[配置 ${s.area}] 配置时间 ${st} 还未到（当前 ${nowHHMM}），跳过`); continue; }
+      // 失败重试保护：仅到点后 30 分钟内重试，避免坏 webhook 全天轰炸
+      if (s.last_push_status === 'error' && lastPushDay === todayStr && (nowMin - hhmmToMinutes(st)) > 30) {
+        console.log(`[配置 ${s.area}] 今天推送失败且已超过 30 分钟重试窗口，跳过`); continue;
+      }
       matched++;
       try {
         const r = await pushSetting(s, todayStr);

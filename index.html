@@ -443,22 +443,36 @@ function mergeDayProgress(lProgress, rProgress) {
     }
 
     // 3b) Merge delay marker by delayAt timestamp (last write wins, supports undo via future ts)
-    if (lp.delayAt || rp.delayAt) {
+    if (lp.delayAt || rp.delayAt || lp.delayDates || rp.delayDates) {
       const winner = (rp.delayAt || '') >= (lp.delayAt || '') ? rp : lp;
       if (winner.delayAt) {
         dayMerged.delayed = !!winner.delayed;
         dayMerged.delayAt = winner.delayAt;
         dayMerged.delayNote = winner.delayNote || '';
       }
+      // 历史延迟日期：双方并集，再按较新一侧的当前状态修正（撤销则移除当天，标记则补上）
+      const dset = new Set([...(lp.delayDates || []), ...(rp.delayDates || [])]);
+      if (winner.delayAt) {
+        const ds = localDateStr(winner.delayAt);
+        if (winner.delayed) dset.add(ds); else dset.delete(ds);
+      }
+      if (dset.size > 0) dayMerged.delayDates = [...dset].sort();
     }
 
     // 3c) Merge rest marker by restAt timestamp (same last-write-wins semantics)
-    if (lp.restAt || rp.restAt) {
+    if (lp.restAt || rp.restAt || lp.restDates || rp.restDates) {
       const winner = (rp.restAt || '') >= (lp.restAt || '') ? rp : lp;
       if (winner.restAt) {
         dayMerged.rest = !!winner.rest;
         dayMerged.restAt = winner.restAt;
       }
+      // 历史休息日期：双方并集，再按较新一侧的当前状态修正
+      const rset = new Set([...(lp.restDates || []), ...(rp.restDates || [])]);
+      if (winner.restAt) {
+        const ds = localDateStr(winner.restAt);
+        if (winner.rest) rset.add(ds); else rset.delete(ds);
+      }
+      if (rset.size > 0) dayMerged.restDates = [...rset].sort();
     }
 
     // 4) Preserve any other fields from the newer side
@@ -1036,9 +1050,12 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, onDe
   }, [dayProgress?.masterSignature, trainee?.master, dayProgress?.trainingTime, dayProgress?.trainingTimes]);
   const shiftStyle = getShiftStyle(day.shift);
   const isCompleted = dayProgress?.completed;
-  const dayLocked = !!dayProgress?.delayed || !!dayProgress?.rest; // 延迟/休息期间禁用勾选
-  const isDelayed = !!dayProgress?.delayed;
-  const isRest = !!dayProgress?.rest;
+  // 延迟/休息每天重置：只有"今天"标记的才生效；昨天标记的自动失效（历史日期保留统计）
+  const isDelayed = isDelayActiveToday(dayProgress);
+  const isRest = isRestActiveToday(dayProgress);
+  const dayLocked = isDelayed || isRest; // 延迟/休息期间禁用勾选
+  const restHist = restHistoryCount(dayProgress);
+  const delayHist = delayHistoryCount(dayProgress);
   const checkedItems = dayProgress?.items || {};
   const allItemsChecked = day.items.length > 0 && day.items.every((item, i) => {
     const state = checkedItems[i] || {};
@@ -1095,14 +1112,24 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, onDe
           <div className="text-xs text-gray-500 mt-0.5">{day.monthName} · {day.phaseName} · {day.phaseFocus}</div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          {dayProgress?.delayed && (
+          {isDelayed && (
             <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-300 border border-yellow-500/30 flex items-center gap-1" title={dayProgress.delayNote || ''}>
               <Icon.Clock width={11} height={11}/> 已延迟
             </span>
           )}
-          {dayProgress?.rest && (
+          {isRest && (
             <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
               休息
+            </span>
+          )}
+          {!isDelayed && delayHist > 0 && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/8 text-yellow-500/70 border border-yellow-500/20" title="历史延迟记录（每天重置，今天需重新标记）">
+              已延迟{delayHist}次
+            </span>
+          )}
+          {!isRest && restHist > 0 && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/8 text-emerald-500/70 border border-emerald-500/20" title="历史休息记录（每天重置，今天需重新标记）">
+              已休{restHist}天
             </span>
           )}
           <button
@@ -1114,19 +1141,19 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, onDe
             title={isRest ? '本天已休息，请先撤销休息' : ''}
             disabled={isRest}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition border ${
-              dayProgress?.delayed
+              isDelayed
                 ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40 hover:bg-yellow-500/30'
                 : isRest
                   ? 'bg-gray-800/40 text-gray-600 border-gray-700/40 opacity-50 cursor-not-allowed'
                   : 'bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700 hover:text-white'
             }`}
           >
-            {dayProgress?.delayed ? '修改延迟' : '延迟'}
+            {isDelayed ? '修改延迟' : '延迟'}
           </button>
           <button
             onClick={() => {
               if (isDelayed) { alert('本天已标记为延迟，请先撤销延迟标记'); return; }
-              if (dayProgress?.rest) {
+              if (isRest) {
                 onUndoRest(day.key);
               } else {
                 onRestDay(day.key);
@@ -1135,14 +1162,14 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, onDe
             title={isDelayed ? '本天已延迟，请先撤销延迟标记' : ''}
             disabled={isDelayed}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition border ${
-              dayProgress?.rest
+              isRest
                 ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
                 : isDelayed
                   ? 'bg-gray-800/40 text-gray-600 border-gray-700/40 opacity-50 cursor-not-allowed'
                   : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20'
             }`}
           >
-            {dayProgress?.rest ? '撤销休息' : '休息'}
+            {isRest ? '撤销休息' : '休息'}
           </button>
           {unlocked && day.items.length > 0 && (
             <button onClick={() => setExpanded(!expanded)} className="p-1.5 rounded-lg hover:bg-gray-800 text-gray-400 transition">
@@ -1296,7 +1323,7 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, onDe
             <div className="px-6 py-4 border-b border-gray-800 flex items-center justify-between">
               <h2 className="text-base font-semibold text-white flex items-center gap-2">
                 <Icon.Clock width={16} height={16} className="text-amber-400"/>
-                {dayProgress?.delayed ? '修改延迟备注' : '标记本日延迟'}
+                {isDelayed ? '修改延迟备注' : '标记本日延迟'}
               </h2>
               <button onClick={() => setShowDelayModal(false)} className="p-1.5 rounded-lg hover:bg-gray-800 text-gray-400"><Icon.Close/></button>
             </div>
@@ -1317,7 +1344,7 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, onDe
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 resize-none focus:border-amber-500/50 focus:outline-none"
               />
               <div className="flex justify-between items-center gap-3 pt-1">
-                {dayProgress?.delayed ? (
+                {isDelayed ? (
                   <button
                     onClick={() => { onUndoDelay(day.key); setShowDelayModal(false); }}
                     className="text-xs text-rose-400 hover:text-rose-300"
@@ -1426,8 +1453,8 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
     if (!selected) return;
     const progress = { ...(selected.progress || {}) };
     const dayProg = { ...(progress[dayKey] || { items: {} }) };
-    // 延迟/休息期间禁止勾选（双保险：UI 已禁用）
-    if (dayProg.delayed || dayProg.rest) return;
+    // 延迟/休息期间禁止勾选（双保险：UI 已禁用；只看"今天生效"的状态，昨天标记的已自动重置）
+    if (isDelayActiveToday(dayProg) || isRestActiveToday(dayProg)) return;
     dayProg.items = { ...dayProg.items };
     const prev = { ...(dayProg.items[itemIdx] || {}) };
     if (checked) {
@@ -1485,10 +1512,12 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
     }
     const progress = { ...(selected.progress || {}) };
     const dayProg = { ...(progress[dayKey] || { items: {} }) };
-    // 互斥：休息未撤销前不允许标延迟（双保险：UI 已 disabled 拦截）
-    if (dayProg.rest) return;
+    // 互斥：休息未撤销前不允许标延迟（双保险：UI 已 disabled 拦截；仅当天生效状态）
+    if (isRestActiveToday(dayProg)) return;
+    const today = localDateStr(new Date().toISOString());
     dayProg.delayed = true;
     dayProg.delayAt = new Date().toISOString();
+    dayProg.delayDates = addDateToList(dayProg.delayDates, today); // 保留历史：每个日历日一条记录
     dayProg.delayNote = trimmed;
     dayProg._updatedAt = Date.now();
     progress[dayKey] = dayProg;
@@ -1501,8 +1530,10 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
     const dayProg = { ...(progress[dayKey] || { items: {} }) };
     if (!dayProg.delayed) return;
     if (!confirm('确认撤销本天延迟标记？\n（已填的备注将一并清除）')) return;
+    const today = localDateStr(new Date().toISOString());
     dayProg.delayed = false;
     dayProg.delayAt = new Date().toISOString(); // 打上最新 ts，让跨设备合并时采纳
+    dayProg.delayDates = removeDateFromList(dayProg.delayDates, today); // 撤销今天的记录（历史日期保留）
     dayProg.delayNote = '';
     dayProg._updatedAt = Date.now();
     progress[dayKey] = dayProg;
@@ -1510,15 +1541,17 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
   };
 
   // ============ 休息标记 ============
-  // 语义：今日学员休息，视同已打卡；不计入连续未打卡。
+  // 语义：今日学员休息，视同已打卡；不计入连续未打卡。每天重置，跨天需重新标记。
   const handleRestDay = (dayKey) => {
     if (!selected) return;
     const progress = { ...(selected.progress || {}) };
     const dayProg = { ...(progress[dayKey] || { items: {} }) };
-    // 互斥：延迟未撤销前不允许标休息（双保险）
-    if (dayProg.delayed) return;
+    // 互斥：延迟未撤销前不允许标休息（双保险；仅当天生效状态）
+    if (isDelayActiveToday(dayProg)) return;
+    const today = localDateStr(new Date().toISOString());
     dayProg.rest = true;
     dayProg.restAt = new Date().toISOString();
+    dayProg.restDates = addDateToList(dayProg.restDates, today); // 保留历史：每个日历日一条记录
     dayProg._updatedAt = Date.now();
     progress[dayKey] = dayProg;
     onUpdateProgress(selected.id, progress);
@@ -1530,8 +1563,10 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
     const dayProg = { ...(progress[dayKey] || { items: {} }) };
     if (!dayProg.rest) return;
     if (!confirm('确认撤销本天休息标记？')) return;
+    const today = localDateStr(new Date().toISOString());
     dayProg.rest = false;
     dayProg.restAt = new Date().toISOString();
+    dayProg.restDates = removeDateFromList(dayProg.restDates, today); // 撤销今天的记录（历史日期保留）
     dayProg._updatedAt = Date.now();
     progress[dayKey] = dayProg;
     onUpdateProgress(selected.id, progress);
@@ -1878,6 +1913,46 @@ function yesterdayStr() {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
+// ===== 延迟/休息的"日历日"语义 =====
+// 每天重置：只有当天标记的延迟/休息才处于生效状态，跨天后自动失效（需重新标记）
+// 历史保留：restDates/delayDates 记录标记过的每个日历日，供"昨日已打卡/累计N次"等统计使用
+// 兼容旧数据：没有 restDates/delayDates 数组时，退回单一 restAt/delayAt 时间戳判断
+function restOnDate(day, ds) {
+  if (!day) return false;
+  if (Array.isArray(day.restDates)) return day.restDates.includes(ds);
+  return !!day.rest && !!day.restAt && localDateStr(day.restAt) === ds;
+}
+function delayedOnDate(day, ds) {
+  if (!day) return false;
+  if (Array.isArray(day.delayDates)) return day.delayDates.includes(ds);
+  return !!day.delayed && !!day.delayAt && localDateStr(day.delayAt) === ds;
+}
+function isRestActiveToday(day) {
+  return restOnDate(day, localDateStr(new Date().toISOString()));
+}
+function isDelayActiveToday(day) {
+  return delayedOnDate(day, localDateStr(new Date().toISOString()));
+}
+function addDateToList(list, ds) {
+  const a = Array.isArray(list) ? [...new Set(list)] : [];
+  if (!a.includes(ds)) a.push(ds);
+  return a.sort();
+}
+function removeDateFromList(list, ds) {
+  return (Array.isArray(list) ? [...new Set(list)] : []).filter(d => d !== ds);
+}
+// 历史天数（用于重置后在天卡上显示"已休N天/已延迟N次"的灰色提示）
+function restHistoryCount(day) {
+  if (!day) return 0;
+  if (Array.isArray(day.restDates)) return day.restDates.length;
+  return (day.rest && day.restAt) ? 1 : 0;
+}
+function delayHistoryCount(day) {
+  if (!day) return 0;
+  if (Array.isArray(day.delayDates)) return day.delayDates.length;
+  return (day.delayed && day.delayAt) ? 1 : 0;
+}
+
 function timeStr(iso) {
   const d = new Date(iso);
   return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
@@ -1897,8 +1972,9 @@ function calcNoCheckInStreak(t, today) {
       if (item.checked && item.checkedAt) dates.add(localDateStr(item.checkedAt));
     });
     if (day.completed && day.completedAt) dates.add(localDateStr(day.completedAt));
-    // 休息视同打卡，不计入连续未打卡
-    if (day.rest && day.restAt) dates.add(localDateStr(day.restAt));
+    // 休息视同打卡，不计入连续未打卡（含每天重置前的历史休息日期）
+    if (Array.isArray(day.restDates)) day.restDates.forEach(d => dates.add(d));
+    else if (day.rest && day.restAt) dates.add(localDateStr(day.restAt));
   });
 
   if (dates.size === 0) {
@@ -1917,14 +1993,16 @@ function calcNoCheckInStreak(t, today) {
 }
 
 // 今天是否打过卡（按日期判断，任意打勾/休息/延迟 命中今天都算打过）
+// 注意：撤销操作会留下最新时间戳（tombstone），必须同时校验状态位，
+// 否则"勾了又撤/标了休息又撤"会被误判为今天已打卡，左侧卡牌就不会变红。
 function isCheckedToday(trainee) {
   const todayStr = localDateStr(new Date().toISOString());
   const progress = trainee.progress || {};
-  // 1) 任意 day 的时间戳命中今天 → 今天确实操作过
+  // 1) 任意 day 的时间戳命中今天 且 状态位仍为"生效" → 今天确实操作过
   for (const day of Object.values(progress)) {
-    if (day.completedAt && localDateStr(day.completedAt) === todayStr) return true;
-    if (day.restAt && localDateStr(day.restAt) === todayStr) return true;
-    if (day.delayAt && localDateStr(day.delayAt) === todayStr) return true;
+    if (day.completed && day.completedAt && localDateStr(day.completedAt) === todayStr) return true;
+    if (restOnDate(day, todayStr)) return true;
+    if (delayedOnDate(day, todayStr)) return true;
     const items = day.items || {};
     for (const item of Object.values(items)) {
       if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === todayStr) return true;
@@ -1932,20 +2010,23 @@ function isCheckedToday(trainee) {
   }
   // 2) 当前应处理的天被标记为完成/休息/延迟，也算今日已处理
   //    覆盖 currentDay 跨天、restAt/delayAt 缺失或时区边界的场景
+  //    （延迟/休息每天重置：只认今天标记的，昨天标记的今天自动失效）
   const currentDay = getCurrentDay(trainee);
   if (currentDay) {
     const dp = progress[currentDay.key] || {};
-    if (dp.completed || dp.rest || dp.delayed) return true;
+    if (dp.completed) return true;
+    if (restOnDate(dp, todayStr) || delayedOnDate(dp, todayStr)) return true;
   }
   return false;
 }
 
-// 延迟统计：累计延迟过的天数（用于看板显示"累计延迟 N 次"）
+// 延迟统计：累计延迟过的天数（用于看板显示"累计延迟 N 次"），按历史日期数组统计
 function calcDelayTotalDays(t) {
   const dates = new Set();
   const progress = t.progress || {};
   Object.values(progress).forEach(day => {
-    if (day.delayed && day.delayAt) dates.add(localDateStr(day.delayAt));
+    if (Array.isArray(day.delayDates)) day.delayDates.forEach(d => dates.add(d));
+    else if (day.delayed && day.delayAt) dates.add(localDateStr(day.delayAt));
   });
   return { days: dates.size, label: dates.size > 0 ? `累计延迟 ${dates.size} 次` : '未延迟' };
 }
@@ -1955,7 +2036,8 @@ function calcDelayStreakDays(t) {
   const delayDates = new Set();
   const progress = t.progress || {};
   Object.values(progress).forEach(day => {
-    if (day.delayed && day.delayAt) delayDates.add(localDateStr(day.delayAt));
+    if (Array.isArray(day.delayDates)) day.delayDates.forEach(d => delayDates.add(d));
+    else if (day.delayed && day.delayAt) delayDates.add(localDateStr(day.delayAt));
   });
   let streak = 0;
   const d = new Date();
@@ -1966,17 +2048,15 @@ function calcDelayStreakDays(t) {
   return { days: streak, label: streak > 0 ? `连续延迟 ${streak} 天` : '未延迟' };
 }
 
-// 休息统计：本月累计休息天数
+// 休息统计：本月累计休息天数（按历史日期数组统计，重置/撤销不影响历史）
 function calcRestTotalDays(t) {
   const now = new Date();
   const yearMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
   const progress = t.progress || {};
   let count = 0;
   Object.values(progress).forEach(day => {
-    if (day.rest && day.restAt) {
-      const ds = localDateStr(day.restAt);
-      if (ds.startsWith(yearMonth)) count++;
-    }
+    const list = Array.isArray(day.restDates) ? day.restDates : (day.rest && day.restAt ? [localDateStr(day.restAt)] : []);
+    list.forEach(ds => { if (ds.startsWith(yearMonth)) count++; });
   });
   return { days: count, label: count > 0 ? `本月累计休息 ${count} 次` : '本月未休息' };
 }
@@ -2096,28 +2176,22 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
             if (day.completedAt > tLastTime) tLastTime = day.completedAt;
           }
         }
-        if (day.delayed && day.delayAt) {
-          const ds = localDateStr(day.delayAt);
-          if (ds === today) {
-            dCount++;
-            if (day.delayAt > dLastTime) {
-              dLastTime = day.delayAt;
-              dLastNote = day.delayNote || '';
-            }
-          } else if (ds === yesterday) {
-            ydCount++;
-            if (day.delayAt > ydLastTime) ydLastTime = day.delayAt;
+        if (delayedOnDate(day, today)) {
+          dCount++;
+          if (day.delayAt && day.delayAt > dLastTime) {
+            dLastTime = day.delayAt;
+            dLastNote = day.delayNote || '';
           }
+        } else if (delayedOnDate(day, yesterday)) {
+          ydCount++;
+          if (day.delayAt && day.delayAt > ydLastTime) ydLastTime = day.delayAt;
         }
-        if (day.rest && day.restAt) {
-          const ds = localDateStr(day.restAt);
-          if (ds === today) {
-            rCount++;
-            if (day.restAt > rLastTime) rLastTime = day.restAt;
-          } else if (ds === yesterday) {
-            yrCount++;
-            if (day.restAt > yrLastTime) yrLastTime = day.restAt;
-          }
+        if (restOnDate(day, today)) {
+          rCount++;
+          if (day.restAt && day.restAt > rLastTime) rLastTime = day.restAt;
+        } else if (restOnDate(day, yesterday)) {
+          yrCount++;
+          if (day.restAt && day.restAt > yrLastTime) yrLastTime = day.restAt;
         }
       });
       const baseEntry = { id: t.id, name: t.name, store: t.store, note: t.note || '', empId: t.empId, route: t.route, subRoute: t.subRoute, progress: t.progress };
@@ -2580,6 +2654,8 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
           if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === yesterday) hasYesterday = true;
         });
         if (day.completed && day.completedAt && localDateStr(day.completedAt) === yesterday) hasYesterday = true;
+        // 昨日被标延迟/休息也算"已打卡"（只要店长有操作就算）
+        if (delayedOnDate(day, yesterday) || restOnDate(day, yesterday)) hasYesterday = true;
       });
       if (hasYesterday) checkedYesterday++;
     });
@@ -2655,6 +2731,9 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
       let yHas = false; let yLast = ''; let tHas = false; let tLast = '';
       let dCount = 0; let dLast = ''; let dNote = '';
       let rCount = 0; let rLast = '';
+      // 昨日延迟/休息也算"已打卡"（只要店长有操作就算）
+      let ydCount = 0; let ydLast = '';
+      let yrCount = 0; let yrLast = '';
       const progress = t.progress || {};
       Object.values(progress).forEach(day => {
         Object.values(day.items || {}).forEach(item => {
@@ -2665,20 +2744,24 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
           }
         });
         // 仅确认完成但没有勾选项的不算打卡，因此 completedAt 不再作为打卡依据
-        if (day.delayed && day.delayAt && localDateStr(day.delayAt) === today) {
+        if (delayedOnDate(day, today)) {
           dCount++;
-          if (day.delayAt > dLast) {
-            dLast = day.delayAt;
-            dNote = day.delayNote || '';
-          }
+          if (day.delayAt && day.delayAt > dLast) { dLast = day.delayAt; dNote = day.delayNote || ''; }
+        } else if (delayedOnDate(day, yesterday)) {
+          ydCount++;
+          if (day.delayAt && day.delayAt > ydLast) ydLast = day.delayAt;
         }
-        if (day.rest && day.restAt && localDateStr(day.restAt) === today) {
+        if (restOnDate(day, today)) {
           rCount++;
-          if (day.restAt > rLast) rLast = day.restAt;
+          if (day.restAt && day.restAt > rLast) rLast = day.restAt;
+        } else if (restOnDate(day, yesterday)) {
+          yrCount++;
+          if (day.restAt && day.restAt > yrLast) yrLast = day.restAt;
         }
       });
       const baseEntry = { ...t, areaName };
-      if (yHas) yesterdayChecked.push({ ...baseEntry, lastTime: yLast });
+      // 昨日"已打卡"判定：勾选过项目、被标延迟、或被标休息，任一即算（只要店长有操作）
+      if (yHas || ydCount > 0 || yrCount > 0) yesterdayChecked.push({ ...baseEntry, lastTime: yLast || ydLast || yrLast, isDelayed: ydCount > 0, isRest: yrCount > 0 });
       else {
         // 已完成全部带训的人员不再出现在未打卡列表中
         if (getCurrentDay(t) === null) {
@@ -3139,6 +3222,8 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
                         if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === yesterday) hasYesterday = true;
                       });
                       if (day.completed && day.completedAt && localDateStr(day.completedAt) === yesterday) hasYesterday = true;
+                      // 昨日被标延迟/休息也算"已打卡"
+                      if (delayedOnDate(day, yesterday) || restOnDate(day, yesterday)) hasYesterday = true;
                     });
                     if (hasYesterday) checkedYesterday++;
                   });

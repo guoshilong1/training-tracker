@@ -146,6 +146,7 @@ function rowToTrainee(row) {
     master: row.master,
     area: row.area || '000',
     progress: row.progress || {},
+    empId: row.emp_id || '',
   };
 }
 
@@ -193,9 +194,12 @@ async function fetchWorkHours() {
   }
 }
 
-// 工时上限（与前端一致）
+// 工时上限 / 告警阈值（与前端 getWorkHoursLimit / getWorkHoursThreshold 严格一致）
 function workHoursLimit(t) {
-  return isPartTime(t) ? 24 : 200;
+  return isPartTime(t) ? 300 : 500;
+}
+function workHoursThreshold(t) {
+  return isPartTime(t) ? 200 : 300;
 }
 
 // ---------- 单个配置的推送 ----------
@@ -235,12 +239,11 @@ async function pushSetting(setting, todayStr) {
     .map(t => ({ ...t, streak: calcNoCheckInStreak(t, todayStr) }))
     .sort((a, b) => b.streak - a.streak);
 
-  // 工时预警（在训、未认证、工时达到上限 80%）
+  // 工时预警（在训、未认证、工时 > 阈值；阈值 全职 300 / 兼职 200，上限 全职 500 / 兼职 300，与前端严格一致）
   const hourWarnings = activeTrainees.filter(t => {
     if (isCertified(t)) return false;
-    const h = t._workHours || 0;
-    const limit = workHoursLimit(t);
-    return h >= limit * 0.8;
+    const h = Number(t._workHours) || 0;
+    return h > workHoursThreshold(t);
   });
 
   // 全员打卡报平安 & 每日数据简报（基于目标区域总体）
@@ -268,15 +271,21 @@ async function pushSetting(setting, todayStr) {
     sections.push(`**✅ 今日全员已打卡**\n> 日期：${todayStr}\n> 区域：${areaLabel}（在训 ${totalActive} 人）\n> 所有师傅今天都完成了带训打卡，辛苦了 👍`);
   }
 
-  // 3. 工时预警
+  // 3. 工时预警（在训、未认证、工时 > 阈值；阈值 全职 300 / 兼职 200，上限 全职 500 / 兼职 300）
   if (hourWarnings.length > 0 && enableHourWarning) {
-    const lines = hourWarnings.slice(0, 20).map((t, i) => {
-      const h = t._workHours || 0;
-      const limit = workHoursLimit(t);
-      return `${i + 1}. **${t.name}** · ${t.store} — ${h}/${limit}h（${isPartTime(t) ? '兼职' : '全职'}）`;
+    // 剩余工时少的排前面（更紧迫）
+    const sorted = hourWarnings.slice().sort((a, b) => {
+      return workHoursLimit(a) - (Number(a._workHours) || 0) - (workHoursLimit(b) - (Number(b._workHours) || 0));
     });
-    const more = hourWarnings.length > 20 ? `\n……另有 ${hourWarnings.length - 20} 人` : '';
-    sections.push(`**⚠️ 工时预警（${todayStr}）**\n> 区域：${areaLabel} 共 ${hourWarnings.length} 人接近或达到工时上限：\n${lines.join('\n')}${more}\n> 👉 [点此查看详情](${SITE_URL})`);
+    const lines = sorted.slice(0, 20).map((t, i) => {
+      const h = Number(t._workHours) || 0;
+      const limit = workHoursLimit(t);
+      const remain = Math.max(0, limit - h);
+      const parttime = isPartTime(t);
+      return `${i + 1}. **${t.name}** · ${t.store} — ${h}/${limit}h（${parttime ? '兼职' : '全职'}，剩余 **${remain}** h）`;
+    });
+    const more = sorted.length > 20 ? `\n……另有 ${sorted.length - 20} 人` : '';
+    sections.push(`**⚠️ 工时预警（${todayStr}）**\n> 区域：${areaLabel} 共 ${hourWarnings.length} 人超过工时阈值（全职 > 300h / 兼职 > 200h）：\n${lines.join('\n')}${more}\n> 👉 [点此查看详情](${SITE_URL})`);
   }
 
   // 4. 每日数据简报

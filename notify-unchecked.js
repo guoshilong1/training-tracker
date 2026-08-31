@@ -440,11 +440,11 @@ async function pushSetting(setting, todayStr) {
 
   const sections = [];
 
-  // 1. 未打卡名单（移动端精简模板：去掉引用块、去掉师傅信息、使用｜分隔）
+  // 1. 未打卡名单（移动端精简模板：去掉引用块、去掉师傅信息、使用｜分隔，姓名加粗、门店与天数放第二行）
   if (unchecked.length > 0 && enableUnchecked) {
     const lines = unchecked.map((t, i) => {
       const streakLabel = t.streak >= 9999 ? '从未打卡' : `${t.streak}天未打卡`;
-      return `${i + 1}. ${t.name}｜${t.store}｜${streakLabel}`;
+      return `${i + 1}. **${t.name}**\n${t.store}｜${streakLabel}`;
     });
     const MAX_ITEMS = 25;
     const shown = lines.slice(0, MAX_ITEMS);

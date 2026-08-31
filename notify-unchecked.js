@@ -555,6 +555,21 @@ function parsePushTimes(pt) {
   return [s];
 }
 
+// 找当前时间最接近的配置时间点，返回 { matched, minDiff }（单位：分钟）
+function nearestPushTimeMinutes(pushTimes, nowMin) {
+  let matched = null;
+  let minDiff = Infinity;
+  for (const t of pushTimes) {
+    const targetMin = hhmmToMinutes(t);
+    const diff = Math.abs(nowMin - targetMin);
+    if (diff < minDiff) {
+      minDiff = diff;
+      matched = t;
+    }
+  }
+  return { matched, minDiff };
+}
+
 // ---------- 主流程 ----------
 async function main() {
   if (!SERVICE_KEY) { console.log('[SKIP] 未配置 SUPABASE_SERVICE_KEY，跳过推送。'); return; }
@@ -595,17 +610,23 @@ async function main() {
         }
       }
 
-      // 到点判定：当前时间 >= 任一配置时间才推（GitHub Actions cron 有几分钟延迟，用窗口而非精确匹配分钟）
-      const matchedTime = pushTimes.find(t => nowMin >= hhmmToMinutes(t));
-      if (!matchedTime) {
-        console.log(`[配置 ${s.area}] 所有配置时间 ${JSON.stringify(pushTimes)} 还未到（当前 ${nowHHMM}），跳过`);
+      // 到点判定：只在配置时间前后 5 分钟窗口内命中（兼容 GitHub Actions cron 延迟）
+      const TIME_WINDOW = 5; // 分钟
+      const { matched: matchedTime, minDiff } = nearestPushTimeMinutes(pushTimes, nowMin);
+      if (!matchedTime || minDiff > TIME_WINDOW) {
+        console.log(`[配置 ${s.area}] 当前 ${nowHHMM} 不在任何推送时间 ±${TIME_WINDOW} 分钟窗口内（${JSON.stringify(pushTimes)}），跳过`);
         continue;
       }
-      // 失败重试保护：仅到点后 30 分钟内重试，避免坏 webhook 全天轰炸
+      console.log(`[配置 ${s.area}] 命中推送时间 ${matchedTime}（当前 ${nowHHMM}，差 ${minDiff} 分钟）`);
+
+      // 失败重试保护：上次失败后，在最近一个推送时间点 35 分钟内继续重试，避免坏 webhook 全天轰炸
       if (s.last_push_status === 'error' && s.last_push_at) {
         const lastPushDay = localDateStr(s.last_push_at);
-        if (lastPushDay === todayStr && (nowMin - hhmmToMinutes(matchedTime)) > 30) {
-          console.log(`[配置 ${s.area}] 今天推送失败且已超过 30 分钟重试窗口，跳过`); continue;
+        if (lastPushDay === todayStr) {
+          const { minDiff: retryDiff } = nearestPushTimeMinutes(pushTimes, nowMin);
+          if (retryDiff > 35) {
+            console.log(`[配置 ${s.area}] 上次推送失败且已超过最近推送时间 35 分钟重试窗口，跳过`); continue;
+          }
         }
       }
       matched++;

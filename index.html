@@ -1379,7 +1379,7 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
   const [filterStore, setFilterStore] = useState('');
   const [filterRoute, setFilterRoute] = useState('');
   const [certFilter, setCertFilter] = useState('incomplete'); // 'incomplete' | 'completed'
-  const [expandUnchecked, setExpandUnchecked] = useState(true);
+  const [expandUnchecked, setExpandUnchecked] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingTrainee, setEditingTrainee] = useState(null);
 

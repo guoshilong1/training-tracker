@@ -3358,7 +3358,16 @@ function BotSettingsCard({ currentUser, config }) {
       if (error && error.code !== 'PGRST116') { setTableMissing(true); setLoading(false); return; }
       setTableMissing(false);
       const savedTargets = Array.isArray(data?.target_areas) && data.target_areas.length ? data.target_areas : defaultTargets;
-      const savedScope = savedTargets[0] === 'all' ? 'all' : (savedTargets[0] || defaultScope);
+      let savedScope;
+      if (savedTargets[0] === 'all') {
+        savedScope = 'all';
+      } else if (isManager && currentUser?.id && AREA_MAP[currentUser.id]?.subAreas?.length) {
+        const subs = AREA_MAP[currentUser.id].subAreas;
+        const isAllSubs = savedTargets.length === subs.length && subs.every(id => savedTargets.includes(id));
+        savedScope = isAllSubs ? 'all' : (savedTargets[0] || defaultScope);
+      } else {
+        savedScope = savedTargets[0] || defaultScope;
+      }
       setSettings({
         enabled: !!data?.enabled,
         webhook_url: data?.webhook_url || '',

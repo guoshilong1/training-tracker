@@ -208,6 +208,33 @@ function areaDisplayName(areaId) {
   return AREA_NAMES[areaId] || `区域 ${areaId}`;
 }
 
+// 大区账号 → 下辖小区（与 index.html AREA_CONFIG 保持一致）
+const MANAGER_SUB_AREAS = {
+  '666': ['000', '001', '002', '003', '004', '005', '006', '007'],
+  '008': ['0026', '0027', '0028', '0029', '0030', '0031', '0032', '0033', '0034'],
+  '009': ['0105', '0106', '0107', '0108', '0109', '0110', '0111', '0112', '0113'],
+  '010': ['0035', '0036', '0037', '0038', '0039', '0040', '0041', '0042'],
+  '011': ['0043', '0044', '0045', '0046', '0047', '0048', '0049', '0050'],
+  '012': ['0071', '0072', '0073', '0074', '0075', '0076', '0077', '0078'],
+  '013': ['0140', '0141', '0142', '0143', '0144', '0145', '0146', '0147'],
+  '014': ['0001', '0002', '0003', '0004', '0005', '0006', '0007'],
+  '015': ['0019', '0020', '0021', '0022', '0023', '0024', '0025'],
+  '016': ['0051', '0052', '0053', '0054', '0055', '0056', '0057'],
+  '017': ['0064', '0065', '0066', '0067', '0068', '0069', '0070'],
+  '018': ['0079', '0080', '0081', '0082', '0083', '0084', '0085'],
+  '019': ['0098', '0099', '0100', '0101', '0102', '0103', '0104'],
+  '020': ['0114', '0115', '0116', '0117', '0118', '0119', '0120'],
+  '021': ['0127', '0128', '0129', '0130', '0131', '0132', '0133'],
+  '022': ['0008', '0009', '0010', '0011', '0012', '0013'],
+  '023': ['0058', '0059', '0060', '0061', '0062', '0063'],
+  '024': ['0086', '0087', '0088', '0089', '0090', '0091'],
+  '025': ['0092', '0093', '0094', '0095', '0096', '0097'],
+  '026': ['0121', '0122', '0123', '0124', '0125', '0126'],
+  '027': ['0134', '0135', '0136', '0137', '0138', '0139'],
+  '028': ['0014', '0015', '0016', '0017', '0018']
+};
+function isManagerOwner(areaId) { return !!MANAGER_SUB_AREAS[areaId]; }
+
 // ---------- 工具函数（与前端 index.html 逻辑保持一致） ----------
 function localDateStr(iso) {
   const d = new Date(iso);
@@ -432,35 +459,43 @@ async function pushSetting(setting, todayStr) {
   });
 
   // 全员打卡报平安 & 每日数据简报（基于目标区域总体）
-  const totalActive = activeTrainees.length;
-  const completedCount = activeTrainees.filter(t => isCheckedToday(t, todayStr)).length;
   const certCount = trainees.filter(isCertified).length;
   const areaLabels = targetAreas.map(areaDisplayName);
   const areaLabel = targetAreas.includes('all') ? '全部区域' : areaLabels.join('、');
+  const isManagerMulti = isManagerOwner(owner) && targetAreas.length > 1;
 
   const sections = [];
 
-  // 1. 未打卡名单（移动端精简模板：去掉引用块、去掉师傅信息、使用｜分隔，姓名加粗、门店与天数放第二行）
-  if (unchecked.length > 0 && enableUnchecked) {
-    const lines = unchecked.map((t, i) => {
+  // 板块渲染辅助函数
+  function formatUncheckedSection(label, areaActive) {
+    const list = areaActive
+      .filter(t => !isCheckedToday(t, todayStr))
+      .map(t => ({ ...t, streak: calcNoCheckInStreak(t, todayStr) }))
+      .sort((a, b) => b.streak - a.streak);
+    if (list.length === 0) return null;
+    const lines = list.map((t, i) => {
       const streakLabel = t.streak >= 9999 ? '从未打卡' : `${t.streak}天未打卡`;
       return `${i + 1}. **${t.name}**\n${t.store}｜${streakLabel}`;
     });
     const MAX_ITEMS = 25;
     const shown = lines.slice(0, MAX_ITEMS);
     const more = lines.length > MAX_ITEMS ? `\n……另有 ${lines.length - MAX_ITEMS} 人，详见系统` : '';
-    sections.push(`**📋 今日未打卡提醒（${todayStr}）**\n区域：${areaLabel}\n在训 ${totalActive} 人，未打卡 ${unchecked.length} 人\n\n${shown.join('\n')}${more}\n\n👉 [点此处理打卡](${SITE_URL})`);
+    return `**📋 今日未打卡提醒（${todayStr}）**\n区域：${label}\n在训 ${areaActive.length} 人，未打卡 ${list.length} 人\n\n${shown.join('\n')}${more}\n\n👉 [点此处理打卡](${SITE_URL})`;
   }
 
-  // 2. 全员打卡报平安
-  if (unchecked.length === 0 && enableAllChecked) {
-    sections.push(`**✅ 今日全员已打卡（${todayStr}）**\n区域：${areaLabel}\n在训 ${totalActive} 人\n\n所有师傅今天都完成了带训打卡，辛苦了 👍`);
+  function formatAllCheckedSection(label, areaActive) {
+    if (areaActive.some(t => !isCheckedToday(t, todayStr))) return null;
+    return `**✅ 今日全员已打卡（${todayStr}）**\n区域：${label}\n在训 ${areaActive.length} 人\n\n所有师傅今天都完成了带训打卡，辛苦了 👍`;
   }
 
-  // 3. 工时预警（在训、未认证、工时 > 阈值；阈值 全职 300 / 兼职 200，上限 全职 500 / 兼职 300）
-  if (hourWarnings.length > 0 && enableHourWarning) {
-    // 剩余工时少的排前面（更紧迫）
-    const sorted = hourWarnings.slice().sort((a, b) => {
+  function formatHourWarningSection(label, areaActive) {
+    const warnings = areaActive.filter(t => {
+      if (isCertified(t)) return false;
+      const h = Number(t._workHours) || 0;
+      return h > workHoursThreshold(t);
+    });
+    if (warnings.length === 0) return null;
+    const sorted = warnings.slice().sort((a, b) => {
       return workHoursLimit(a) - (Number(a._workHours) || 0) - (workHoursLimit(b) - (Number(b._workHours) || 0));
     });
     const lines = sorted.slice(0, 20).map((t, i) => {
@@ -470,13 +505,12 @@ async function pushSetting(setting, todayStr) {
       return `${i + 1}. ${t.name}｜${t.store}｜${h}/${limit}h（剩余${remain}h）`;
     });
     const more = sorted.length > 20 ? `\n……另有 ${sorted.length - 20} 人` : '';
-    sections.push(`**⚠️ 工时预警（${todayStr}）**\n区域：${areaLabel}\n共 ${hourWarnings.length} 人超过工时阈值（全职>300h / 兼职>200h）\n\n${lines.join('\n')}${more}\n\n👉 [点此查看详情](${SITE_URL})`);
+    return `**⚠️ 工时预警（${todayStr}）**\n区域：${label}\n共 ${warnings.length} 人超过工时阈值（全职>300h / 兼职>200h）\n\n${lines.join('\n')}${more}\n\n👉 [点此查看详情](${SITE_URL})`;
   }
 
-  // 4. 每日数据简报
-  if (enableDailyBrief) {
+  function formatDailyBriefSection(label, allActive, allCert) {
     const phaseDist = {};
-    for (const t of activeTrainees) {
+    for (const t of allActive) {
       const cd = getCurrentDay(t);
       let phase = '已完成';
       if (cd) {
@@ -486,8 +520,52 @@ async function pushSetting(setting, todayStr) {
       }
       phaseDist[phase] = (phaseDist[phase] || 0) + 1;
     }
+    const completed = allActive.filter(t => isCheckedToday(t, todayStr)).length;
     const phaseLines = Object.entries(phaseDist).map(([phase, count]) => `${phase}：${count} 人`).join('\n');
-    sections.push(`**📊 每日数据简报（${todayStr}）**\n区域：${areaLabel}\n在训 ${totalActive} 人｜已认证 ${certCount} 人｜今日已打卡 ${completedCount} 人\n\n${phaseLines || '暂无在训学员'}\n\n👉 [打开系统](${SITE_URL})`);
+    return `**📊 每日数据简报（${todayStr}）**\n区域：${label}\n在训 ${allActive.length} 人｜已认证 ${allCert} 人｜今日已打卡 ${completed} 人\n\n${phaseLines || '暂无在训学员'}\n\n👉 [打开系统](${SITE_URL})`;
+  }
+
+  if (isManagerMulti) {
+    // 大区多小区：按小区拆分未打卡、报平安、工时预警
+    const areaOrder = [...targetAreas];
+    for (const areaId of areaOrder) {
+      const areaActive = activeTrainees.filter(t => (t.area || '000') === areaId);
+      if (areaActive.length === 0) continue;
+      const label = areaDisplayName(areaId);
+      if (enableUnchecked) {
+        const sec = formatUncheckedSection(label, areaActive);
+        if (sec) sections.push(sec);
+      }
+      if (enableAllChecked) {
+        const sec = formatAllCheckedSection(label, areaActive);
+        if (sec) sections.push(sec);
+      }
+      if (enableHourWarning) {
+        const sec = formatHourWarningSection(label, areaActive);
+        if (sec) sections.push(sec);
+      }
+    }
+    // 每日数据简报整体聚合
+    if (enableDailyBrief) {
+      sections.push(formatDailyBriefSection(areaLabel, activeTrainees, certCount));
+    }
+  } else {
+    // 单小区/全部区域：保持原有聚合逻辑
+    if (enableUnchecked) {
+      const sec = formatUncheckedSection(areaLabel, activeTrainees);
+      if (sec) sections.push(sec);
+    }
+    if (enableAllChecked) {
+      const sec = formatAllCheckedSection(areaLabel, activeTrainees);
+      if (sec) sections.push(sec);
+    }
+    if (enableHourWarning) {
+      const sec = formatHourWarningSection(areaLabel, activeTrainees);
+      if (sec) sections.push(sec);
+    }
+    if (enableDailyBrief) {
+      sections.push(formatDailyBriefSection(areaLabel, activeTrainees, certCount));
+    }
   }
 
   if (sections.length === 0) {

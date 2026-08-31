@@ -440,21 +440,21 @@ async function pushSetting(setting, todayStr) {
 
   const sections = [];
 
-  // 1. 未打卡名单
+  // 1. 未打卡名单（移动端精简模板：去掉引用块、去掉师傅信息、使用｜分隔）
   if (unchecked.length > 0 && enableUnchecked) {
     const lines = unchecked.map((t, i) => {
-      const streakLabel = t.streak >= 9999 ? '从未打卡' : `已连续 **${t.streak}** 天`;
-      return `${i + 1}. **${t.name}** · ${t.store}${t.master ? `（师傅：${t.master}）` : ''} — ${streakLabel}未打卡`;
+      const streakLabel = t.streak >= 9999 ? '从未打卡' : `${t.streak}天未打卡`;
+      return `${i + 1}. ${t.name}｜${t.store}｜${streakLabel}`;
     });
     const MAX_ITEMS = 25;
     const shown = lines.slice(0, MAX_ITEMS);
     const more = lines.length > MAX_ITEMS ? `\n……另有 ${lines.length - MAX_ITEMS} 人，详见系统` : '';
-    sections.push(`**📋 今日未打卡提醒（${todayStr}）**\n> 区域 ${areaLabel} 共 **${unchecked.length}** 人未打卡（在训 ${totalActive} 人）：\n${shown.join('\n')}${more}\n> 👉 [点此处理打卡](${SITE_URL})`);
+    sections.push(`**📋 今日未打卡提醒（${todayStr}）**\n区域：${areaLabel}\n在训 ${totalActive} 人，未打卡 ${unchecked.length} 人\n\n${shown.join('\n')}${more}\n\n👉 [点此处理打卡](${SITE_URL})`);
   }
 
   // 2. 全员打卡报平安
   if (unchecked.length === 0 && enableAllChecked) {
-    sections.push(`**✅ 今日全员已打卡**\n> 日期：${todayStr}\n> 区域：${areaLabel}（在训 ${totalActive} 人）\n> 所有师傅今天都完成了带训打卡，辛苦了 👍`);
+    sections.push(`**✅ 今日全员已打卡（${todayStr}）**\n区域：${areaLabel}\n在训 ${totalActive} 人\n\n所有师傅今天都完成了带训打卡，辛苦了 👍`);
   }
 
   // 3. 工时预警（在训、未认证、工时 > 阈值；阈值 全职 300 / 兼职 200，上限 全职 500 / 兼职 300）
@@ -467,11 +467,10 @@ async function pushSetting(setting, todayStr) {
       const h = Number(t._workHours) || 0;
       const limit = workHoursLimit(t);
       const remain = Math.max(0, limit - h);
-      const parttime = isPartTime(t);
-      return `${i + 1}. **${t.name}** · ${t.store} — ${h}/${limit}h（${parttime ? '兼职' : '全职'}，剩余 **${remain}** h）`;
+      return `${i + 1}. ${t.name}｜${t.store}｜${h}/${limit}h（剩余${remain}h）`;
     });
     const more = sorted.length > 20 ? `\n……另有 ${sorted.length - 20} 人` : '';
-    sections.push(`**⚠️ 工时预警（${todayStr}）**\n> 区域：${areaLabel} 共 ${hourWarnings.length} 人超过工时阈值（全职 > 300h / 兼职 > 200h）：\n${lines.join('\n')}${more}\n> 👉 [点此查看详情](${SITE_URL})`);
+    sections.push(`**⚠️ 工时预警（${todayStr}）**\n区域：${areaLabel}\n共 ${hourWarnings.length} 人超过工时阈值（全职>300h / 兼职>200h）\n\n${lines.join('\n')}${more}\n\n👉 [点此查看详情](${SITE_URL})`);
   }
 
   // 4. 每日数据简报
@@ -487,8 +486,8 @@ async function pushSetting(setting, todayStr) {
       }
       phaseDist[phase] = (phaseDist[phase] || 0) + 1;
     }
-    const phaseLines = Object.entries(phaseDist).map(([phase, count]) => `> ${phase}：**${count}** 人`).join('\n');
-    sections.push(`**📊 每日数据简报（${todayStr}）**\n> 区域：${areaLabel}\n> 在训学员：**${totalActive}** 人｜已认证：**${certCount}** 人｜今日已打卡：**${completedCount}** 人\n${phaseLines || '> 暂无在训学员'}\n> 👉 [打开系统](${SITE_URL})`);
+    const phaseLines = Object.entries(phaseDist).map(([phase, count]) => `${phase}：${count} 人`).join('\n');
+    sections.push(`**📊 每日数据简报（${todayStr}）**\n区域：${areaLabel}\n在训 ${totalActive} 人｜已认证 ${certCount} 人｜今日已打卡 ${completedCount} 人\n\n${phaseLines || '暂无在训学员'}\n\n👉 [打开系统](${SITE_URL})`);
   }
 
   if (sections.length === 0) {

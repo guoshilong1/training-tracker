@@ -8,7 +8,7 @@ create table if not exists public.bot_settings (
   area text not null unique,        -- 配置所有者账号（如 000 / 001 / 666）
   enabled boolean not null default false,
   webhook_url text not null default '',
-  push_time text not null default '22:00',
+  push_time text not null default '["22:00"]', -- 新版为 JSON 数组，如 ["09:00","14:00","21:00"]
   target_areas jsonb not null default '[]', -- 实际推送到的区域列表，['all'] 表示全部区域
   push_content jsonb not null default '{"unchecked":true,"allChecked":true,"hourWarning":false,"dailyBrief":false}',
   last_push_at timestamptz,
@@ -21,6 +21,11 @@ create table if not exists public.bot_settings (
 alter table public.bot_settings add column if not exists target_areas jsonb not null default '[]';
 update public.bot_settings set target_areas = to_jsonb(array[area]) where target_areas = '[]' or target_areas is null;
 
+-- 旧表兼容：把旧版单字符串 push_time（如 '22:00'）迁移为新版 JSON 数组 '["22:00"]'
+update public.bot_settings
+set push_time = to_jsonb(array[push_time])::text
+where push_time is not null and push_time not like '[%';
+
 alter table public.bot_settings enable row level security;
 
 drop policy if exists "bot_settings_all" on public.bot_settings;
@@ -31,7 +36,7 @@ insert into public.bot_settings (area, enabled, webhook_url, push_time, target_a
 values (
   '000', true,
   'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=154a1039-ecbc-49ed-86bf-2261f530b14c',
-  '22:00',
+  '["22:00"]',
   '["000"]',
   '{"unchecked":true,"allChecked":true,"hourWarning":false,"dailyBrief":false}'
 )

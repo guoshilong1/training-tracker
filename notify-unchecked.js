@@ -355,6 +355,21 @@ function hhmmToMinutes(hhmm) {
   return (parts[0] || 0) * 60 + (parts[1] || 0);
 }
 
+// 把 push_time 解析为 HH:MM 数组（兼容旧版单字符串 '22:00' 和新版 JSON 数组 ["09:00","21:00"]）
+function parsePushTimes(pt) {
+  if (!pt) return ['22:00'];
+  if (Array.isArray(pt)) return pt.filter(Boolean).map(String);
+  const s = String(pt).trim();
+  if (!s) return ['22:00'];
+  if (s.startsWith('[')) {
+    try {
+      const arr = JSON.parse(s);
+      if (Array.isArray(arr) && arr.length) return arr.filter(Boolean).map(String);
+    } catch (e) { /* 回退按单字符串处理 */ }
+  }
+  return [s];
+}
+
 // ---------- 主流程 ----------
 async function main() {
   if (!SERVICE_KEY) { console.log('[SKIP] 未配置 SUPABASE_SERVICE_KEY，跳过推送。'); return; }
@@ -384,7 +399,7 @@ async function main() {
     for (const s of settings) {
       if (!s.enabled) { console.log(`[配置 ${s.area}] 未启用，跳过`); continue; }
       if (!s.webhook_url) { console.log(`[配置 ${s.area}] 未配置 webhook，跳过`); continue; }
-      const st = (s.push_time || '22:00');
+      const pushTimes = parsePushTimes(s.push_time);
 
       // 去重逻辑改为：仅在上次推送成功后 60 分钟内跳过，防止群里刷屏；改时间后允许重新推
       if (s.last_push_status === 'ok' && s.last_push_at) {
@@ -395,12 +410,16 @@ async function main() {
         }
       }
 
-      // 到点判定：当前时间 >= 配置时间才推（GitHub Actions cron 有几分钟延迟，用窗口而非精确匹配分钟）
-      if (nowMin < hhmmToMinutes(st)) { console.log(`[配置 ${s.area}] 配置时间 ${st} 还未到（当前 ${nowHHMM}），跳过`); continue; }
+      // 到点判定：当前时间 >= 任一配置时间才推（GitHub Actions cron 有几分钟延迟，用窗口而非精确匹配分钟）
+      const matchedTime = pushTimes.find(t => nowMin >= hhmmToMinutes(t));
+      if (!matchedTime) {
+        console.log(`[配置 ${s.area}] 所有配置时间 ${JSON.stringify(pushTimes)} 还未到（当前 ${nowHHMM}），跳过`);
+        continue;
+      }
       // 失败重试保护：仅到点后 30 分钟内重试，避免坏 webhook 全天轰炸
       if (s.last_push_status === 'error' && s.last_push_at) {
         const lastPushDay = localDateStr(s.last_push_at);
-        if (lastPushDay === todayStr && (nowMin - hhmmToMinutes(st)) > 30) {
+        if (lastPushDay === todayStr && (nowMin - hhmmToMinutes(matchedTime)) > 30) {
           console.log(`[配置 ${s.area}] 今天推送失败且已超过 30 分钟重试窗口，跳过`); continue;
         }
       }

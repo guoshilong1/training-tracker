@@ -385,15 +385,24 @@ async function main() {
       if (!s.enabled) { console.log(`[配置 ${s.area}] 未启用，跳过`); continue; }
       if (!s.webhook_url) { console.log(`[配置 ${s.area}] 未配置 webhook，跳过`); continue; }
       const st = (s.push_time || '22:00');
-      // 当日去重：今天已推送过（且不是失败）就不再推，配合定时任务每 10 分钟跑一次
-      const lastPushDay = s.last_push_at ? localDateStr(s.last_push_at) : '';
-      const alreadyDone = lastPushDay === todayStr && s.last_push_status !== 'error';
-      if (alreadyDone) { console.log(`[配置 ${s.area}] 今天已推送过（${s.last_push_status}），跳过`); continue; }
+
+      // 去重逻辑改为：仅在上次推送成功后 60 分钟内跳过，防止群里刷屏；改时间后允许重新推
+      if (s.last_push_status === 'ok' && s.last_push_at) {
+        const minutesSinceLast = (Date.now() - new Date(s.last_push_at).getTime()) / 60000;
+        if (minutesSinceLast < 60) {
+          console.log(`[配置 ${s.area}] 上次推送成功距今 ${Math.round(minutesSinceLast)} 分钟，60 分钟内不重复推送，跳过`);
+          continue;
+        }
+      }
+
       // 到点判定：当前时间 >= 配置时间才推（GitHub Actions cron 有几分钟延迟，用窗口而非精确匹配分钟）
       if (nowMin < hhmmToMinutes(st)) { console.log(`[配置 ${s.area}] 配置时间 ${st} 还未到（当前 ${nowHHMM}），跳过`); continue; }
       // 失败重试保护：仅到点后 30 分钟内重试，避免坏 webhook 全天轰炸
-      if (s.last_push_status === 'error' && lastPushDay === todayStr && (nowMin - hhmmToMinutes(st)) > 30) {
-        console.log(`[配置 ${s.area}] 今天推送失败且已超过 30 分钟重试窗口，跳过`); continue;
+      if (s.last_push_status === 'error' && s.last_push_at) {
+        const lastPushDay = localDateStr(s.last_push_at);
+        if (lastPushDay === todayStr && (nowMin - hhmmToMinutes(st)) > 30) {
+          console.log(`[配置 ${s.area}] 今天推送失败且已超过 30 分钟重试窗口，跳过`); continue;
+        }
       }
       matched++;
       try {

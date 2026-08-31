@@ -2681,8 +2681,10 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
       const total = list.length;
       const completed = list.filter(t => isCertified(t)).length;
       const inProgress = list.filter(t => !isCertified(t) && calcProgress(t).percent > 0).length;
+      const notStarted = total - completed - inProgress;
+      const uncertifiedTotal = total - completed; // 区域总人数中不计已认证人员
       const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
-      return { ...c, total, avg: completionRate, completed, inProgress };
+      return { ...c, total, avg: completionRate, completed, inProgress, notStarted, uncertifiedTotal };
     });
   }, [trainees, config, subAreas]);
 
@@ -3263,10 +3265,10 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
                   return (
                     <tr key={a.id} className="border-b border-gray-800/50 hover:bg-gray-800/20 cursor-pointer" onClick={() => setFilterArea(filterArea === a.id ? '' : a.id)}>
                       <td className="px-3 py-2 text-white font-medium">{a.name.replace('区域带训追踪系统', '')}</td>
-                      <td className="px-3 py-2 text-gray-400">{a.total}</td>
+                      <td className="px-3 py-2 text-gray-400">{a.uncertifiedTotal}</td>
                       <td className="px-3 py-2 text-emerald-400">{a.completed}</td>
                       <td className="px-3 py-2 text-amber-400">{a.inProgress}</td>
-                      <td className="px-3 py-2 text-gray-500">{a.total - a.completed - a.inProgress}</td>
+                      <td className="px-3 py-2 text-gray-500">{a.notStarted}</td>
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-2">
                           <div className="w-20 h-1.5 bg-gray-800 rounded-full overflow-hidden">
@@ -3275,7 +3277,7 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
                           <span className="text-xs text-gray-400">{a.avg}%</span>
                         </div>
                       </td>
-                      <td className="px-3 py-2 text-gray-400">{checkedYesterday}/{a.total}</td>
+                      <td className="px-3 py-2 text-gray-400">{checkedYesterday}/{a.uncertifiedTotal}</td>
                     </tr>
                   );
                 })}

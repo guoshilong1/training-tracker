@@ -526,49 +526,73 @@ async function pushSetting(setting, todayStr) {
   }
 
   if (isManagerMulti) {
-    // 大区多小区：未打卡合并成一个大板块（区域统计内联一行、名单不显示门店、末尾统一链接）
+    // 大区多小区：所有板块合并成一条消息
+    //   未打卡 → 每小区一行统计（在训/已打卡/未打卡），不列名单
+    //   报平安 → 达标区域合并成一行
+    //   工时预警 → 所有小区合并一个板块，保留姓名+工时，去掉门店
     const areaOrder = [...targetAreas];
+    const parts = [];
+
+    // 未打卡：仅统计行
     if (enableUnchecked) {
-      const areaBlocks = [];
+      const statLines = [];
       for (const areaId of areaOrder) {
         const areaActive = activeTrainees.filter(t => (t.area || '000') === areaId);
         if (areaActive.length === 0) continue;
-        const list = areaActive
-          .filter(t => !isCheckedToday(t, todayStr))
-          .map(t => ({ ...t, streak: calcNoCheckInStreak(t, todayStr) }))
-          .sort((a, b) => b.streak - a.streak);
+        const list = areaActive.filter(t => !isCheckedToday(t, todayStr));
         if (list.length === 0) continue;
         const label = areaDisplayName(areaId);
-        const lines = list.map((t, i) => {
-          const streakLabel = t.streak >= 9999 ? '从未打卡' : `${t.streak}天未打卡`;
-          return `${i + 1}. **${t.name}**\n${streakLabel}`;
-        });
-        const MAX_ITEMS = 25;
-        const shown = lines.slice(0, MAX_ITEMS);
-        const more = lines.length > MAX_ITEMS ? `\n……另有 ${lines.length - MAX_ITEMS} 人，详见系统` : '';
-        areaBlocks.push(`区域：${label} 在训 ${areaActive.length} 人，未打卡 ${list.length} 人\n${shown.join('\n')}${more}`);
+        const checked = areaActive.length - list.length;
+        statLines.push(`区域：${label} 在训 ${areaActive.length} 人，已打卡 ${checked} 人，未打卡 ${list.length} 人`);
       }
-      if (areaBlocks.length > 0) {
-        sections.push(`**📋 今日未打卡提醒（${todayStr}）**\n${areaBlocks.join('\n\n')}\n\n👉 [点此处理打卡](${SITE_URL})`);
+      if (statLines.length > 0) {
+        parts.push(`**📋 今日未打卡提醒（${todayStr}）**\n${statLines.join('\n')}`);
       }
     }
-    // 报平安、工时预警按小区独立板块
-    for (const areaId of areaOrder) {
-      const areaActive = activeTrainees.filter(t => (t.area || '000') === areaId);
-      if (areaActive.length === 0) continue;
-      const label = areaDisplayName(areaId);
-      if (enableAllChecked) {
-        const sec = formatAllCheckedSection(label, areaActive);
-        if (sec) sections.push(sec);
+
+    // 全员已打卡：达标区域合并
+    if (enableAllChecked) {
+      const allDoneAreas = [];
+      for (const areaId of areaOrder) {
+        const areaActive = activeTrainees.filter(t => (t.area || '000') === areaId);
+        if (areaActive.length > 0 && !areaActive.some(t => !isCheckedToday(t, todayStr))) {
+          allDoneAreas.push(areaDisplayName(areaId));
+        }
       }
-      if (enableHourWarning) {
-        const sec = formatHourWarningSection(label, areaActive);
-        if (sec) sections.push(sec);
+      if (allDoneAreas.length > 0) {
+        parts.push(`**✅ 今日全员已打卡（${todayStr}）**\n区域：${allDoneAreas.join('、')}\n\n所有师傅今天都完成了带训打卡，辛苦了 👍`);
       }
     }
+
+    // 工时预警：合并一个板块，剩余越少越靠前
+    if (enableHourWarning) {
+      const warningItems = [];
+      for (const areaId of areaOrder) {
+        const areaActive = activeTrainees.filter(t => (t.area || '000') === areaId);
+        if (areaActive.length === 0) continue;
+        const label = areaDisplayName(areaId);
+        for (const t of areaActive) {
+          if (isCertified(t)) continue;
+          const h = Number(t._workHours) || 0;
+          if (h <= workHoursThreshold(t)) continue;
+          const limit = workHoursLimit(t);
+          warningItems.push({ label, name: t.name, h, limit, remain: Math.max(0, limit - h) });
+        }
+      }
+      if (warningItems.length > 0) {
+        warningItems.sort((a, b) => a.remain - b.remain);
+        const warningLines = warningItems.map(w => `区域：${w.label} ${w.name}｜工时 ${w.h}/${w.limit}h（剩余${w.remain}h）`);
+        parts.push(`**⚠️ 工时预警（${todayStr}）**\n共 ${warningItems.length} 人超过工时阈值（全职>300h / 兼职>200h）\n\n${warningLines.join('\n')}`);
+      }
+    }
+
     // 每日数据简报整体聚合
     if (enableDailyBrief) {
-      sections.push(formatDailyBriefSection(areaLabel, activeTrainees, certCount));
+      parts.push(formatDailyBriefSection(areaLabel, activeTrainees, certCount));
+    }
+
+    if (parts.length > 0) {
+      sections.push(parts.join('\n\n') + `\n\n👉 [点此处理打卡](${SITE_URL})`);
     }
   } else {
     // 单小区/全部区域：保持原有聚合逻辑

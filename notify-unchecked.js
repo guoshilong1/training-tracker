@@ -573,7 +573,6 @@ async function pushSetting(setting, todayStr) {
     return { pushed: false, status: 'skip', summary: '所有内容均未触发' };
   }
 
-  const msg = sections.join('\n\n');
   const summaryParts = [];
   if (unchecked.length > 0 && enableUnchecked) summaryParts.push(`未打卡${unchecked.length}人`);
   if (unchecked.length === 0 && enableAllChecked) summaryParts.push('全员报平安');
@@ -582,16 +581,25 @@ async function pushSetting(setting, todayStr) {
   const summary = summaryParts.join(' · ');
 
   console.log(`[配置 ${owner}] 推送内容：${summary}`);
-  const pushRes = await fetch(webhook, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ msgtype: 'markdown', markdown: { content: msg } }),
-  });
-  const pushJson = await pushRes.json().catch(() => ({}));
-  if (pushJson.errcode !== 0) {
-    throw new Error(`企业微信推送失败: ${JSON.stringify(pushJson)}`);
+
+  // 企业微信单条 markdown 限制 4096 字符，按板块分多条发送
+  const MAX_CONTENT_LEN = 4000;
+  for (let i = 0; i < sections.length; i++) {
+    let content = sections[i];
+    if (content.length > MAX_CONTENT_LEN) {
+      content = content.slice(0, MAX_CONTENT_LEN) + '\n……（内容过长，已截断）';
+    }
+    const pushRes = await fetch(webhook, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ msgtype: 'markdown', markdown: { content } }),
+    });
+    const pushJson = await pushRes.json().catch(() => ({}));
+    if (pushJson.errcode !== 0) {
+      throw new Error(`企业微信推送失败: ${JSON.stringify(pushJson)}`);
+    }
+    console.log(`[配置 ${owner}] 已推送第 ${i + 1}/${sections.length} 条消息 ✓`);
   }
-  console.log(`[配置 ${owner}] 已推送到企业微信群 ✓`);
   return { pushed: true, status: 'ok', summary };
 }
 
@@ -688,8 +696,8 @@ async function main() {
         }
       }
 
-      // 到点判定：只在配置时间前后 5 分钟窗口内命中（兼容 GitHub Actions cron 延迟）
-      const TIME_WINDOW = 5; // 分钟
+      // 到点判定：只在配置时间前后 30 分钟窗口内命中（兼容 GitHub Actions cron 延迟/抖动，GitHub 实际执行经常偏离整点）
+      const TIME_WINDOW = 30; // 分钟
       const { matched: matchedTime, minDiff } = nearestPushTimeMinutes(pushTimes, nowMin);
       if (!matchedTime || minDiff > TIME_WINDOW) {
         console.log(`[配置 ${s.area}] 当前 ${nowHHMM} 不在任何推送时间 ±${TIME_WINDOW} 分钟窗口内（${JSON.stringify(pushTimes)}），跳过`);

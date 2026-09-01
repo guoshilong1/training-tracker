@@ -526,16 +526,37 @@ async function pushSetting(setting, todayStr) {
   }
 
   if (isManagerMulti) {
-    // 大区多小区：按小区拆分未打卡、报平安、工时预警
+    // 大区多小区：未打卡合并成一个大板块（区域统计内联一行、名单不显示门店、末尾统一链接）
     const areaOrder = [...targetAreas];
+    if (enableUnchecked) {
+      const areaBlocks = [];
+      for (const areaId of areaOrder) {
+        const areaActive = activeTrainees.filter(t => (t.area || '000') === areaId);
+        if (areaActive.length === 0) continue;
+        const list = areaActive
+          .filter(t => !isCheckedToday(t, todayStr))
+          .map(t => ({ ...t, streak: calcNoCheckInStreak(t, todayStr) }))
+          .sort((a, b) => b.streak - a.streak);
+        if (list.length === 0) continue;
+        const label = areaDisplayName(areaId);
+        const lines = list.map((t, i) => {
+          const streakLabel = t.streak >= 9999 ? '从未打卡' : `${t.streak}天未打卡`;
+          return `${i + 1}. **${t.name}**\n${streakLabel}`;
+        });
+        const MAX_ITEMS = 25;
+        const shown = lines.slice(0, MAX_ITEMS);
+        const more = lines.length > MAX_ITEMS ? `\n……另有 ${lines.length - MAX_ITEMS} 人，详见系统` : '';
+        areaBlocks.push(`区域：${label} 在训 ${areaActive.length} 人，未打卡 ${list.length} 人\n${shown.join('\n')}${more}`);
+      }
+      if (areaBlocks.length > 0) {
+        sections.push(`**📋 今日未打卡提醒（${todayStr}）**\n${areaBlocks.join('\n\n')}\n\n👉 [点此处理打卡](${SITE_URL})`);
+      }
+    }
+    // 报平安、工时预警按小区独立板块
     for (const areaId of areaOrder) {
       const areaActive = activeTrainees.filter(t => (t.area || '000') === areaId);
       if (areaActive.length === 0) continue;
       const label = areaDisplayName(areaId);
-      if (enableUnchecked) {
-        const sec = formatUncheckedSection(label, areaActive);
-        if (sec) sections.push(sec);
-      }
       if (enableAllChecked) {
         const sec = formatAllCheckedSection(label, areaActive);
         if (sec) sections.push(sec);

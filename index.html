@@ -2667,10 +2667,18 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
   const [drillArea, setDrillArea] = useState(''); // 下钻：非空表示进入某小区看板
 
   const visibleTrainees = useMemo(() => {
-    if (drillArea) return trainees.filter(t => (t.area || '000') === drillArea);
+    // 下钻（小区看板）与各小区进度对比保持一致的本月口径：仅保留本月在训 + 本月已晋升
+    if (drillArea) return trainees.filter(t => (t.area || '000') === drillArea && (!isCertified(t) || isCertifiedThisMonth(t)));
     if (!filterArea) return trainees;
     return trainees.filter(t => (t.area || '000') === filterArea);
   }, [trainees, filterArea, drillArea]);
+
+  // 下钻小区看板的学员进度列表：附带当前工时，并按工时从高到低排序
+  const drillProgressList = useMemo(() => {
+    return visibleTrainees
+      .map(t => ({ ...t, _progress: calcProgress(t), _hours: workHours?.[t.empId]?.hours ?? null }))
+      .sort((a, b) => (b._hours ?? -1) - (a._hours ?? -1));
+  }, [visibleTrainees, workHours]);
 
   const stats = useMemo(() => {
     const total = visibleTrainees.length;
@@ -2882,9 +2890,9 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
           {drillArea && (
             <button
               onClick={() => { setDrillArea(''); setFilterArea(''); }}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-gray-800 text-gray-300 border border-gray-700 hover:bg-gray-700 hover:text-white transition"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold bg-indigo-600 text-white border border-indigo-500 hover:bg-indigo-500 hover:border-indigo-400 shadow-lg shadow-indigo-900/30 transition"
             >
-              <Icon.ArrowLeft width={14} height={14}/> 返回大区
+              <Icon.ArrowLeft width={16} height={16}/> 返回大区
             </button>
           )}
           <div>
@@ -2958,19 +2966,22 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
           <h3 className="text-sm font-medium text-gray-300 mb-4 flex items-center gap-2"><Icon.TrendUp/> {drillArea ? '小区学员进度' : '各小区进度对比'}</h3>
           {drillArea ? (
             <div className="space-y-2.5">
-              {visibleTrainees.length === 0 ? (
-                <p className="text-sm text-gray-500 text-center py-4">该小区暂无学员</p>
-              ) : visibleTrainees.map(t => {
-                const prog = calcProgress(t);
+              <p className="text-[11px] text-gray-500 mb-1">已按当前工时从高到低排序 · 仅保留本月在训及本月已晋升人员</p>
+              {drillProgressList.length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-4">该小区本月暂无在训/晋升学员</p>
+              ) : drillProgressList.map(t => {
+                const prog = t._progress;
+                const h = t._hours;
                 return (
                   <div key={t.id} className="flex items-center gap-3">
-                    <span className="text-xs text-gray-400 w-24 truncate" title={t.name}>{t.name}</span>
+                    <span className="text-xs text-gray-400 w-20 truncate" title={t.name}>{t.name}</span>
                     <div className="flex-1 h-5 bg-gray-800 rounded-md overflow-hidden relative">
                       <div className={`h-full ${prog.percent === 100 ? 'bg-emerald-500' : 'bg-indigo-500'} progress-bar-fill rounded-md flex items-center justify-end pr-2`} style={{width: `${Math.max(prog.percent, 4)}%`}}>
                         <span className="text-xs font-bold text-white">{prog.percent}%</span>
                       </div>
                     </div>
-                    <span className="text-xs text-gray-500 w-20 text-right">{prog.completed}/{prog.total} {isCertified(t) ? '(已认证)' : ''}</span>
+                    <span className={`text-xs w-14 text-right tabular-nums ${h === null ? 'text-gray-600' : 'text-amber-300'}`} title="当前工时">{h === null ? '—' : `${h}h`}</span>
+                    <span className="text-xs text-gray-500 w-24 text-right">{prog.completed}/{prog.total} {isCertified(t) ? '(已认证)' : ''}</span>
                   </div>
                 );
               })}

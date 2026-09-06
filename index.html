@@ -790,13 +790,13 @@ const Icon = {
   Download: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
   ChevronDown: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="6 9 12 15 18 9"/></svg>,
   ChevronRight: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="9 18 15 12 9 6"/></svg>,
+  ArrowLeft: (p) => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>,
   Cloud: (p) => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z"/></svg>,
   Upload: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
   RefreshCw: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>,
   Copy: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>,
   Link: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>,
   LogOut: (p) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
-  Tools: (p) => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>,
 };
 
 // ============ Progress Calculation ============
@@ -829,6 +829,26 @@ function getCurrentDay(trainee) {
 }
 
 function isCertified(trainee) { return getCurrentDay(trainee) === null; }
+
+// 获取学员认证（全部带训完成）的时间戳：取所有完成天中最晚的 completedAt
+function getCertifiedAt(trainee) {
+  const progress = trainee.progress || {};
+  let latest = '';
+  Object.values(progress).forEach(day => {
+    if (day.completed && day.completedAt && day.completedAt > latest) latest = day.completedAt;
+  });
+  return latest;
+}
+
+// 是否本月认证（晋升）：认证时间在当月内；无时间戳视为历史认证，不计入本月
+function isCertifiedThisMonth(trainee) {
+  if (!isCertified(trainee)) return false;
+  const at = getCertifiedAt(trainee);
+  if (!at) return false;
+  const d = new Date(at);
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+}
 
 function isDayUnlocked(trainee, dayKey) {
   const allDays = getAllDays(trainee.route, trainee.subRoute).filter(d => d.items.length > 0);
@@ -1380,7 +1400,7 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
   const [filterStore, setFilterStore] = useState('');
   const [filterRoute, setFilterRoute] = useState('');
   const [certFilter, setCertFilter] = useState('incomplete'); // 'incomplete' | 'completed'
-  const [expandUnchecked, setExpandUnchecked] = useState(false);
+  const [expandUnchecked, setExpandUnchecked] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingTrainee, setEditingTrainee] = useState(null);
 
@@ -2644,11 +2664,13 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
   const yesterday = yesterdayStr();
   const [filterArea, setFilterArea] = useState('');
   const [showAllIncomplete, setShowAllIncomplete] = useState(false);
+  const [drillArea, setDrillArea] = useState(''); // 下钻：非空表示进入某小区看板
 
   const visibleTrainees = useMemo(() => {
+    if (drillArea) return trainees.filter(t => (t.area || '000') === drillArea);
     if (!filterArea) return trainees;
     return trainees.filter(t => (t.area || '000') === filterArea);
-  }, [trainees, filterArea]);
+  }, [trainees, filterArea, drillArea]);
 
   const stats = useMemo(() => {
     const total = visibleTrainees.length;
@@ -2678,14 +2700,12 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
 
   const areaStats = useMemo(() => {
     return config.filter(c => c.role === 'area' && (!subAreas || subAreas.includes(c.id))).map(c => {
-      const list = trainees.filter(t => (t.area || '000') === c.id);
+      const list = trainees.filter(t => (t.area || '000') === c.id && (!isCertified(t) || isCertifiedThisMonth(t)));
       const total = list.length;
-      const completed = list.filter(t => isCertified(t)).length;
+      const completed = list.filter(t => isCertified(t)).length; // 本月已认证（晋升）
       const inProgress = list.filter(t => !isCertified(t) && calcProgress(t).percent > 0).length;
-      const notStarted = total - completed - inProgress;
-      const uncertifiedTotal = total - completed; // 区域总人数中不计已认证人员
       const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
-      return { ...c, total, avg: completionRate, completed, inProgress, notStarted, uncertifiedTotal };
+      return { ...c, total, avg: completionRate, completed, inProgress };
     });
   }, [trainees, config, subAreas]);
 
@@ -2858,13 +2878,25 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
     <div className="p-5 space-y-5 overflow-y-auto h-[calc(100vh-60px)]">
       {/* Filter + Conclusion */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gray-900/50 border border-gray-800 rounded-xl p-4">
-        <div>
-          <h2 className="text-base font-bold text-white">大区汇总看板</h2>
-          <p className="text-xs text-gray-500 mt-1">{conclusion}</p>
+        <div className="flex items-center gap-3">
+          {drillArea && (
+            <button
+              onClick={() => { setDrillArea(''); setFilterArea(''); }}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-gray-800 text-gray-300 border border-gray-700 hover:bg-gray-700 hover:text-white transition"
+            >
+              <Icon.ArrowLeft width={14} height={14}/> 返回大区
+            </button>
+          )}
+          <div>
+            <h2 className="text-base font-bold text-white">
+              {drillArea ? `${(config.find(c => c.id === drillArea)?.name || drillArea).replace('区域带训追踪系统', '')} 小区看板` : '大区汇总看板'}
+            </h2>
+            <p className="text-xs text-gray-500 mt-1">{conclusion}</p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-500">数据范围</span>
-          <select value={filterArea} onChange={e => setFilterArea(e.target.value)} className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-300">
+          <select value={drillArea ? drillArea : filterArea} onChange={e => { setFilterArea(e.target.value); setDrillArea(''); }} className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-300">
             <option value="">全部区域</option>
             {config.filter(c => c.role === 'area' && (!subAreas || subAreas.includes(c.id))).map(c => <option key={c.id} value={c.id}>{c.name.replace('区域带训追踪系统', '')}</option>)}
           </select>
@@ -2923,22 +2955,51 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Area Progress */}
         <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
-          <h3 className="text-sm font-medium text-gray-300 mb-4 flex items-center gap-2"><Icon.TrendUp/> 各小区进度对比</h3>
-          <div className="space-y-3">
-            {areaStats.filter(a => a.total > 0).length === 0 ? (
-              <p className="text-sm text-gray-500 text-center py-4">暂无区域数据</p>
-            ) : areaStats.filter(a => a.total > 0).map(a => (
-              <div key={a.id} className="flex items-center gap-3">
-                <span className="text-xs text-gray-400 w-24 truncate" title={a.name}>{a.name.replace('区域带训追踪系统', '')}</span>
-                <div className="flex-1 h-6 bg-gray-800 rounded-md overflow-hidden relative">
-                  <div className="h-full bg-indigo-500 progress-bar-fill rounded-md flex items-center justify-end pr-2" style={{width: `${Math.max(a.avg, 5)}%`}}>
-                    <span className="text-xs font-bold text-white">{a.avg}%</span>
+          <h3 className="text-sm font-medium text-gray-300 mb-4 flex items-center gap-2"><Icon.TrendUp/> {drillArea ? '小区学员进度' : '各小区进度对比'}</h3>
+          {drillArea ? (
+            <div className="space-y-2.5">
+              {visibleTrainees.length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-4">该小区暂无学员</p>
+              ) : visibleTrainees.map(t => {
+                const prog = calcProgress(t);
+                return (
+                  <div key={t.id} className="flex items-center gap-3">
+                    <span className="text-xs text-gray-400 w-24 truncate" title={t.name}>{t.name}</span>
+                    <div className="flex-1 h-5 bg-gray-800 rounded-md overflow-hidden relative">
+                      <div className={`h-full ${prog.percent === 100 ? 'bg-emerald-500' : 'bg-indigo-500'} progress-bar-fill rounded-md flex items-center justify-end pr-2`} style={{width: `${Math.max(prog.percent, 4)}%`}}>
+                        <span className="text-xs font-bold text-white">{prog.percent}%</span>
+                      </div>
+                    </div>
+                    <span className="text-xs text-gray-500 w-20 text-right">{prog.completed}/{prog.total} {isCertified(t) ? '(已认证)' : ''}</span>
                   </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {areaStats.filter(a => a.total > 0).length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-4">暂无区域数据</p>
+              ) : areaStats.filter(a => a.total > 0).map(a => (
+                <div
+                  key={a.id}
+                  onClick={() => { setDrillArea(a.id); setFilterArea(''); }}
+                  className="flex items-center gap-3 cursor-pointer rounded-md px-1 py-0.5 hover:bg-gray-800/50 transition group"
+                  title="点击进入该小区看板"
+                >
+                  <span className="text-xs text-gray-400 w-24 truncate" title={a.name}>{a.name.replace('区域带训追踪系统', '')}</span>
+                  <div className="flex-1 h-6 bg-gray-800 rounded-md overflow-hidden relative">
+                    <div className="h-full bg-indigo-500 progress-bar-fill rounded-md flex items-center justify-end pr-2" style={{width: `${Math.max(a.avg, 5)}%`}}>
+                      <span className="text-xs font-bold text-white">{a.avg}%</span>
+                    </div>
+                  </div>
+                  <span className="text-xs text-gray-500 w-24 text-right flex items-center justify-end gap-1">
+                    {a.completed}/{a.total}
+                    <span className="text-gray-600 group-hover:text-indigo-300 transition">›</span>
+                  </span>
                 </div>
-                <span className="text-xs text-gray-500 w-16 text-right">{a.completed}/{a.total}</span>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Phase Distribution */}
@@ -3266,10 +3327,10 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
                   return (
                     <tr key={a.id} className="border-b border-gray-800/50 hover:bg-gray-800/20 cursor-pointer" onClick={() => setFilterArea(filterArea === a.id ? '' : a.id)}>
                       <td className="px-3 py-2 text-white font-medium">{a.name.replace('区域带训追踪系统', '')}</td>
-                      <td className="px-3 py-2 text-gray-400">{a.uncertifiedTotal}</td>
+                      <td className="px-3 py-2 text-gray-400">{a.total}</td>
                       <td className="px-3 py-2 text-emerald-400">{a.completed}</td>
                       <td className="px-3 py-2 text-amber-400">{a.inProgress}</td>
-                      <td className="px-3 py-2 text-gray-500">{a.notStarted}</td>
+                      <td className="px-3 py-2 text-gray-500">{a.total - a.completed - a.inProgress}</td>
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-2">
                           <div className="w-20 h-1.5 bg-gray-800 rounded-full overflow-hidden">
@@ -3278,7 +3339,7 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
                           <span className="text-xs text-gray-400">{a.avg}%</span>
                         </div>
                       </td>
-                      <td className="px-3 py-2 text-gray-400">{checkedYesterday}/{a.uncertifiedTotal}</td>
+                      <td className="px-3 py-2 text-gray-400">{checkedYesterday}/{a.total}</td>
                     </tr>
                   );
                 })}
@@ -3322,23 +3383,10 @@ function BotSettingsCard({ currentUser, config }) {
   const [settings, setSettings] = useState({
     enabled: false,
     webhook_url: '',
-    push_times: ['22:00'],
+    push_time: '22:00',
     push_scope: defaultScope,
     push_content: { unchecked: true, allChecked: true, hourWarning: false, dailyBrief: false }
   });
-
-  // 兼容旧版单字符串 '22:00' 和新版 JSON 数组 ["09:00","21:00"]
-  const parsePushTimes = (pt) => {
-    if (!pt) return ['22:00'];
-    if (Array.isArray(pt)) return pt.filter(Boolean);
-    const s = String(pt).trim();
-    if (!s) return ['22:00'];
-    if (s.startsWith('[')) {
-      try { const arr = JSON.parse(s); if (Array.isArray(arr) && arr.length) return arr.filter(Boolean); }
-      catch (e) { /* 回退单字符串 */ }
-    }
-    return [s];
-  };
   const [record, setRecord] = useState(null);
   const [tableMissing, setTableMissing] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -3358,20 +3406,11 @@ function BotSettingsCard({ currentUser, config }) {
       if (error && error.code !== 'PGRST116') { setTableMissing(true); setLoading(false); return; }
       setTableMissing(false);
       const savedTargets = Array.isArray(data?.target_areas) && data.target_areas.length ? data.target_areas : defaultTargets;
-      let savedScope;
-      if (savedTargets[0] === 'all') {
-        savedScope = 'all';
-      } else if (isManager && currentUser?.id && AREA_MAP[currentUser.id]?.subAreas?.length) {
-        const subs = AREA_MAP[currentUser.id].subAreas;
-        const isAllSubs = savedTargets.length === subs.length && subs.every(id => savedTargets.includes(id));
-        savedScope = isAllSubs ? 'all' : (savedTargets[0] || defaultScope);
-      } else {
-        savedScope = savedTargets[0] || defaultScope;
-      }
+      const savedScope = savedTargets[0] === 'all' ? 'all' : (savedTargets[0] || defaultScope);
       setSettings({
         enabled: !!data?.enabled,
         webhook_url: data?.webhook_url || '',
-        push_times: parsePushTimes(data?.push_time),
+        push_time: data?.push_time || '22:00',
         push_scope: scopeOptions.find(o => o.id === savedScope) ? savedScope : defaultScope,
         push_content: { unchecked: true, allChecked: true, hourWarning: false, dailyBrief: false, ...(data?.push_content || {}) }
       });
@@ -3403,7 +3442,7 @@ function BotSettingsCard({ currentUser, config }) {
         area: ownerArea,
         enabled: settings.enabled,
         webhook_url: settings.webhook_url.trim(),
-        push_time: JSON.stringify(settings.push_times.filter(Boolean)),
+        push_time: settings.push_time,
         target_areas: targetAreas,
         push_content: settings.push_content,
         updated_at: new Date().toISOString(),
@@ -3427,7 +3466,7 @@ function BotSettingsCard({ currentUser, config }) {
         area: ownerArea,
         enabled: settings.enabled,
         webhook_url: settings.webhook_url.trim(),
-        push_time: JSON.stringify(settings.push_times.filter(Boolean)),
+        push_time: settings.push_time,
         target_areas: targetAreas,
         push_content: settings.push_content,
         updated_at: new Date().toISOString(),
@@ -3522,36 +3561,12 @@ function BotSettingsCard({ currentUser, config }) {
             {/* Push time & scope */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs text-gray-500 mb-1.5">推送时间（每天，最多 3 个）</label>
-                <div className="space-y-2">
-                  {settings.push_times.map((t, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
-                      <input
-                        type="time" value={t}
-                        onChange={ev => {
-                          const next = [...settings.push_times];
-                          next[idx] = ev.target.value;
-                          patch({ push_times: next });
-                        }}
-                        className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-gray-300 focus:border-green-500 outline-none"
-                      />
-                      {settings.push_times.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => patch({ push_times: settings.push_times.filter((_, i) => i !== idx) })}
-                          className="px-2 py-2 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition"
-                        >删除</button>
-                      )}
-                    </div>
-                  ))}
-                  {settings.push_times.length < 3 && (
-                    <button
-                      type="button"
-                      onClick={() => patch({ push_times: [...settings.push_times, '09:00'] })}
-                      className="text-xs text-green-400 hover:text-green-300 hover:bg-green-500/10 px-3 py-2 rounded-lg border border-dashed border-gray-600 transition"
-                    >+ 添加推送时间</button>
-                  )}
-                </div>
+                <label className="block text-xs text-gray-500 mb-1.5">推送时间（每天）</label>
+                <input
+                  type="time" value={settings.push_time}
+                  onChange={ev => patch({ push_time: ev.target.value })}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-gray-300 focus:border-green-500 outline-none"
+                />
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1.5">推送区域</label>
@@ -4504,8 +4519,6 @@ function App() {
   const [showPwdModal, setShowPwdModal] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [showBotModal, setShowBotModal] = useState(false);
-  const [showToolsMenu, setShowToolsMenu] = useState(false);
-  const toolsMenuRef = useRef(null);
   const [showHoursModal, setShowHoursModal] = useState(false);
   const [showAdminPwdModal, setShowAdminPwdModal] = useState(false);
   const [pendingAdminAction, setPendingAdminAction] = useState(null); // 'import_hours' | 'export_empids' | 'import_trainees'
@@ -4517,19 +4530,6 @@ function App() {
   const isRemoteUpdate = useRef(false);
   const sbReady = useRef(false);
   const prevDataRef = useRef(null);
-
-  // 管理工具下拉菜单：点击外部关闭
-  useEffect(() => {
-    function handleClickOutside(e) {
-      if (toolsMenuRef.current && !toolsMenuRef.current.contains(e.target)) {
-        setShowToolsMenu(false);
-      }
-    }
-    if (showToolsMenu) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [showToolsMenu]);
 
   // 拉取云端工时表（登录/打开页面时 + 每 5 分钟 + 切回页面时自动刷新）
   const refreshWorkHours = useCallback(async () => {
@@ -4906,50 +4906,30 @@ function App() {
                 <Icon.Dashboard width={16} height={16}/> 管理看板
               </button>
               {currentUser.id === '000' && (
-                <div className="relative" ref={toolsMenuRef}>
-                  <button
-                    onClick={() => setShowToolsMenu(v => !v)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${showToolsMenu ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
-                    title="导入学员、导入工时、导出工号、企微机器人"
-                  >
-                    <Icon.Tools width={16} height={16}/> 管理工具
-                    <Icon.ChevronDown width={12} height={12} className={`transition-transform ${showToolsMenu ? 'rotate-180' : ''}`}/>
-                  </button>
-                  {showToolsMenu && (
-                    <div className="absolute top-full left-0 mt-2 w-52 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl py-1 z-50 fade-in">
-                      <button
-                        onClick={() => { setShowToolsMenu(false); setPendingAdminAction('import_trainees'); setShowAdminPwdModal(true); }}
-                        className="w-full text-left flex items-center gap-2 px-4 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-gray-800 transition"
-                      >
-                        <Icon.User width={16} height={16}/> 导入学员
-                      </button>
-                      <button
-                        onClick={() => { setShowToolsMenu(false); setPendingAdminAction('import_hours'); setShowAdminPwdModal(true); }}
-                        className="w-full text-left flex items-center gap-2 px-4 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-gray-800 transition"
-                      >
-                        <Icon.Clock width={16} height={16}/> 导入工时
-                      </button>
-                      <button
-                        onClick={() => { setShowToolsMenu(false); setPendingAdminAction('export_empids'); setShowAdminPwdModal(true); }}
-                        className="w-full text-left flex items-center gap-2 px-4 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-gray-800 transition"
-                      >
-                        <Icon.Download width={16} height={16}/> 导出工号
-                      </button>
-                      <div className="my-1 border-t border-gray-700/50"></div>
-                      <button
-                        onClick={() => { setShowToolsMenu(false); setShowBotModal(true); }}
-                        className="w-full text-left flex items-center gap-2 px-4 py-2.5 text-sm text-green-400 hover:text-green-300 hover:bg-green-500/10 transition"
-                      >
-                        <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <rect x="3" y="11" width="18" height="10" rx="2"/>
-                          <circle cx="12" cy="5" r="2"/>
-                          <path d="M12 7v4"/>
-                          <path d="M8 16h.01M16 16h.01"/>
-                        </svg> 企微机器人
-                      </button>
-                    </div>
-                  )}
-                </div>
+                <button
+                  onClick={() => { setPendingAdminAction('import_trainees'); setShowAdminPwdModal(true); }}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-gray-400 hover:text-white hover:bg-gray-800"
+                  title="用 Excel 一次性导入所有区域的学员"
+                >
+                  <Icon.User width={16} height={16}/> 导入学员
+                </button>
+              )}
+              {currentUser.id === '000' && (
+                <button
+                  onClick={() => { setPendingAdminAction('import_hours'); setShowAdminPwdModal(true); }}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-gray-400 hover:text-white hover:bg-gray-800"
+                >
+                  <Icon.Clock width={16} height={16}/> 导入工时
+                </button>
+              )}
+              {currentUser.id === '000' && (
+                <button
+                  onClick={() => { setPendingAdminAction('export_empids'); setShowAdminPwdModal(true); }}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-gray-400 hover:text-white hover:bg-gray-800"
+                  title="导出所有区域正在带训学员的工号表（已认证不导出）"
+                >
+                  <Icon.Download width={16} height={16}/> 导出工号
+                </button>
               )}
               <button
                 onClick={() => setShowSyncModal(true)}
@@ -4960,20 +4940,18 @@ function App() {
                 {pushStatus.type === 'pushing' && <span className="text-xs text-blue-300">同步中...</span>}
                 {pushStatus.type === 'error' && <span className="text-xs text-red-300">推送失败</span>}
               </button>
-              {currentUser.id !== '000' && (
-                <button
-                  onClick={() => setShowBotModal(true)}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-green-400 hover:text-green-300 hover:bg-green-500/10"
-                  title="配置每个小区的企业微信机器人推送时间和 Webhook"
-                >
-                  <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="11" width="18" height="10" rx="2"/>
-                    <circle cx="12" cy="5" r="2"/>
-                    <path d="M12 7v4"/>
-                    <path d="M8 16h.01M16 16h.01"/>
-                  </svg> 企微机器人
-                </button>
-              )}
+              <button
+                onClick={() => setShowBotModal(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-green-400 hover:text-green-300 hover:bg-green-500/10"
+                title="配置每个小区的企业微信机器人推送时间和 Webhook"
+              >
+                <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="11" width="18" height="10" rx="2"/>
+                  <circle cx="12" cy="5" r="2"/>
+                  <path d="M12 7v4"/>
+                  <path d="M8 16h.01M16 16h.01"/>
+                </svg> 企微机器人
+              </button>
             </nav>
           </div>
           <div className="flex items-center gap-3">

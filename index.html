@@ -2673,11 +2673,13 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
     return trainees.filter(t => (t.area || '000') === filterArea);
   }, [trainees, filterArea, drillArea]);
 
-  // 下钻小区看板的学员进度列表：附带当前工时，并按工时从高到低排序
+  // 下钻小区看板的学员进度列表：未认证按工时从高到低排，已认证置底
   const drillProgressList = useMemo(() => {
-    return visibleTrainees
-      .map(t => ({ ...t, _progress: calcProgress(t), _hours: workHours?.[t.empId]?.hours ?? null }))
-      .sort((a, b) => (b._hours ?? -1) - (a._hours ?? -1));
+    const list = visibleTrainees.map(t => ({ ...t, _progress: calcProgress(t), _hours: workHours?.[t.empId]?.hours ?? null }));
+    const byHours = (a, b) => (b._hours ?? -1) - (a._hours ?? -1);
+    const uncertified = list.filter(t => !isCertified(t)).sort(byHours);
+    const certified = list.filter(t => isCertified(t)).sort(byHours);
+    return [...uncertified, ...certified];
   }, [visibleTrainees, workHours]);
 
   const stats = useMemo(() => {
@@ -2887,14 +2889,6 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
       {/* Filter + Conclusion */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gray-900/50 border border-gray-800 rounded-xl p-4">
         <div className="flex items-center gap-3">
-          {drillArea && (
-            <button
-              onClick={() => { setDrillArea(''); setFilterArea(''); }}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold bg-indigo-600 text-white border border-indigo-500 hover:bg-indigo-500 hover:border-indigo-400 shadow-lg shadow-indigo-900/30 transition"
-            >
-              <Icon.ArrowLeft width={16} height={16}/> 返回大区
-            </button>
-          )}
           <div>
             <h2 className="text-base font-bold text-white">
               {drillArea ? `${(config.find(c => c.id === drillArea)?.name || drillArea).replace('区域带训追踪系统', '')} 小区看板` : '大区汇总看板'}
@@ -2903,6 +2897,14 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {drillArea && (
+            <button
+              onClick={() => { setDrillArea(''); setFilterArea(''); }}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold bg-indigo-600 text-white border border-indigo-500 hover:bg-indigo-500 hover:border-indigo-400 shadow-lg shadow-indigo-900/30 transition"
+            >
+              <Icon.ArrowLeft width={16} height={16}/> 返回大区
+            </button>
+          )}
           <span className="text-xs text-gray-500">数据范围</span>
           <select value={drillArea ? drillArea : filterArea} onChange={e => { setFilterArea(e.target.value); setDrillArea(''); }} className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-300">
             <option value="">全部区域</option>
@@ -2966,7 +2968,7 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
           <h3 className="text-sm font-medium text-gray-300 mb-4 flex items-center gap-2"><Icon.TrendUp/> {drillArea ? '小区学员进度' : '各小区进度对比'}</h3>
           {drillArea ? (
             <div className="space-y-2.5">
-              <p className="text-[11px] text-gray-500 mb-1">已按当前工时从高到低排序 · 仅保留本月在训及本月已晋升人员</p>
+              <p className="text-[11px] text-gray-500 mb-1">未认证按工时从高到低排序 · 已认证置底 · 仅保留本月在训及本月已晋升人员</p>
               {drillProgressList.length === 0 ? (
                 <p className="text-sm text-gray-500 text-center py-4">该小区本月暂无在训/晋升学员</p>
               ) : drillProgressList.map(t => {
@@ -2974,7 +2976,8 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
                 const h = t._hours;
                 return (
                   <div key={t.id} className="flex items-center gap-3">
-                    <span className="text-xs text-gray-400 w-20 truncate" title={t.name}>{t.name}</span>
+                    <span className="text-xs text-gray-300 w-16 truncate" title={t.name}>{t.name}</span>
+                    <span className="text-[11px] text-gray-500 w-16 truncate" title={t.store}>{t.store || '—'}</span>
                     <div className="flex-1 h-5 bg-gray-800 rounded-md overflow-hidden relative">
                       <div className={`h-full ${prog.percent === 100 ? 'bg-emerald-500' : 'bg-indigo-500'} progress-bar-fill rounded-md flex items-center justify-end pr-2`} style={{width: `${Math.max(prog.percent, 4)}%`}}>
                         <span className="text-xs font-bold text-white">{prog.percent}%</span>

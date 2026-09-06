@@ -2897,14 +2897,6 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {drillArea && (
-            <button
-              onClick={() => { setDrillArea(''); setFilterArea(''); }}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold bg-indigo-600 text-white border border-indigo-500 hover:bg-indigo-500 hover:border-indigo-400 shadow-lg shadow-indigo-900/30 transition"
-            >
-              <Icon.ArrowLeft width={16} height={16}/> 返回大区
-            </button>
-          )}
           <span className="text-xs text-gray-500">数据范围</span>
           <select value={drillArea ? drillArea : filterArea} onChange={e => { setFilterArea(e.target.value); setDrillArea(''); }} className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-300">
             <option value="">全部区域</option>
@@ -2965,7 +2957,17 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Area Progress */}
         <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
-          <h3 className="text-sm font-medium text-gray-300 mb-4 flex items-center gap-2"><Icon.TrendUp/> {drillArea ? '小区学员进度' : '各小区进度对比'}</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2"><Icon.TrendUp/> {drillArea ? '小区学员进度' : '各小区进度对比'}</h3>
+            {drillArea && (
+              <button
+                onClick={() => { setDrillArea(''); setFilterArea(''); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white border border-indigo-500 hover:bg-indigo-500 hover:border-indigo-400 shadow-md shadow-indigo-900/30 transition"
+              >
+                <Icon.ArrowLeft width={14} height={14}/> 返回大区
+              </button>
+            )}
+          </div>
           {drillArea ? (
             <div className="space-y-2.5">
               <p className="text-[11px] text-gray-500 mb-1">未认证按工时从高到低排序 · 已认证置底 · 仅保留本月在训及本月已晋升人员</p>

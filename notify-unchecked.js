@@ -355,6 +355,17 @@ function hhmmToMinutes(hhmm) {
   return (parts[0] || 0) * 60 + (parts[1] || 0);
 }
 
+// 解析推送时间点：兼容旧版单值 '22:00'、新版 JSON 数组字符串 '["09:00","21:00"]'、数组
+function parsePushTimeList(pt) {
+  if (!pt) return ['22:00'];
+  if (Array.isArray(pt)) return pt.filter(Boolean).map(String);
+  try {
+    const arr = JSON.parse(pt);
+    if (Array.isArray(arr) && arr.length) return arr.filter(Boolean).map(String);
+  } catch (e) {}
+  return [String(pt)];
+}
+
 // ---------- 主流程 ----------
 async function main() {
   if (!SERVICE_KEY) { console.log('[SKIP] 未配置 SUPABASE_SERVICE_KEY，跳过推送。'); return; }
@@ -384,16 +395,26 @@ async function main() {
     for (const s of settings) {
       if (!s.enabled) { console.log(`[配置 ${s.area}] 未启用，跳过`); continue; }
       if (!s.webhook_url) { console.log(`[配置 ${s.area}] 未配置 webhook，跳过`); continue; }
-      const st = (s.push_time || '22:00');
-      // 当日去重：今天已推送过（且不是失败）就不再推，配合定时任务每 10 分钟跑一次
+      // 解析该配置的全部推送时间点（每天可配多个）
+      const times = parsePushTimeList(s.push_time)
+        .map(t => ({ raw: t, min: hhmmToMinutes(t) }))
+        .sort((a, b) => a.min - b.min);
+      // 命中判定：当前时间已到点的时间点中最晚的一个（cron 有延迟，到点后当天内补推）
+      let hit = null;
+      for (const t of times) if (nowMin >= t.min) hit = t;
+      if (!hit) { console.log(`[配置 ${s.area}] 配置时间 [${times.map(t => t.raw).join(', ')}] 均未到（当前 ${nowHHMM}），跳过`); continue; }
+      // 按时间点去重：今天最后一次推送时间不早于命中时间点（且非失败），说明该时间点已推过
       const lastPushDay = s.last_push_at ? localDateStr(s.last_push_at) : '';
-      const alreadyDone = lastPushDay === todayStr && s.last_push_status !== 'error';
-      if (alreadyDone) { console.log(`[配置 ${s.area}] 今天已推送过（${s.last_push_status}），跳过`); continue; }
-      // 到点判定：当前时间 >= 配置时间才推（GitHub Actions cron 有几分钟延迟，用窗口而非精确匹配分钟）
-      if (nowMin < hhmmToMinutes(st)) { console.log(`[配置 ${s.area}] 配置时间 ${st} 还未到（当前 ${nowHHMM}），跳过`); continue; }
-      // 失败重试保护：仅到点后 30 分钟内重试，避免坏 webhook 全天轰炸
-      if (s.last_push_status === 'error' && lastPushDay === todayStr && (nowMin - hhmmToMinutes(st)) > 30) {
-        console.log(`[配置 ${s.area}] 今天推送失败且已超过 30 分钟重试窗口，跳过`); continue;
+      if (lastPushDay === todayStr) {
+        const lp = new Date(s.last_push_at);
+        const lastPushMin = lp.getHours() * 60 + lp.getMinutes();
+        if (s.last_push_status !== 'error' && lastPushMin >= hit.min) {
+          console.log(`[配置 ${s.area}] 命中时间点 ${hit.raw} 今天已推送过，等待下一个时间点，跳过`); continue;
+        }
+        // 失败重试保护：仅到点后 30 分钟内重试，避免坏 webhook 全天轰炸
+        if (s.last_push_status === 'error' && lastPushMin >= hit.min && (nowMin - hit.min) > 30) {
+          console.log(`[配置 ${s.area}] 命中时间点 ${hit.raw} 推送失败且已超过 30 分钟重试窗口，跳过`); continue;
+        }
       }
       matched++;
       try {

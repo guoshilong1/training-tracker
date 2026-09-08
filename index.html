@@ -830,6 +830,23 @@ function getCurrentDay(trainee) {
 }
 
 function isCertified(trainee) { return getCurrentDay(trainee) === null; }
+// 统一"昨日是否算已打卡"判定（含跨天补登），供大区看板顶部卡片与下方列表共用，避免两处口径不一致。
+// 规则：昨日有勾选、昨日被标延迟、昨日被标休息，或今天仍处于延迟/休息状态（跨天补登），任一即算"昨日已打卡"。
+// 注意：completedAt 不再作为打卡依据（与列表一致，避免把"仅完成未勾选"误判为打卡）。
+function isYesterdayCheckedTrainee(t, yesterday, today) {
+  const progress = t.progress || {};
+  let yHas = false, yd = false, yr = false, tDel = false, tRest = false;
+  Object.values(progress).forEach(day => {
+    Object.values(day.items || {}).forEach(item => {
+      if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === yesterday) yHas = true;
+    });
+    if (delayedOnDate(day, yesterday)) yd = true;
+    if (restOnDate(day, yesterday)) yr = true;
+    if (delayedOnDate(day, today)) tDel = true;
+    if (restOnDate(day, today)) tRest = true;
+  });
+  return yHas || yd || yr || tDel || tRest;
+}
 
 // 获取学员认证（全部带训完成）的时间戳：取所有完成天中最晚的 completedAt
 function getCertifiedAt(trainee) {
@@ -2708,23 +2725,10 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
     const notStarted = visibleTrainees.filter(t => !isCertified(t) && calcProgress(t).percent === 0).length;
     const avgProgress = total > 0 ? Math.round(progressList.reduce((s, p) => s + p.percent, 0) / total) : 0;
     const incompleteTotal = inProgress + notStarted; // 未带训完总人数（不含已认证）
-    let checkedYesterday = 0;
-    visibleTrainees.forEach(t => {
-      if (isCertified(t)) return; // 已认证人员不计入昨日打卡统计
-      const progress = t.progress || {};
-      let hasYesterday = false;
-      Object.values(progress).forEach(day => {
-        Object.values(day.items || {}).forEach(item => {
-          if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === yesterday) hasYesterday = true;
-        });
-        if (day.completed && day.completedAt && localDateStr(day.completedAt) === yesterday) hasYesterday = true;
-        // 昨日被标延迟/休息也算"已打卡"（只要店长有操作就算）
-        if (delayedOnDate(day, yesterday) || restOnDate(day, yesterday)) hasYesterday = true;
-      });
-      if (hasYesterday) checkedYesterday++;
-    });
+    // 顶部卡片与下方列表统一口径：仅统计在训（未认证）人员，用共享判定函数（含跨天补登，不用 completedAt）
+    const checkedYesterday = visibleTrainees.filter(t => !isCertified(t) && isYesterdayCheckedTrainee(t, yesterday, today)).length;
     return { total, inProgress, completed, notStarted, avgProgress, incompleteTotal, checkedYesterday, uncheckedYesterday: incompleteTotal - checkedYesterday };
-  }, [visibleTrainees, today]);
+  }, [visibleTrainees, yesterday, today]);
 
   const areaStats = useMemo(() => {
     return config.filter(c => c.role === 'area' && (!subAreas || subAreas.includes(c.id))).map(c => {
@@ -2790,6 +2794,7 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
     const todayChecked = [];
     const todayDelayed = [];
     visibleTrainees.forEach(t => {
+      if (isCertified(t)) return; // 与顶部卡片一致：仅统计在训（未认证）人员，避免"昨日已打卡/未打卡"两处口径不一致
       const areaCfg = config.find(c => c.id === (t.area || '000'));
       const areaName = areaCfg?.name?.replace('区域带训追踪系统', '') || (t.area || '000');
       let yHas = false; let yLast = ''; let tHas = false; let tLast = '';

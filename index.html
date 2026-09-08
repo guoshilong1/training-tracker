@@ -830,22 +830,33 @@ function getCurrentDay(trainee) {
 }
 
 function isCertified(trainee) { return getCurrentDay(trainee) === null; }
-// 统一"昨日是否算已打卡"判定（含跨天补登），供大区看板顶部卡片与下方列表共用，避免两处口径不一致。
-// 规则：昨日有勾选、昨日被标延迟、昨日被标休息，或今天仍处于延迟/休息状态（跨天补登），任一即算"昨日已打卡"。
-// 注意：completedAt 不再作为打卡依据（与列表一致，避免把"仅完成未勾选"误判为打卡）。
-function isYesterdayCheckedTrainee(t, yesterday, today) {
-  const progress = t.progress || {};
-  let yHas = false, yd = false, yr = false, tDel = false, tRest = false;
-  Object.values(progress).forEach(day => {
-    Object.values(day.items || {}).forEach(item => {
-      if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === yesterday) yHas = true;
-    });
-    if (delayedOnDate(day, yesterday)) yd = true;
-    if (restOnDate(day, yesterday)) yr = true;
-    if (delayedOnDate(day, today)) tDel = true;
-    if (restOnDate(day, today)) tRest = true;
-  });
-  return yHas || yd || yr || tDel || tRest;
+// 统一"指定日期 ds 是否算已打卡"判定（推送 notify-unchecked.js 与大区看板共用同一口径）。
+// 规则：学员当日（ds）有以下任一动作即视为"已打卡"：
+//   1) 勾选学习项：day.items 中任一 item.checked === true 且 checkedAt 落在 ds
+//      （checked=false 即"已撤回"，不计）
+//   2) 点延迟：day.delayed === true && delayAt 落在 ds，或 delayDates 含 ds
+//   3) 点休息：day.rest === true && restAt 落在 ds，或 restDates 含 ds
+// 注意：day.completed/completedAt 仅代表"完成带训日"，与"打卡"是两件事，
+//       不再作为已打卡依据（避免仅完成未勾选的人被误判为已打卡）。
+//       也不做跨天补登（昨日判定只看昨日动作）。
+function isCheckedOnDate(trainee, ds) {
+  const progress = trainee.progress || {};
+  for (const day of Object.values(progress)) {
+    if (!day || day._meta) continue;
+    const items = day.items || {};
+    for (const item of Object.values(items)) {
+      if (item.checked === true && item.checkedAt && localDateStr(item.checkedAt) === ds) return true;
+    }
+    if (Array.isArray(day.restDates) && day.restDates.includes(ds)) return true;
+    if (day.rest === true && day.restAt && localDateStr(day.restAt) === ds) return true;
+    if (Array.isArray(day.delayDates) && day.delayDates.includes(ds)) return true;
+    if (day.delayed === true && day.delayAt && localDateStr(day.delayAt) === ds) return true;
+  }
+  return false;
+}
+// "昨日是否算已打卡"：复用 isCheckedOnDate(yesterday)，顶部卡片与下方列表共用，避免两处口径不一致。
+function isYesterdayCheckedTrainee(t, yesterday) {
+  return isCheckedOnDate(t, yesterday);
 }
 
 // 获取学员认证（全部带训完成）的时间戳：取所有完成天中最晚的 completedAt
@@ -2253,20 +2264,10 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
       const baseEntry = { id: t.id, name: t.name, store: t.store, note: t.note || '', empId: t.empId, route: t.route, subRoute: t.subRoute, progress: t.progress };
       const yEntry = { ...baseEntry, count: yCount, lastTime: yLastTime || ydLastTime || yrLastTime, completedDay: yCompletedDay, isDelayed: ydCount > 0, isRest: yrCount > 0 };
       const tEntry = { ...baseEntry, count: tCount, lastTime: tLastTime || rLastTime, completedDay: tCompletedDay, isDelayed: dCount > 0, isRest: rCount > 0 };
-      // 昨日"已打卡"判定：勾选过项目、被标延迟、或被标休息，任一即算（只要店长有操作）
-      // 跨天补登：如果今天还在休息/延迟状态（昨天标了但今天才跨日），昨日也算打过卡，
-      //   避免「昨日标过休息、跨天后昨日卡失效、今日仍是休息状态」导致误判为昨日未打卡。
-      const todayStillRestOrDelay = dCount > 0 || rCount > 0;
-      const yesterdayActive = yCount > 0 || ydCount > 0 || yrCount > 0 || todayStillRestOrDelay;
+      // 昨日"已打卡"判定：勾选过项目、被标延迟、或被标休息，任一即算（与推送机器人 isCheckedOnDate 严格一致）
+      // 不再做"今天仍处于延迟/休息"跨天补登——昨日判定只看昨日动作
+      const yesterdayActive = yCount > 0 || ydCount > 0 || yrCount > 0;
       if (yesterdayActive) {
-        // 跨天补登时把今天的休息/延迟时间回写到 yEntry，便于看板显示「最后一次操作时间」
-        if (yCount === 0 && ydCount === 0 && yrCount === 0) {
-          yEntry.count = Math.max(yCount, todayStillRestOrDelay ? 1 : 0);
-          yEntry.lastTime = yLastTime || ydLastTime || yrLastTime || (rCount > 0 ? rLastTime : '') || (dCount > 0 ? dLastTime : '');
-          yEntry.isDelayed = ydCount > 0 || dCount > 0;
-          yEntry.isRest = yrCount > 0 || rCount > 0;
-          yEntry._crossDayRestored = true; // 标记：跨天补登（昨天由今天的休息状态推断）
-        }
         yesterdayChecked.push(yEntry);
       } else {
         // 已完成全部带训的人员不再出现在未打卡列表中
@@ -2725,8 +2726,8 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
     const notStarted = visibleTrainees.filter(t => !isCertified(t) && calcProgress(t).percent === 0).length;
     const avgProgress = total > 0 ? Math.round(progressList.reduce((s, p) => s + p.percent, 0) / total) : 0;
     const incompleteTotal = inProgress + notStarted; // 未带训完总人数（不含已认证）
-    // 顶部卡片与下方列表统一口径：仅统计在训（未认证）人员，用共享判定函数（含跨天补登，不用 completedAt）
-    const checkedYesterday = visibleTrainees.filter(t => !isCertified(t) && isYesterdayCheckedTrainee(t, yesterday, today)).length;
+    // 顶部卡片与下方列表统一口径：仅统计在训（未认证）人员，用共享判定函数（只看昨日动作，不用 completedAt、不做跨天补登）
+    const checkedYesterday = visibleTrainees.filter(t => !isCertified(t) && isYesterdayCheckedTrainee(t, yesterday)).length;
     return { total, inProgress, completed, notStarted, avgProgress, incompleteTotal, checkedYesterday, uncheckedYesterday: incompleteTotal - checkedYesterday };
   }, [visibleTrainees, yesterday, today]);
 
@@ -2829,17 +2830,15 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
         }
       });
       const baseEntry = { ...t, areaName };
-      // 昨日"已打卡"判定：勾选过项目、被标延迟、或被标休息，任一即算（只要店长有操作）
-      // 跨天补登：如果今天还在休息/延迟状态（昨天标了但今天才跨日），昨日也算打过卡
-      const todayStillRestOrDelay = dCount > 0 || rCount > 0;
-      if (yHas || ydCount > 0 || yrCount > 0 || todayStillRestOrDelay) {
-        const restoredTime = yHas ? yLast : (ydLast || yrLast || (rCount > 0 ? rLast : '') || (dCount > 0 ? dLast : ''));
+      // 昨日"已打卡"判定：勾选过项目、被标延迟、或被标休息，任一即算（与推送机器人 isCheckedOnDate 严格一致）
+      // 不再做"今天仍处于延迟/休息"跨天补登——昨日判定只看昨日动作
+      if (yHas || ydCount > 0 || yrCount > 0) {
+        const restoredTime = yHas ? yLast : (ydLast || yrLast);
         yesterdayChecked.push({
           ...baseEntry,
           lastTime: restoredTime,
-          isDelayed: ydCount > 0 || dCount > 0,
-          isRest: yrCount > 0 || rCount > 0,
-          _crossDayRestored: !yHas && !ydCount && !yrCount && todayStillRestOrDelay
+          isDelayed: ydCount > 0,
+          isRest: yrCount > 0
         });
       } else {
         // 已完成全部带训的人员不再出现在未打卡列表中

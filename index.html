@@ -2059,32 +2059,11 @@ function calcNoCheckInStreak(t, today) {
   return { days, label: `连续${days}天未打卡` };
 }
 
-// 今天是否打过卡（按日期判断，任意打勾/休息/延迟 命中今天都算打过）
-// 注意：撤销操作会留下最新时间戳（tombstone），必须同时校验状态位，
-// 否则"勾了又撤/标了休息又撤"会被误判为今天已打卡，左侧卡牌就不会变红。
+// 今天是否打过卡（与推送/大区看板共用同一口径：勾选/休息/延迟 任一即算，不认 completedAt）
+// 这是老 API 的薄壳，内部直接调 isCheckedOnDate(trainee, todayStr)，保证店长端"今日未打卡学员列表"/学员卡片红卡与推送/大区看板数字完全一致。
 function isCheckedToday(trainee) {
   const todayStr = localDateStr(new Date().toISOString());
-  const progress = trainee.progress || {};
-  // 1) 任意 day 的时间戳命中今天 且 状态位仍为"生效" → 今天确实操作过
-  for (const day of Object.values(progress)) {
-    if (day.completed && day.completedAt && localDateStr(day.completedAt) === todayStr) return true;
-    if (restOnDate(day, todayStr)) return true;
-    if (delayedOnDate(day, todayStr)) return true;
-    const items = day.items || {};
-    for (const item of Object.values(items)) {
-      if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === todayStr) return true;
-    }
-  }
-  // 2) 当前应处理的天被标记为完成/休息/延迟，也算今日已处理
-  //    覆盖 currentDay 跨天、restAt/delayAt 缺失或时区边界的场景
-  //    （延迟/休息每天重置：只认今天标记的，昨天标记的今天自动失效）
-  const currentDay = getCurrentDay(trainee);
-  if (currentDay) {
-    const dp = progress[currentDay.key] || {};
-    if (dp.completed) return true;
-    if (restOnDate(dp, todayStr) || delayedOnDate(dp, todayStr)) return true;
-  }
-  return false;
+  return isCheckedOnDate(trainee, todayStr);
 }
 
 // 延迟统计：累计延迟过的天数（用于看板显示"累计延迟 N 次"），按历史日期数组统计

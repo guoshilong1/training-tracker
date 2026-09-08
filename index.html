@@ -2244,9 +2244,9 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
       const baseEntry = { id: t.id, name: t.name, store: t.store, note: t.note || '', empId: t.empId, route: t.route, subRoute: t.subRoute, progress: t.progress };
       const yEntry = { ...baseEntry, count: yCount, lastTime: yLastTime || ydLastTime || yrLastTime, completedDay: yCompletedDay, isDelayed: ydCount > 0, isRest: yrCount > 0 };
       const tEntry = { ...baseEntry, count: tCount, lastTime: tLastTime || rLastTime, completedDay: tCompletedDay, isDelayed: dCount > 0, isRest: rCount > 0 };
-      // 昨日"已打卡"判定：勾选过项目、被标延迟、或被标休息，任一即算（与推送机器人 isCheckedOnDate 严格一致）
+      // 昨日"已打卡"判定：统一挂到共享 isCheckedOnDate（与推送机器人/顶部卡片严格一致，含 completedAt）
       // 不再做"今天仍处于延迟/休息"跨天补登——昨日判定只看昨日动作
-      const yesterdayActive = yCount > 0 || ydCount > 0 || yrCount > 0;
+      const yesterdayActive = isCheckedOnDate(t, yesterday);
       if (yesterdayActive) {
         yesterdayChecked.push(yEntry);
       } else {
@@ -2810,9 +2810,9 @@ function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) 
         }
       });
       const baseEntry = { ...t, areaName };
-      // 昨日"已打卡"判定：勾选过项目、被标延迟、或被标休息，任一即算（与推送机器人 isCheckedOnDate 严格一致）
+      // 昨日"已打卡"判定：统一挂到共享 isCheckedOnDate（与推送机器人/顶部卡片严格一致，含 completedAt）
       // 不再做"今天仍处于延迟/休息"跨天补登——昨日判定只看昨日动作
-      if (yHas || ydCount > 0 || yrCount > 0) {
+      if (isCheckedOnDate(t, yesterday)) {
         const restoredTime = yHas ? yLast : (ydLast || yrLast);
         yesterdayChecked.push({
           ...baseEntry,

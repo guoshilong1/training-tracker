@@ -226,9 +226,16 @@ function safeGetAllDays(route, subRoute) {
   try { return __getAllDays(route, subRoute) || []; } catch (e) { return []; }
 }
 
-// ---------- 核心：判断今天是否打过卡（与前端 isCheckedToday 完全一致） ----------
-// 注意：撤销操作会留下最新时间戳（tombstone），必须同时校验状态位，
-// 否则"勾了又撤/标了休息又撤"会被误判为今天已打卡而漏推。
+// ---------- 核心：判断"目标日期 ds"是否打过卡（与前端 isCheckedOnDate 严格一致） ----------
+// 统一口径（推送机器人 + 大区看板共用）：
+//   学员当日（ds）有以下任一动作即视为"已打卡"：
+//     1) 勾选学习项：day.items 中任一 item.checked === true 且 checkedAt 落在 ds
+//        （checked=false 即"已撤回"，不计）
+//     2) 点延迟：day.delayed === true && delayAt 落在 ds，或 delayDates 含 ds
+//     3) 点休息：day.rest === true && restAt 落在 ds，或 restDates 含 ds
+//   注意：day.completed/completedAt 仅代表"完成带训日"，与"打卡"是两件事，
+//         不再作为已打卡依据（避免仅完成未勾选的人被误判为已打卡）。
+//         也不做跨天补登（昨日判定只看昨日动作）。
 function restOnDate(day, ds) {
   if (!day) return false;
   if (Array.isArray(day.restDates)) return day.restDates.includes(ds);
@@ -239,22 +246,19 @@ function delayedOnDate(day, ds) {
   if (Array.isArray(day.delayDates)) return day.delayDates.includes(ds);
   return !!day.delayed && !!day.delayAt && localDateStr(day.delayAt) === ds;
 }
-function isCheckedToday(trainee, todayStr) {
+function isCheckedOnDate(trainee, ds) {
   const progress = trainee.progress || {};
   for (const day of Object.values(progress)) {
-    if (day.completed && day.completedAt && localDateStr(day.completedAt) === todayStr) return true;
-    if (restOnDate(day, todayStr)) return true;
-    if (delayedOnDate(day, todayStr)) return true;
+    if (!day || day._meta) continue;
+    // 1) 勾选学习项（未撤回 = item.checked === true）
     const items = day.items || {};
     for (const item of Object.values(items)) {
-      if (item.checked && item.checkedAt && localDateStr(item.checkedAt) === todayStr) return true;
+      if (item.checked === true && item.checkedAt && localDateStr(item.checkedAt) === ds) return true;
     }
-  }
-  const currentDay = getCurrentDay(trainee);
-  if (currentDay) {
-    const dp = progress[currentDay.key] || {};
-    if (dp.completed) return true;
-    if (restOnDate(dp, todayStr) || delayedOnDate(dp, todayStr)) return true;
+    // 2) 休息（未撤回）
+    if (restOnDate(day, ds)) return true;
+    // 3) 延迟（未撤回）
+    if (delayedOnDate(day, ds)) return true;
   }
   return false;
 }
@@ -411,7 +415,7 @@ async function pushSetting(setting, todayStr) {
 
   const activeTrainees = trainees.filter(t => getCurrentDay(t) !== null);
   const unchecked = activeTrainees
-    .filter(t => !isCheckedToday(t, todayStr))
+    .filter(t => !isCheckedOnDate(t, todayStr))
     .map(t => ({ ...t, streak: calcNoCheckInStreak(t, todayStr) }))
     .sort((a, b) => b.streak - a.streak);
 
@@ -424,7 +428,7 @@ async function pushSetting(setting, todayStr) {
 
   // 全员打卡报平安 & 每日数据简报（基于目标区域总体）
   const totalActive = activeTrainees.length;
-  const completedCount = activeTrainees.filter(t => isCheckedToday(t, todayStr)).length;
+  const completedCount = activeTrainees.filter(t => isCheckedOnDate(t, todayStr)).length;
   const certCount = trainees.filter(isCertified).length;
   // 区域名显示：把 ID 编码映射成人名/区域名（000→郭士龙区域），未知编码回退原始 ID
   const areaLabel = targetAreas.includes('all') ? '全部区域' : targetAreas.map(areaDisplayName).join('、');

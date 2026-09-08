@@ -324,6 +324,7 @@ function rowToTrainee(row) {
     area: row.area || '000',
     note: row.note || '',
     empId: row.emp_id || '',
+    pastHours: Number(row.progress?._meta?.pastHours) || 0,
     progress: row.progress || {},
     createdAt: row.created_at || new Date().toISOString(),
     _updatedAt: row.updated_at || 0
@@ -334,7 +335,7 @@ function rowToTrainee(row) {
 function traineeToRow(t) {
   // 数据库暂无 sub_route 列，先把 subRoute 存进 progress._meta，保证多设备同步不丢
   const progress = { ...(t.progress || {}) };
-  progress._meta = { ...(progress._meta || {}), subRoute: t.subRoute || '' };
+  progress._meta = { ...(progress._meta || {}), subRoute: t.subRoute || '', pastHours: Number(t.pastHours) || 0 };
   return {
     id: t.id,
     name: t.name || '',
@@ -925,6 +926,7 @@ function TraineeModal({ open, onClose, onSave, editing, stores }) {
   const [startDate, setStartDate] = useState('');
   const [master, setMaster] = useState('');
   const [empId, setEmpId] = useState('');
+  const [pastHours, setPastHours] = useState('');
 
   const selectedRoute = useMemo(() => TRAINING_DATA.routes.find(r => r.id === route), [route]);
   const hasSubRoutes = !!selectedRoute?.subRoutes;
@@ -938,10 +940,11 @@ function TraineeModal({ open, onClose, onSave, editing, stores }) {
       setStartDate(editing.startDate || '');
       setMaster(editing.master || '');
       setEmpId(editing.empId || '');
+      setPastHours(editing.pastHours || '');
     } else {
       setName(''); setStore(''); setRoute('front_to_back'); setSubRoute('');
       const today = new Date().toISOString().slice(0, 10);
-      setStartDate(today); setMaster(''); setEmpId('');
+      setStartDate(today); setMaster(''); setEmpId(''); setPastHours('');
     }
   }, [editing, open]);
 
@@ -959,6 +962,7 @@ function TraineeModal({ open, onClose, onSave, editing, stores }) {
   const handleSave = () => {
     if (!name.trim()) { alert('请输入学员姓名'); return; }
     if (!store.trim()) { alert('请输入门店'); return; }
+    if (!empId.trim()) { alert('请输入工号（用于匹配工时）'); return; }
     if (hasSubRoutes && !subRoute) { alert('请选择兼职子路线（前厅兼职/后厨兼职）'); return; }
     onSave({
       ...(editing || {}),
@@ -968,7 +972,8 @@ function TraineeModal({ open, onClose, onSave, editing, stores }) {
       subRoute: hasSubRoutes ? subRoute : '',
       startDate,
       master: master.trim(),
-      empId: empId.trim()
+      empId: empId.trim(),
+      pastHours: pastHours.trim()
     });
     onClose();
   };
@@ -992,10 +997,23 @@ function TraineeModal({ open, onClose, onSave, editing, stores }) {
           </datalist>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1.5">工号 <span className="text-xs text-gray-500 font-normal">（用于匹配工时，建议填写）</span></label>
+          <label className="block text-sm font-medium text-gray-300 mb-1.5">工号 <span className="text-red-400">*</span> <span className="text-xs text-gray-500 font-normal">（用于匹配工时）</span></label>
           <input type="text" value={empId} onChange={e=>setEmpId(e.target.value)}
             className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 tabular-nums"
             placeholder="如：10086"/>
+        </div>
+        <div className="border border-indigo-500/30 bg-indigo-500/5 rounded-lg p-3.5">
+          <div className="flex items-center justify-between">
+            <label className="block text-sm font-medium text-gray-200">二次入职 / 雇佣类型转换</label>
+            <span className="text-xs text-gray-500">非必填</span>
+          </div>
+          <p className="text-xs text-gray-500 mt-1 mb-2.5">适用于二次入职、全职转兼职、兼职转全职——工号不变，但过往工时不应计入本次带训，导入工时时会自动抵扣。</p>
+          <label className="block text-xs text-gray-400 mb-1.5">过往累计工时（h）</label>
+          <input type="number" min="0" step="0.5" value={pastHours}
+            onChange={e=>setPastHours(e.target.value)}
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 tabular-nums"
+            placeholder="如：120"/>
+          <p className="text-[11px] text-gray-500 mt-1.5">导入工时表中该学员的工时，会自动减去上面填写的数值。</p>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-1.5">带训路线 <span className="text-red-400">*</span></label>
@@ -3794,7 +3812,7 @@ function TraineesImportModal({ existingTrainees, onClose, onImport }) {
       ['2. 路线填「兼职」时，请在「兼职岗位」填：前厅兼职 或 后厨兼职（不填默认前厅兼职）'],
       ['3. 区域账号必填（0001-0147 新体系小区，或老区域 000-007），完整对照见「区域账号对照」sheet'],
       ['4. 学员姓名、门店必填；同一区域同名学员会自动跳过（视为重复）'],
-      ['5. 工号选填（用于工时匹配），但不能与已有学员重复'],
+      ['5. 工号必填（用于工时匹配），且不能与已有学员重复'],
       ['6. 入职日期格式：2026/8/25 或 2026-08-25，不填默认今天'],
       ['7. 带训师傅选填']
     ];
@@ -4112,7 +4130,7 @@ function WorkHoursImportModal({ trainees, onClose, onImported }) {
 
         // 学员工号索引（去重：同工号多行取最后一行）
         const byEmp = new Map(trainees.filter(t => (t.empId || '').trim()).map(t => [String(t.empId).trim(), t]));
-        const rowsMap = new Map(); // emp_id -> row
+        const rowsMap = new Map(); // emp_id -> row（已扣减过往工时）
         const unmatched = [], invalid = [];
         for (const r of json) {
           const empId = String(r[idKey] ?? '').trim();
@@ -4123,7 +4141,11 @@ function WorkHoursImportModal({ trainees, onClose, onImported }) {
           if (!empId) { invalid.push({ empId: '(空)', name: nameRaw, hours: hoursRaw, reason: '工号为空' }); continue; }
           if (isNaN(hours) || hours < 0) { invalid.push({ empId, name: nameRaw, hours: hoursRaw, reason: '工时不是有效数字' }); continue; }
           if (!byEmp.has(empId)) { unmatched.push({ empId, name: nameRaw, hours: hoursRaw }); continue; }
-          rowsMap.set(empId, { emp_id: empId, hours, name: byEmp.get(empId).name, updated_at: Date.now() });
+          // 该学员若有"过往累计工时"（二次入职/雇佣类型转换），导入时自动扣减，只计本次带训部分
+          const trainee = byEmp.get(empId);
+          const pastHours = Number(trainee.pastHours) || 0;
+          const effHours = pastHours > 0 ? Math.max(0, hours - pastHours) : hours;
+          rowsMap.set(empId, { emp_id: empId, hours: effHours, pastHours, origHours: hours, name: trainee.name, updated_at: Date.now() });
         }
         setFileName(file.name);
         setParseResult({
@@ -4144,7 +4166,9 @@ function WorkHoursImportModal({ trainees, onClose, onImported }) {
     if (!parseResult || parseResult.rows.length === 0) return;
     setImporting(true); setErrMsg('');
     try {
-      await sbUpsertWorkHours(parseResult.rows.map(({ name, ...r }) => r));
+      // 只保留 work_hours 表合法列（emp_id / hours / updated_at），过滤掉 pastHours/origHours/name 等辅助字段
+      const cleanRows = parseResult.rows.map(r => ({ emp_id: r.emp_id, hours: r.hours, updated_at: r.updated_at }));
+      await sbUpsertWorkHours(cleanRows);
       setImportDone(true);
       if (onImported) onImported();
     } catch (err) {
@@ -4160,7 +4184,7 @@ function WorkHoursImportModal({ trainees, onClose, onImported }) {
         {/* 步骤说明 */}
         <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3 text-xs text-gray-400 leading-relaxed">
           <p><span className="text-indigo-300 font-medium">①</span> 下载模板，按格式填写（或用你自己的表，表头含 <span className="text-white">姓名、工号、工时</span> 即可，姓名列仅作核对）</p>
-          <p className="mt-1"><span className="text-indigo-300 font-medium">②</span> 上传表格，系统按工号自动匹配学员</p>
+          <p className="mt-1"><span className="text-indigo-300 font-medium">②</span> 上传表格，系统按工号自动匹配学员；若该学员档案里填了「过往累计工时」，导入时会<span className="text-sky-300">自动扣减</span>，只计本次带训部分</p>
           <p className="mt-1"><span className="text-indigo-300 font-medium">③</span> 确认无误后导入，工时为<span className="text-white">覆盖更新</span>，导入后全员可见</p>
         </div>
 
@@ -4193,6 +4217,24 @@ function WorkHoursImportModal({ trainees, onClose, onImported }) {
                 {parseResult.unmatched.length > 0 && <span className="text-amber-300">⚠ 未匹配：{parseResult.unmatched.length} 人</span>}
                 {parseResult.invalid.length > 0 && <span className="text-red-300">✗ 格式错误：{parseResult.invalid.length} 行</span>}
               </div>
+
+              {(() => {
+                const deducted = parseResult.rows.filter(r => Number(r.pastHours) > 0);
+                if (deducted.length === 0) return null;
+                return (
+                  <div className="bg-sky-500/5 border border-sky-500/20 rounded-lg p-3 text-xs text-sky-300 space-y-1">
+                    <p className="font-medium mb-1">⚡ 已自动抵扣过往累计工时（{deducted.length} 人）：</p>
+                    <div className="max-h-24 overflow-y-auto scrollbar-thin text-gray-400 space-y-0.5">
+                      {deducted.map(r => (
+                        <div key={r.emp_id} className="flex justify-between gap-2">
+                          <span>{r.name}（工号 {r.emp_id}）</span>
+                          <span className="tabular-nums">原 {r.origHours}h − 过往 {r.pastHours}h = <span className="text-emerald-300">{r.hours}h</span></span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {parseResult.unmatched.length > 0 && (
                 <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3">

@@ -233,9 +233,9 @@ function safeGetAllDays(route, subRoute) {
 //        （checked=false 即"已撤回"，不计）
 //     2) 点延迟：day.delayed === true && delayAt 落在 ds，或 delayDates 含 ds
 //     3) 点休息：day.rest === true && restAt 落在 ds，或 restDates 含 ds
-//   注意：day.completed/completedAt 仅代表"完成带训日"，与"打卡"是两件事，
-//         不再作为已打卡依据（避免仅完成未勾选的人被误判为已打卡）。
-//         也不做跨天补登（昨日判定只看昨日动作）。
+//     4) 完成带训日：day.completed === true && completedAt 落在 ds
+//        （"仅完成没勾选"也算打卡，例如系统自动勾完或事后补打卡）
+//   也不做跨天补登（昨日判定只看昨日动作）。
 function restOnDate(day, ds) {
   if (!day) return false;
   if (Array.isArray(day.restDates)) return day.restDates.includes(ds);
@@ -259,6 +259,8 @@ function isCheckedOnDate(trainee, ds) {
     if (restOnDate(day, ds)) return true;
     // 3) 延迟（未撤回）
     if (delayedOnDate(day, ds)) return true;
+    // 4) 完成带训日（completedAt 落在 ds）—— 仅完成没勾选也算打卡
+    if (day.completed && day.completedAt && localDateStr(day.completedAt) === ds) return true;
   }
   return false;
 }

@@ -265,6 +265,11 @@ function isCheckedOnDate(trainee, ds) {
   return false;
 }
 
+// 已离职判定（与前端 isResigned 严格一致）：progress._meta.resigned === true
+function isResigned(trainee) {
+  return !!(trainee && trainee.progress && trainee.progress._meta && trainee.progress._meta.resigned);
+}
+
 function getCurrentDay(trainee) {
   const allDays = safeGetAllDays(trainee.route, trainee.subRoute).filter(d => d.items && d.items.length > 0);
   const progress = trainee.progress || {};
@@ -415,7 +420,8 @@ async function pushSetting(setting, todayStr) {
     }
   }
 
-  const activeTrainees = trainees.filter(t => getCurrentDay(t) !== null);
+  // 已离职学员不再推送（打卡提醒/工时预警/简报均排除），数据保留在库中
+  const activeTrainees = trainees.filter(t => getCurrentDay(t) !== null && !isResigned(t));
   const unchecked = activeTrainees
     .filter(t => !isCheckedOnDate(t, todayStr))
     .map(t => ({ ...t, streak: calcNoCheckInStreak(t, todayStr) }))
@@ -431,7 +437,7 @@ async function pushSetting(setting, todayStr) {
   // 全员打卡报平安 & 每日数据简报（基于目标区域总体）
   const totalActive = activeTrainees.length;
   const completedCount = activeTrainees.filter(t => isCheckedOnDate(t, todayStr)).length;
-  const certCount = trainees.filter(isCertified).length;
+  const certCount = trainees.filter(t => !isResigned(t) && isCertified(t)).length;
   // 区域名显示：把 ID 编码映射成人名/区域名（000→郭士龙区域），未知编码回退原始 ID
   const areaLabel = targetAreas.includes('all') ? '全部区域' : targetAreas.map(areaDisplayName).join('、');
 

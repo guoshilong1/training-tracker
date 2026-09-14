@@ -528,7 +528,9 @@ function render(m){
 
   const warn=m.real?'':`<div class="note no-print">当前为<b>演示数据</b>（原因：${esc(m.reason||'未登录')}）。在生产站点已登录状态下打开本页面，会自动切换成你的真实学员数据。</div>`;
 
-  document.getElementById('root').innerHTML = warn+todayPanel+attention+trend+storeTbl;
+  const el=document.getElementById('root');
+  el.innerHTML = warn+todayPanel+attention+trend+storeTbl;
+  el.dataset.rendered='1';
 }
 
 /* ---------- 筛选 ---------- */
@@ -641,6 +643,21 @@ function exportPdf(){
 }
 
 /* ---------- 启动 ---------- */
+// 兜底：任何运行时异常都显示出来，避免白屏无从排查
+window.addEventListener('error',e=>{
+  const r=document.getElementById('root');
+  if(r && !r.dataset.rendered){
+    r.innerHTML='<div class="loading" style="color:var(--red)">页面出错：'+esc(e.message||'')+
+      '<div style="font-size:11px;color:var(--txt3);margin-top:8px">行 '+e.lineno+' · 请把这行信息截图发给开发者</div></div>';
+  }
+});
+window.addEventListener('unhandledrejection',e=>{
+  const r=document.getElementById('root');
+  if(r && !r.dataset.rendered){
+    r.innerHTML='<div class="loading" style="color:var(--red)">数据加载出错：'+esc(String(e.reason&&e.reason.message||e.reason||''))+'</div>';
+  }
+});
+
 (async function init(){
   const raw=await loadData();
   const model=buildModel(raw);

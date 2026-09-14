@@ -394,9 +394,19 @@ function mergeDayProgress(lProgress, rProgress) {
   const allDays = new Set([...Object.keys(lProgress || {}), ...Object.keys(rProgress || {})]);
   const merged = {};
   for (const day of allDays) {
-    // _meta 是进度元数据（如 subRoute），不参与 day 级合并
+    // _meta 是进度元数据（subRoute / 离职标记等），不参与 day 级合并
     if (day === '_meta') {
-      merged._meta = { ...(lProgress?._meta || {}), ...(rProgress?._meta || {}) };
+      const lm = lProgress?._meta || {};
+      const rm = rProgress?._meta || {};
+      const lmTs = lm.resignedAt || '';
+      const rmTs = rm.resignedAt || '';
+      // last-write-wins：按 resignedAt 时间戳比较，新的赢。
+      // 不能简单 spread（remote 永远赢）——否则"恢复在职"会被其他设备的旧 resigned:true 覆盖。
+      let winner;
+      if (!lmTs && !rmTs) winner = { ...lm, ...rm };
+      else if (rmTs >= lmTs) winner = { ...lm, ...rm };
+      else winner = { ...rm, ...lm };
+      merged._meta = winner;
       continue;
     }
     const lp = lProgress?.[day] || {};
@@ -830,6 +840,16 @@ function getCurrentDay(trainee) {
 }
 
 function isCertified(trainee) { return getCurrentDay(trainee) === null; }
+
+// 已离职判定：存在 progress._meta.resigned === true 即视为离职。
+// 离职数据存 _meta（随 progress JSON 同步落库），不占用 DB 独立列。
+function isResigned(trainee) {
+  return !!(trainee && trainee.progress && trainee.progress._meta && trainee.progress._meta.resigned);
+}
+// 离职时间戳（ISO 字符串），用于 _meta 合并时 last-write-wins 比较
+function getResignedAt(trainee) {
+  return (trainee && trainee.progress && trainee.progress._meta && trainee.progress._meta.resignedAt) || '';
+}
 // 统一"指定日期 ds 是否算已打卡"判定（推送 notify-unchecked.js 与大区看板共用同一口径）。
 // 规则：学员当日（ds）有以下任一动作即视为"已打卡"：
 //   1) 勾选学习项：day.items 中任一 item.checked === true 且 checkedAt 落在 ds
@@ -1442,7 +1462,7 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, onDe
 }
 
 // ============ Trainee Tracker View ============
-function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEditTrainee, onDeleteTrainee, onUpdateProgress, stores, workHours }) {
+function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEditTrainee, onResignTrainee, onRestoreTrainee, onUpdateProgress, stores, workHours }) {
   const [search, setSearch] = useState('');
   const [filterStore, setFilterStore] = useState('');
   const [filterRoute, setFilterRoute] = useState('');
@@ -1470,8 +1490,10 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
   }, [selectedId, currentDay]);
 
   const certCounts = useMemo(() => {
-    const incomplete = trainees.filter(t => getCurrentDay(t) !== null).length;
-    return { incomplete, completed: trainees.length - incomplete };
+    const active = trainees.filter(t => !isResigned(t));
+    const incomplete = active.filter(t => getCurrentDay(t) !== null).length;
+    const resigned = trainees.filter(t => isResigned(t)).length;
+    return { incomplete, completed: active.length - incomplete, resigned };
   }, [trainees]);
 
   const filtered = useMemo(() => {
@@ -1479,6 +1501,10 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
       if (search && !t.name.includes(search) && !t.store.includes(search)) return false;
       if (filterStore && t.store !== filterStore) return false;
       if (filterRoute && t.route !== filterRoute) return false;
+      const resigned = isResigned(t);
+      // 已离职 tab：只显示离职学员；其他 tab 一律排除离职学员
+      if (certFilter === 'resigned') return resigned;
+      if (resigned) return false;
       const isCompleted = getCurrentDay(t) === null;
       if (certFilter === 'completed' && !isCompleted) return false;
       if (certFilter === 'incomplete' && isCompleted) return false;
@@ -1503,6 +1529,7 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
       if (search && !t.name.includes(search) && !t.store.includes(search)) return false;
       if (filterStore && t.store !== filterStore) return false;
       if (filterRoute && t.route !== filterRoute) return false;
+      if (isResigned(t)) return false;
       if (isCertified(t)) return false;
       return !isCheckedToday(t);
     });
@@ -1708,6 +1735,17 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
                 {certCounts.completed}
               </span>
             </button>
+            <button
+              onClick={() => setCertFilter('resigned')}
+              className={`flex-1 py-1.5 text-xs font-medium rounded-md transition flex items-center justify-center gap-1 ${
+                certFilter === 'resigned' ? 'bg-gray-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'
+              }`}
+            >
+              已离职
+              <span className={`text-[10px] px-1 py-0.5 rounded-full ${certFilter === 'resigned' ? 'bg-white/20' : 'bg-gray-700 text-gray-400'}`}>
+                {certCounts.resigned}
+              </span>
+            </button>
           </div>
         </div>
 
@@ -1771,13 +1809,16 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
             const isSelected = t.id === selectedId;
             const warning = getWorkHoursWarning(t, workHours?.[t.empId]?.hours);
             const notCheckedToday = !isCertified(t) && !isCheckedToday(t);
-            const cardClass = isSelected
-              ? 'bg-indigo-600/20 border border-indigo-500/40'
-              : notCheckedToday
-                ? 'bg-red-500/15 border border-red-500/40 hover:bg-red-500/25'
-                : warning
-                  ? 'bg-yellow-500/25 border border-yellow-500/50 hover:bg-yellow-500/35'
-                  : 'hover:bg-gray-800/50 border border-transparent';
+            const resigned = isResigned(t);
+            const cardClass = resigned
+              ? 'bg-gray-800/40 opacity-70 border border-gray-700/50 hover:bg-gray-800/60'
+              : isSelected
+                ? 'bg-indigo-600/20 border border-indigo-500/40'
+                : notCheckedToday
+                  ? 'bg-red-500/15 border border-red-500/40 hover:bg-red-500/25'
+                  : warning
+                    ? 'bg-yellow-500/25 border border-yellow-500/50 hover:bg-yellow-500/35'
+                    : 'hover:bg-gray-800/50 border border-transparent';
             return (
               <button
                 key={t.id}
@@ -1788,18 +1829,36 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
                   <span className="text-sm font-medium text-white">{t.name}</span>
                   <div className="flex items-center gap-1">
                     <span className="text-xs text-gray-500">{getRouteName(t.route, t.subRoute)}</span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm(`确认删除学员「${t.name}」？此操作不可撤销。`)) {
-                          onDeleteTrainee(t.id);
-                        }
-                      }}
-                      className="p-1.5 rounded-md text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition"
-                      title="删除学员"
-                    >
-                      <Icon.Trash width={13} height={13}/>
-                    </button>
+                    {resigned ? (
+                      <>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-600/40 text-gray-300 border border-gray-600">已离职</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm(`确认恢复学员「${t.name}」为在职在训状态？`)) {
+                              onRestoreTrainee(t.id);
+                            }
+                          }}
+                          className="px-1.5 py-0.5 rounded-md text-[10px] text-emerald-300 hover:bg-emerald-500/15 border border-emerald-500/30 transition"
+                          title="恢复为在职在训"
+                        >
+                          恢复
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm(`确认将学员「${t.name}」标记为离职？\n· 移出在训名单，打卡/工时/进度数据全部保留\n· 可在「已离职」分组中随时恢复`)) {
+                            onResignTrainee(t.id);
+                          }
+                        }}
+                        className="px-1.5 py-0.5 rounded-md text-[10px] text-gray-500 hover:text-red-300 hover:bg-red-500/10 border border-gray-700 hover:border-red-500/40 transition"
+                        title="标记离职（数据保留，可恢复）"
+                      >
+                        离职
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
@@ -1848,6 +1907,9 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
                 <div>
                   <div className="flex items-center gap-3">
                     <h2 className="text-xl font-bold text-white">{selected.name}</h2>
+                    {isResigned(selected) && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-gray-600/40 text-gray-300 border border-gray-600">已离职</span>
+                    )}
                     <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">
                       {getRouteName(selected.route, selected.subRoute)}
                     </span>
@@ -1868,13 +1930,23 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
                   <button onClick={() => { setEditingTrainee(selected); setShowModal(true); }} className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition">
                     <Icon.Edit/>
                   </button>
-                  <button onClick={() => {
-                    if (confirm(`确认删除学员「${selected.name}」？此操作不可撤销。`)) {
-                      onDeleteTrainee(selected.id);
-                    }
-                  }} className="p-2 rounded-lg bg-gray-800 hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition">
-                    <Icon.Trash/>
-                  </button>
+                  {isResigned(selected) ? (
+                    <button onClick={() => {
+                      if (confirm(`确认恢复学员「${selected.name}」为在职在训状态？`)) {
+                        onRestoreTrainee(selected.id);
+                      }
+                    }} className="px-3 py-2 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 text-sm font-medium transition">
+                      恢复在职
+                    </button>
+                  ) : (
+                    <button onClick={() => {
+                      if (confirm(`确认将学员「${selected.name}」标记为离职？\n· 移出在训名单，打卡/工时/进度数据全部保留\n· 可在「已离职」分组中随时恢复`)) {
+                        onResignTrainee(selected.id);
+                      }
+                    }} className="px-3 py-2 rounded-lg bg-gray-800 hover:bg-red-500/20 text-gray-400 hover:text-red-400 text-sm font-medium transition">
+                      离职
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -2108,7 +2180,9 @@ function calcRestTotalDays(t) {
   return { days: count, label: count > 0 ? `本月累计休息 ${count} 次` : '本月未休息' };
 }
 
-function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
+function DashboardView({ trainees: allTrainees, stores, workHours, onUpdateNote }) {
+  // 已离职学员不进入店长看板统计（数据保留，仅排除展示与分析）
+  const trainees = useMemo(() => (allTrainees || []).filter(t => !isResigned(t)), [allTrainees]);
   const [filterStore, setFilterStore] = useState('');
   const [filterRoute, setFilterRoute] = useState('');
   const [sortBy, setSortBy] = useState('progress');
@@ -2675,7 +2749,9 @@ function DashboardView({ trainees, stores, workHours, onUpdateNote }) {
 }
 
 // ============ Region Manager Dashboard ============
-function RegionDashboardView({ trainees, stores, config, workHours, subAreas }) {
+function RegionDashboardView({ trainees: allTrainees, stores, config, workHours, subAreas }) {
+  // 已离职学员不进入大区看板统计（数据保留，仅排除展示与分析）
+  const trainees = useMemo(() => (allTrainees || []).filter(t => !isResigned(t)), [allTrainees]);
   const today = localDateStr(new Date().toISOString());
   const yesterday = yesterdayStr();
   const [filterArea, setFilterArea] = useState('');
@@ -4922,6 +4998,44 @@ function App() {
     if (selectedId === id) setSelectedId(null);
   };
 
+  // 标记离职：写入 progress._meta.resigned（随 progress JSON 同步落库），数据全保留
+  const handleResignTrainee = (id) => {
+    setData(d => ({
+      ...d,
+      trainees: d.trainees.map(t => t.id === id ? {
+        ...t,
+        progress: {
+          ...(t.progress || {}),
+          _meta: {
+            ...((t.progress && t.progress._meta) || {}),
+            resigned: true,
+            resignedAt: new Date().toISOString()
+          }
+        },
+        _updatedAt: Date.now()
+      } : t)
+    }));
+  };
+
+  // 恢复在职：resigned=false + 刷新 resignedAt（时间戳 last-write-wins，确保恢复操作跨设备生效）
+  const handleRestoreTrainee = (id) => {
+    setData(d => ({
+      ...d,
+      trainees: d.trainees.map(t => t.id === id ? {
+        ...t,
+        progress: {
+          ...(t.progress || {}),
+          _meta: {
+            ...((t.progress && t.progress._meta) || {}),
+            resigned: false,
+            resignedAt: new Date().toISOString()
+          }
+        },
+        _updatedAt: Date.now()
+      } : t)
+    }));
+  };
+
   const handleUpdateProgress = (id, progress) => {
     setData(d => ({
       ...d,
@@ -5064,7 +5178,8 @@ function App() {
           onSelectTrainee={setSelectedId}
           onAddTrainee={handleAddTrainee}
           onEditTrainee={handleEditTrainee}
-          onDeleteTrainee={handleDeleteTrainee}
+          onResignTrainee={handleResignTrainee}
+          onRestoreTrainee={handleRestoreTrainee}
           onUpdateProgress={handleUpdateProgress}
           stores={stores}
           workHours={workHours}

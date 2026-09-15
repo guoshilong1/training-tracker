@@ -380,6 +380,10 @@ function makeDemoData(){
       items[sl.idx]={checked:true,checkedAt:isoOf(ds)};
       pg[sl.key]={...prev,items};
     });
+    // 约 12% 的学员标记为已离职（让师傅看板的留存率/离职数有真实分布）
+    if(Math.random()<0.12){
+      pg._meta={...(pg._meta||{}),resigned:true,resignedAt:new Date().toISOString()};
+    }
     list.push({id:'demo-'+i,name:'学员'+(i+1),store,route,subRoute,
       startDate:sd,master:masters[i%5],area,note:'',empId:'D'+(10000+i),progress:pg,_updatedAt:Date.now()});
   }
@@ -454,7 +458,9 @@ async function loadData(){
 /* ---------- 预处理：给每个学员挂上日期集合 ---------- */
 function buildBase(raw){
   const td=today();
-  const rows=(raw.trainees||[]).filter(t=>!isResigned(t)).map(t=>{
+  // 离职学员必须保留在数据里（师傅看板要统计"带过几个人、走了几个"），
+  // 只在「在训 / 打卡 / 门店 / 小区」类统计中排除，见 activeOn 与各 Stats 函数
+  const rows=(raw.trainees||[]).map(t=>{
     const hours=t.empId&&raw.workHours[t.empId]?Number(raw.workHours[t.empId].hours)||0:null;
     const certAt=getCertifiedAt(t);
     const certified=isCertified(t);
@@ -465,6 +471,7 @@ function buildBase(raw){
       // 会导致历史回溯时把他误判成"那天已认证"而剔除出在训人群，人数与打卡率被算成 0。
       _certAt: certified&&certAt?localDateStr(certAt):'',
       _certMonth:isCertifiedThisMonth(t),
+      _resigned:isResigned(t),
       _checked:checkedDatesOf(t),_completedDates:completedDatesOf(t),_cd:getCurrentDay(t)
     };
   });
@@ -507,6 +514,7 @@ function eachDay(start,end){
 /* 某日仍在带训的人：那天已入职，且那时还没完成全部带训（未认证，或认证日晚于该日） */
 function activeOn(rows,ds){
   return rows.filter(t=>{
+    if(t._resigned) return false;                  // 已离职不再计入在训 / 打卡统计
     if(t.startDate && t.startDate>ds) return false;
     if(!t._cert) return true;
     return !!t._certAt && t._certAt>ds;
@@ -547,6 +555,7 @@ function snapRange(base,start,end){
   });
   // 窗口内的在训人群：该窗口开始后才入职、且那时还没认证完
   const windowRows=rows.filter(t=>{
+    if(t._resigned) return false;                  // 已离职不进"未打卡名单"
     if(t.startDate&&t.startDate>end) return false;
     if(!t._cert) return true;
     return !!t._certAt && t._certAt>=s0;
@@ -571,7 +580,8 @@ function snapRange(base,start,end){
 /* ---------- 门店维度（按窗口算平均打卡率） ---------- */
 function storeStats(base,days){
   const map={};
-  base.rows.forEach(t=>{
+  const rs=base.rows.filter(t=>!t._resigned);   // 离职学员不进门店统计
+  rs.forEach(t=>{
     const k=t.store||'未知门店';
     if(!map[k]) map[k]={store:k,area:t.area,rateSum:0,n:0,zeroSet:new Set(),regSet:new Set(),certN:0,warnN:0,doneN:0,activeEnd:0};
     const s=map[k];
@@ -616,6 +626,7 @@ function renderCtrl(){
     <button class="tab ${MODE==='day'?'on':''}" onclick="setMode('day')">指定某天</button>
     <button class="tab ${MODE==='week'?'on':''}" onclick="setMode('week')">周对比</button>
     <button class="tab ${MODE==='month'?'on':''}" onclick="setMode('month')">月度</button>
+    <button class="tab ${MODE==='master'?'on':''}" onclick="setMode('master')">师傅</button>
   </div>`;
   let extra='';
   const wMin=weekMinOffset(), mMin=monthMinOffset();
@@ -632,12 +643,14 @@ function renderCtrl(){
       <button class="btn sm" onclick="setWeekOff(0)" ${WEEK_OFF===0?'disabled style="opacity:.4"':''}>回本周</button>
       <button class="btn sm" onclick="setWeekOff(${WEEK_OFF+1})" ${WEEK_OFF>=0?'disabled style="opacity:.4"':''}>更晚 →</button>
     </div><span class="lb">${WEEK_OFF===0?'本周':(WEEK_OFF===-1?'上周':'前 '+Math.abs(WEEK_OFF)+' 周')} · 最早回溯至 ${DATA_START}</span>`;
-  }else{
+  }else if(MODE==='month'){
     extra=`<div class="navgrp">
       <button class="btn sm" onclick="setMonthOff(${MONTH_OFF-1})" ${MONTH_OFF<=mMin?'disabled style="opacity:.4"':''}>← 上月</button>
       <button class="btn sm" onclick="setMonthOff(0)" ${MONTH_OFF===0?'disabled style="opacity:.4"':''}>回本月</button>
       <button class="btn sm" onclick="setMonthOff(${MONTH_OFF+1})" ${MONTH_OFF>=0?'disabled style="opacity:.4"':''}>下月 →</button>
     </div><span class="lb">最早回溯至 ${DATA_START} 所在月</span>`;
+  }else{
+    extra=`<span class="lb">按师傅评估带教质量 · 徒弟打卡率取最近 30 天 · ${SCOPE&&SCOPE.level==='area'?'仅统计本小区师傅':'统计范围随账号'}</span>`;
   }
   el.innerHTML=tabs+'<div class="spacer"></div>'+extra;
 }
@@ -685,7 +698,7 @@ function viewDay(){
     <div class="grid g4">
       <div class="kpi" style="--accent:var(--indigo)">
         <div class="lb">当日在训</div><div class="vl">${s.active}</div>
-        <div class="sub">当前在训 ${rows.filter(t=>!t._cert).length} 人</div>
+        <div class="sub">当前在训 ${rows.filter(t=>!t._cert&&!t._resigned).length} 人 · 已离职 ${rows.filter(t=>t._resigned).length} 人</div>
       </div>
       <div class="kpi" style="--accent:var(--${rate>=90?'emerald':rate>=70?'amber':'red'})">
         <div class="lb">当日打卡率</div><div class="vl" style="color:${rateStyle(rate)}">${rate}%</div>
@@ -923,6 +936,146 @@ function viewMonth(){
     <div class="panel">${storeTable(storeStats(b,days.filter(d=>d<=BASE.today)))}</div>
   </div>`;
 }
+/* ---------- 师傅维度：评估带教质量 ---------- */
+/* 综合分权重：留存 40% + 出师率 30% + 带训效率 15% + 徒弟打卡率 15%（老大确认后可调） */
+const SCORE_W={stay:0.4,cert:0.3,eff:0.15,attend:0.15};
+let MSORT='score';
+function masterStats(base,days){
+  const map={};
+  base.rows.forEach(t=>{
+    const k=String(t.master||'').trim()||'未指派师傅';
+    if(!map[k]) map[k]={master:k,rows:[],storeMap:{},total:0,cert:0,resigned:0,learning:0,certDays:[],hours:[],progSum:0};
+    const s=map[k];
+    s.rows.push(t); s.total++;
+    s.storeMap[t.store||'未知门店']=(s.storeMap[t.store||'未知门店']||0)+1;
+    // 三类可重叠：认证后离职的人既算出师也算离职，才符合"带过/出师/走了"的直觉
+    if(t._cert){
+      s.cert++;
+      if(t.startDate&&t._certAt){ const d=daysBetween(t.startDate,t._certAt); if(d>=0&&d<400) s.certDays.push(d); }
+    }
+    if(isResigned(t)) s.resigned++;
+    if(!t._cert&&!isResigned(t)) s.learning++;
+    if(t._hours!=null) s.hours.push(t._hours);
+    s.progSum+=t._prog.percent;
+  });
+  const list=Object.values(map).map(s=>{
+    let store='-',maxN=0;
+    Object.entries(s.storeMap).forEach(([k,v])=>{ if(v>maxN){ maxN=v; store=k; } });
+    const multiStore=Object.keys(s.storeMap).length>1;
+    // 徒弟打卡率只统计"未离职"的徒弟，避免离职的人拖低师傅分数
+    const alive=s.rows.filter(t=>!isResigned(t));
+    const attend=(alive.length&&days.length)
+      ? Math.round(alive.reduce((acc,t)=>acc+days.filter(d=>t._checked.has(d)).length/days.length,0)/alive.length*100)
+      : 0;
+    const stayRate=s.total?Math.round((1-s.resigned/s.total)*100):100;
+    const certRate=s.total?Math.round(s.cert/s.total*100):0;
+    const avgDays=s.certDays.length?Math.round(s.certDays.reduce((a,b)=>a+b,0)/s.certDays.length):null;
+    // 带训效率：45 天内出师满分，90 天以上 0 分
+    const effScore=avgDays==null?60:Math.max(0,Math.min(100,Math.round((90-avgDays)/45*100)));
+    const avgHours=s.hours.length?Math.round(s.hours.reduce((a,b)=>a+b,0)/s.hours.length):null;
+    const avgProg=s.total?Math.round(s.progSum/s.total):0;
+    const score=Math.round(stayRate*SCORE_W.stay+certRate*SCORE_W.cert+effScore*SCORE_W.eff+attend*SCORE_W.attend);
+    const grade=score>=80?{t:'优秀',c:'var(--emerald)'}
+      :score>=60?{t:'合格',c:'var(--sky)'}
+      :score>=40?{t:'需关注',c:'var(--amber)'}
+      :{t:'预警',c:'var(--red)'};
+    return {...s,store,multiStore,attend,stayRate,certRate,avgDays,avgHours,avgProg,score,grade,isUnassigned:s.master==='未指派师傅'};
+  });
+  const by={
+    score:(a,b)=>b.score-a.score,                                   // 综合分高的在前
+    resigned:(a,b)=>b.resigned-a.resigned||a.stayRate-b.stayRate,    // 离职多的在前（抓问题）
+    cert:(a,b)=>b.certRate-a.certRate,                               // 出师率高的在前
+    days:(a,b)=>(a.avgDays==null?999:a.avgDays)-(b.avgDays==null?999:b.avgDays) // 带训快的在前
+  }[MSORT]||((a,b)=>b.score-a.score);
+  return list.sort((a,b)=>{
+    if(a.isUnassigned!==b.isUnassigned) return a.isUnassigned?1:-1;
+    return by(a,b);
+  });
+}
+function viewMaster(){
+  const rows=rowsFiltered();
+  const b={...BASE,rows};
+  const days=viewDays();
+  const st=masterStats(b,days);
+  const real=st.filter(s=>!s.isUnassigned);
+  const totalT=real.reduce((a,s)=>a+s.total,0);
+  const resignedN=real.reduce((a,s)=>a+s.resigned,0);
+  const avgCert=real.length?Math.round(real.reduce((a,s)=>a+s.certRate,0)/real.length):0;
+  const avgStay=real.length?Math.round(real.reduce((a,s)=>a+s.stayRate,0)/real.length):0;
+  const bad=real.filter(s=>s.score<60).length;
+
+  const sortBtns=[['score','综合分'],['resigned','离职多'],['cert','出师率'],['days','带训天数']]
+    .map(([k,n])=>`<button class="tab ${MSORT===k?'on':''}" onclick="setMSort('${k}')">${n}</button>`).join('');
+
+  const body=st.length?st.map((s,i)=>{
+    const riskLeave=s.resigned>0;
+    return `<tr class="${s.isUnassigned?'':''}">
+      <td class="n">${s.isUnassigned?'-':(i+1)}</td>
+      <td style="font-weight:500">${esc(s.master)}${s.multiStore?'<div style="font-size:11px;color:var(--amber)">跨店带教</div>':''}</td>
+      <td>${esc(s.store)}</td>
+      <td class="n">${s.total}</td>
+      <td class="n">${s.learning||'-'}</td>
+      <td class="n" style="color:${s.cert?'var(--emerald)':'var(--txt3)'}">${s.cert||'-'}</td>
+      <td class="n" style="color:${riskLeave?'var(--red)':'var(--txt3)'}">${s.resigned||'-'}</td>
+      <td><div class="bar-cell"><span style="font-variant-numeric:tabular-nums">${s.certRate}%</span><div class="bar-sm"><i style="width:${s.certRate}%;background:${rateStyle(s.certRate)}"></i></div></div></td>
+      <td><div class="bar-cell"><span style="color:${s.stayRate>=80?'var(--emerald)':s.stayRate>=60?'var(--amber)':'var(--red)'};font-variant-numeric:tabular-nums">${s.stayRate}%</span><div class="bar-sm"><i style="width:${s.stayRate}%;background:${s.stayRate>=80?'var(--emerald)':s.stayRate>=60?'var(--amber)':'var(--red)'}"></i></div></div></td>
+      <td class="n">${s.avgDays==null?'-':s.avgDays+'天'}</td>
+      <td class="n" style="color:${s.attend>=80?'var(--emerald)':s.attend>=60?'var(--amber)':'var(--red)'}">${s.attend}%</td>
+      <td class="n">${s.avgHours==null?'-':s.avgHours+'h'}</td>
+      <td class="n" style="font-weight:600;color:${s.grade.c}">${s.isUnassigned?'-':s.score}</td>
+      <td>${s.isUnassigned?'':`<span class="pill" style="background:${s.grade.c}22;color:${s.grade.c}">${s.grade.t}</span>`}</td>
+    </tr>`;
+  }).join(''):'<tr><td colspan="14"><div class="empty">当前筛选下没有师傅数据</div></td></tr>';
+
+  return `
+  <div class="sec">
+    <div class="sec-h"><h2>师傅带教质量评估</h2><span class="hint">${real.length} 位师傅 · 徒弟打卡率取最近 ${days.length} 天（自 ${DATA_START} 起）</span></div>
+    <div class="grid g4">
+      <div class="kpi" style="--accent:var(--indigo)">
+        <div class="lb">在册师傅</div><div class="vl">${real.length}</div>
+        <div class="sub">累计带教 <b>${totalT}</b> 人</div>
+      </div>
+      <div class="kpi" style="--accent:var(--red)">
+        <div class="lb">徒弟离职</div><div class="vl">${resignedN}</div>
+        <div class="sub">平均留存率 <b style="color:${avgStay>=80?'var(--emerald)':avgStay>=60?'var(--amber)':'var(--red)'}">${avgStay}%</b></div>
+      </div>
+      <div class="kpi" style="--accent:var(--emerald)">
+        <div class="lb">平均出师率</div><div class="vl">${avgCert}%</div>
+        <div class="sub">已认证徒弟共 <b>${real.reduce((a,s)=>a+s.cert,0)}</b> 人</div>
+      </div>
+      <div class="kpi" style="--accent:var(--amber)">
+        <div class="lb">需关注师傅</div><div class="vl">${bad}</div>
+        <div class="sub">综合分低于 60 分</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="panel">
+      <div class="panel-h">
+        <h3>师傅排名</h3>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="lb" style="font-size:11px;color:var(--txt3)">排序</span>
+          <div class="tabs" style="padding:2px">${sortBtns}</div>
+        </div>
+      </div>
+      <div class="tbl-wrap"><table>
+        <thead><tr>
+          <th class="n">#</th><th>师傅</th><th>门店</th><th class="n">带过</th><th class="n">在训</th><th class="n">出师</th><th class="n">离职</th>
+          <th>出师率</th><th>留存率</th><th class="n">平均带训</th><th class="n">徒弟打卡</th><th class="n">徒弟均工时</th><th class="n">综合分</th><th>评级</th>
+        </tr></thead>
+        <tbody>${body}</tbody>
+      </table></div>
+      <div class="legend" style="margin-top:12px">
+        <span>综合分权重：留存率 ${SCORE_W.stay*100}% + 出师率 ${SCORE_W.cert*100}% + 带训效率 ${SCORE_W.eff*100}% + 徒弟打卡率 ${SCORE_W.attend*100}%</span>
+        <span>带训效率：45 天内出师满分，90 天以上 0 分</span>
+        <span>评级：≥80 优秀 · 60-79 合格 · 40-59 需关注 · &lt;40 预警</span>
+      </div>
+    </div>
+  </div>`;
+}
+function setMSort(k){ MSORT=k; renderCtrl(); refresh(); }
+
 function monthCal(range,mw){
   const map={}; range.days.forEach(d=>{ map[d.ds]=d.rate; });
   const first=new Date(mw.start+'T00:00:00');
@@ -1037,8 +1190,9 @@ function viewDays(){
   const inRange=d=>d<=BASE.today&&d>=DATA_START;
   if(MODE==='day') return [SEL];
   if(MODE==='week'){ const w=weekWindow(WEEK_OFF); return eachDay(w.start,w.end).filter(inRange); }
-  const m=monthWindow(MONTH_OFF);
-  return eachDay(m.start,m.end).filter(inRange);
+  if(MODE==='month'){ const m=monthWindow(MONTH_OFF); return eachDay(m.start,m.end).filter(inRange); }
+  // 师傅维度：徒弟打卡率取最近 30 天
+  return eachDay(addDays(BASE.today,-29),BASE.today).filter(inRange);
 }
 
 /* ---------- 总渲染 ---------- */
@@ -1046,7 +1200,7 @@ function refresh(){
   if(!BASE) return;
   const warn=BASE.real?'':`<div class="note no-print">当前为<b>演示数据</b>（原因：${esc(BASE.reason||'未登录')}）。在生产站点已登录状态下打开本页面，会自动切换成你的真实学员数据。</div>`;
   const hm=`<div class="warnnote no-print"><b>统计范围自 ${DATA_START} 起</b>（系统启用日，更早的日期没有数据，也不计入任何统计）。历史视图中的<b>「工时」一律是当前累计值</b>（库里没有每日工时快照，无法还原历史某天的工时）；打卡、完成带训日、认证三项均带时间戳，可精确回溯。</div>`;
-  const body = MODE==='day'?viewDay():(MODE==='week'?viewWeek():viewMonth());
+  const body = MODE==='day'?viewDay():(MODE==='week'?viewWeek():(MODE==='month'?viewMonth():viewMaster()));
   const el=document.getElementById('root');
   el.innerHTML=warn+hm+body+areaBlock(viewDays());
   el.dataset.rendered='1';
@@ -1058,15 +1212,24 @@ function exportCtx(){
   const rows=rowsFiltered();
   if(MODE==='day'){ const s=snapDay({...BASE,rows},SEL); return {tag:SEL+'_当日',rows,snap:s}; }
   if(MODE==='week'){ const w=weekWindow(WEEK_OFF); const r=snapRange({...BASE,rows},w.start,w.end); return {tag:w.start+'_'+w.end+'_周报',rows,snap:r}; }
-  const m=monthWindow(MONTH_OFF); const r=snapRange({...BASE,rows},m.start,m.end);
-  return {tag:m.year+'-'+String(m.month).padStart(2,'0')+'_月报',rows,snap:r};
+  if(MODE==='month'){ const m=monthWindow(MONTH_OFF); const r=snapRange({...BASE,rows},m.start,m.end); return {tag:m.year+'-'+String(m.month).padStart(2,'0')+'_月报',rows,snap:r}; }
+  return {tag:'师傅评估',rows,snap:null};
 }
 function exportXlsx(){
   if(!BASE){ alert('数据尚未加载完成'); return; }
   if(typeof XLSX==='undefined'){ alert('导出组件未加载成功，请检查网络'); return; }
   const ctx=exportCtx();
   const wb=XLSX.utils.book_new();
-  const days=MODE==='day'?[ctx.snap.ds]:(eachDay(ctx.snap.start,Math.min(ctx.snap.end,BASE.today)));
+  const days=MODE==='day'?[ctx.snap.ds]:(MODE==='master'?viewDays():(eachDay(ctx.snap.start,Math.min(ctx.snap.end,BASE.today))));
+
+  if(MODE==='master'){
+    const ms=masterStats({...BASE,rows:ctx.rows},days);
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(ms.map(s=>({
+      '师傅':s.master,'门店':s.store,'带过人数':s.total,'在训中':s.learning,'已出师':s.cert,'离职':s.resigned,
+      '出师率':s.certRate+'%','留存率':s.stayRate+'%','平均带训天数':s.avgDays==null?'':s.avgDays,
+      '徒弟打卡率':s.attend+'%','徒弟平均工时':s.avgHours==null?'':s.avgHours,'综合分':s.score,'评级':s.grade.t
+    }))),'师傅汇总');
+  }
 
   const st=storeStats({...BASE,rows:ctx.rows},days);
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(st.map(s=>({
@@ -1087,7 +1250,7 @@ function exportXlsx(){
     '备注':t.note||''
   }))),'学员明细');
 
-  if(MODE!=='day'){
+  if(MODE!=='day'&&ctx.snap){
     XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(ctx.snap.zero.map(t=>({
       '姓名':t.name,'门店':t.store,'区域':areaName(t.area),'师傅':t.master||'',
       '当前进度':t._prog.percent+'%','问题':'整区间零打卡'

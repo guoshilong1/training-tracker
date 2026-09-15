@@ -52,6 +52,18 @@ input[type=date]{background:var(--panel2);border:1px solid var(--line);color:var
 .g4{grid-template-columns:repeat(4,1fr)}
 .g3{grid-template-columns:repeat(3,1fr)}
 .g2{grid-template-columns:repeat(2,1fr)}
+.g-auto{grid-template-columns:repeat(auto-fit,minmax(252px,1fr))}
+
+/* ---------- 可展开明细 ---------- */
+details.dd{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 10px;margin-top:6px}
+details.dd summary{cursor:pointer;font-size:12px;color:var(--txt2);list-style:none}
+details.dd summary::-webkit-details-marker{display:none}
+details.dd summary:hover{color:var(--txt)}
+details.dd summary::before{content:"▸ ";font-size:10px}
+details.dd[open] summary::before{content:"▾ "}
+details.dd .dlist{margin-top:8px;display:flex;flex-direction:column;gap:5px;border-top:1px solid var(--line);padding-top:8px}
+details.dd .ditem{font-size:12px;color:var(--txt2);display:flex;gap:8px;align-items:baseline}
+details.dd .ditem b{font-weight:500;color:var(--txt);flex-shrink:0;font-variant-numeric:tabular-nums}
 
 /* ---------- KPI ---------- */
 .kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px 16px;position:relative;overflow:hidden}
@@ -380,6 +392,41 @@ function makeDemoData(){
       items[sl.idx]={checked:true,checkedAt:isoOf(ds)};
       pg[sl.key]={...prev,items};
     });
+    // 随机延迟/休息记录（让单日与月度明细有内容可看）
+    const anchorKey=(allDays[Math.min(completed,allDays.length-1)]||{}).key;
+    if(anchorKey){
+      const reasons=['客人多没带完','师傅请假','学员考试','排班调整','临时支援其他岗位'];
+      const dn=Math.random()<0.35?Math.floor(Math.random()*3)+1:0;
+      if(dn>0){
+        const day={...(pg[anchorKey]||{items:{}})};
+        const dates=[...(day.delayDates||[])];
+        const notes={...(day.delayNotes||{})};
+        for(let k=0;k<dn;k++){
+          const ds=addDays(td,-(Math.floor(Math.random()*22)+1));
+          if(ds<DATA_START) continue;
+          if(!dates.includes(ds)) dates.push(ds);
+          notes[ds]=reasons[Math.floor(Math.random()*reasons.length)];
+        }
+        if(dates.length){
+          dates.sort();
+          day.delayDates=dates;
+          day.delayNotes=notes;
+          day.delayNote=notes[dates[dates.length-1]]||'';
+          pg[anchorKey]=day;
+        }
+      }
+      const rn=Math.random()<0.25?Math.floor(Math.random()*2)+1:0;
+      if(rn>0){
+        const day={...(pg[anchorKey]||{items:{}})};
+        const dates=[...(day.restDates||[])];
+        for(let k=0;k<rn;k++){
+          const ds=addDays(td,-(Math.floor(Math.random()*22)+1));
+          if(ds<DATA_START) continue;
+          if(!dates.includes(ds)) dates.push(ds);
+        }
+        if(dates.length){ dates.sort(); day.restDates=dates; pg[anchorKey]=day; }
+      }
+    }
     // 约 12% 的学员标记为已离职（让师傅看板的留存率/离职数有真实分布）
     if(Math.random()<0.12){
       pg._meta={...(pg._meta||{}),resigned:true,resignedAt:new Date().toISOString()};
@@ -538,6 +585,90 @@ function snapDay(base,ds){
   };
 }
 
+/* ---------- 单日动作明细：把当天发生的五类动作分头列出来 ---------- */
+function dayInfoOf(t,key){
+  const allDays=getAllDaysSafe(t.route,t.subRoute);
+  return allDays.find(d=>d.key===key)||null;
+}
+function dayDetail(rows,ds){
+  const checked=[],done=[],cert=[],delay=[],rest=[];
+  rows.forEach(t=>{
+    const pg=t.progress||{};
+    let hitN=0,doneDay=null,delayDay=null,restDay=null;
+    Object.entries(pg).forEach(([k,day])=>{
+      if(k==='_meta'||!day) return;
+      // 1) 当天勾选的学习项（撤回的 checked:false 不算）
+      Object.values(day.items||{}).forEach(it=>{
+        if(it.checked===true&&it.checkedAt&&localDateStr(it.checkedAt)===ds) hitN++;
+      });
+      // 2) 当天完成带训日
+      if(day.completed&&day.completedAt&&localDateStr(day.completedAt)===ds) doneDay={key:k,day};
+      // 4) 当天延迟（含历史日期数组与旧时间戳两种存法）
+      const hasDelayArr=Array.isArray(day.delayDates)&&day.delayDates.includes(ds);
+      const hasDelayTs=day.delayed===true&&day.delayAt&&localDateStr(day.delayAt)===ds;
+      if(hasDelayArr||hasDelayTs) delayDay=day;
+      // 5) 当天休息
+      const hasRestArr=Array.isArray(day.restDates)&&day.restDates.includes(ds);
+      const hasRestTs=day.rest===true&&day.restAt&&localDateStr(day.restAt)===ds;
+      if(hasRestArr||hasRestTs) restDay=day;
+    });
+    if(hitN>0) checked.push({t,n:hitN});
+    if(doneDay){ const info=dayInfoOf(t,doneDay.key); done.push({t,day:doneDay.day,info}); }
+    if(t._certAt===ds) cert.push({t});
+    // 延迟原因：优先取按日期存的 delayNotes[ds]，回退到旧的单值 delayNote
+    if(delayDay) delay.push({t,note:(delayDay.delayNotes&&delayDay.delayNotes[ds])||delayDay.delayNote||''});
+    if(restDay) rest.push({t});
+  });
+  return {checked,done,cert,delay,rest};
+}
+
+/* ---------- 区间明细：延迟次数 / 休息次数 / 进度分布 ---------- */
+function delayList(rows,start,end){
+  const out=[];
+  rows.forEach(t=>{
+    const pg=t.progress||{};
+    const items=[];
+    Object.values(pg).forEach(day=>{
+      if(!day||day._meta) return;
+      const dsList=Array.isArray(day.delayDates)?day.delayDates:(day.delayed&&day.delayAt?[localDateStr(day.delayAt)]:[]);
+      dsList.forEach(d=>{ if(d>=start&&d<=end) items.push({ds:d,note:(day.delayNotes&&day.delayNotes[d])||day.delayNote||''}); });
+    });
+    items.sort((a,b)=>(a.ds<b.ds?-1:1));
+    if(items.length) out.push({t,items,n:items.length});
+  });
+  return out.sort((a,b)=>b.n-a.n);
+}
+function restList(rows,start,end){
+  const out=[];
+  rows.forEach(t=>{
+    const pg=t.progress||{};
+    const dates=[];
+    Object.values(pg).forEach(day=>{
+      if(!day||day._meta) return;
+      const dsList=Array.isArray(day.restDates)?day.restDates:(day.rest&&day.restAt?[localDateStr(day.restAt)]:[]);
+      dsList.forEach(d=>{ if(d>=start&&d<=end) dates.push(d); });
+    });
+    dates.sort();
+    if(dates.length) out.push({t,dates,n:dates.length});
+  });
+  return out.sort((a,b)=>b.n-a.n);
+}
+function progressBuckets(rows){
+  const defs=[
+    {k:'已认证 100%',lo:100,hi:100,c:'var(--emerald)'},
+    {k:'80-99%',lo:80,hi:99,c:'var(--sky)'},
+    {k:'60-79%',lo:60,hi:79,c:'var(--indigo)'},
+    {k:'40-59%',lo:40,hi:59,c:'var(--amber)'},
+    {k:'20-39%',lo:20,hi:39,c:'#d4763a'},
+    {k:'0-19%',lo:0,hi:19,c:'var(--red)'}
+  ];
+  const act=rows.filter(t=>!t._resigned);
+  defs.forEach(d=>{ d.n=act.filter(t=>t._prog.percent>=d.lo&&t._prog.percent<=d.hi).length; });
+  const max=Math.max(1,...defs.map(d=>d.n));
+  const avg=act.length?Math.round(act.reduce((a,t)=>a+t._prog.percent,0)/act.length):0;
+  return {defs,max,avg,total:act.length};
+}
+
 /* ---------- 区间汇总（周/月通用） ---------- */
 function snapRange(base,start,end){
   // 统计起点不早于系统启用日：8/1 之前系统没数据，算进去只会把打卡率拉成假低值
@@ -689,8 +820,11 @@ function viewDay(){
     .map(t=>({t,st:calcNoCheckInStreak(t,SEL)})).filter(x=>x.st.days>=3)
     .sort((a,b2)=>b2.st.days-a.st.days);
 
-  const certIds=new Set(s.certList.map(t=>t.id));
-  const doneOnly=s.doneList.filter(t=>!certIds.has(t.id));
+  // 当天五类动作明细（勾选 / 完成整天 / 认证 / 延迟 / 休息）
+  const dd=dayDetail(rows,SEL);
+  const miniList=(arr,_c,empty,render)=>arr.length
+    ? `<div class="plist">${arr.slice(0,15).map(render).join('')}</div>${arr.length>15?`<div class="empty" style="padding:8px 0">还有 ${arr.length-15} 人未显示</div>`:''}`
+    : `<div class="empty">${empty}</div>`;
 
   return `
   <div class="sec">
@@ -738,20 +872,56 @@ function viewDay(){
     </div>
   </div>
 
-  ${s.certList.length?`<div class="sec">
-    <div class="sec-h"><h2>当日认证 / 完成带训日</h2><span class="hint">${SEL} 当天发生的记录</span></div>
-    <div class="panel"><div class="tbl-wrap"><table>
-      <thead><tr><th>姓名</th><th>门店</th><th>路线</th><th>类型</th><th class="n">当前进度</th></tr></thead>
-      <tbody>${s.certList.map(t=>`<tr><td style="font-weight:500">${esc(t.name)}</td><td>${esc(t.store)}</td>
-        <td>${esc(typeof getRouteName==='function'?getRouteName(t.route,t.subRoute):t.route)}</td>
-        <td><span class="pill" style="background:rgba(155,124,240,.15);color:var(--purple)">认证通过</span></td>
-        <td class="n">100%</td></tr>`).join('')}
-      ${doneOnly.slice(0,30).map(t=>`<tr><td style="font-weight:500">${esc(t.name)}</td><td>${esc(t.store)}</td>
-        <td>${esc(typeof getRouteName==='function'?getRouteName(t.route,t.subRoute):t.route)}</td>
-        <td><span class="pill" style="background:rgba(34,201,138,.15);color:var(--emerald)">完成带训日</span></td>
-        <td class="n">${t._prog.percent}%</td></tr>`).join('')}
-      </tbody></table></div></div>
-  </div>`:''}
+  <div class="sec">
+    <div class="sec-h"><h2>${SEL} 当天动作明细</h2><span class="hint">五类动作分栏列出，同一人可能同时出现在多栏</span></div>
+    <div class="grid g-auto">
+      <div class="panel">
+        <div class="panel-h"><h3 style="color:var(--sky)">● 有勾选动作</h3><span class="cnt">${dd.checked.length} 人</span></div>
+        ${miniList(dd.checked,'不在','当天还没有人勾选学习项',x=>`
+          <div class="prow" style="--c:var(--sky)">
+            <div class="av" style="color:var(--sky)">${esc(x.t.name.slice(0,1))}</div>
+            <div class="info"><div class="nm">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · ${esc(x.t.master||'无师傅')}</div></div>
+            <div class="tag" style="background:rgba(56,168,240,.15);color:var(--sky)">勾了 ${x.n} 项</div>
+          </div>`)}
+      </div>
+      <div class="panel">
+        <div class="panel-h"><h3 style="color:var(--emerald)">● 完成一天带训</h3><span class="cnt">${dd.done.length} 人</span></div>
+        ${miniList(dd.done,'不在','当天还没有人完成整天带训',x=>`
+          <div class="prow" style="--c:var(--emerald)">
+            <div class="av" style="color:var(--emerald)">${esc(x.t.name.slice(0,1))}</div>
+            <div class="info"><div class="nm">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · ${x.info?`${esc(x.info.monthName||'')}${esc(x.info.phaseName||'')} 第${x.info.day}天`:'—'}</div></div>
+            <div class="tag" style="background:rgba(34,201,138,.15);color:var(--emerald)">已完成</div>
+          </div>`)}
+      </div>
+      <div class="panel">
+        <div class="panel-h"><h3 style="color:var(--purple)">● 认证通过</h3><span class="cnt">${dd.cert.length} 人</span></div>
+        ${miniList(dd.cert,'不在','当天没有人认证通过',x=>`
+          <div class="prow" style="--c:var(--purple)">
+            <div class="av" style="color:var(--purple)">${esc(x.t.name.slice(0,1))}</div>
+            <div class="info"><div class="nm">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · ${esc(typeof getRouteName==='function'?getRouteName(x.t.route,x.t.subRoute):x.t.route)}</div></div>
+            <div class="tag" style="background:rgba(155,124,240,.15);color:var(--purple)">认证</div>
+          </div>`)}
+      </div>
+      <div class="panel">
+        <div class="panel-h"><h3 style="color:var(--amber)">● 延迟（含原因）</h3><span class="cnt">${dd.delay.length} 人</span></div>
+        ${miniList(dd.delay,'不在','当天没有人延迟',x=>`
+          <div class="prow" style="--c:var(--amber)">
+            <div class="av" style="color:var(--amber)">${esc(x.t.name.slice(0,1))}</div>
+            <div class="info"><div class="nm">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · ${x.note?'原因：'+esc(x.note):'未填原因'}</div></div>
+            <div class="tag" style="background:rgba(240,169,42,.15);color:var(--amber)">延迟</div>
+          </div>`)}
+      </div>
+      <div class="panel">
+        <div class="panel-h"><h3 style="color:var(--txt2)">● 休息</h3><span class="cnt">${dd.rest.length} 人</span></div>
+        ${miniList(dd.rest,'不在','当天没有人休息',x=>`
+          <div class="prow" style="--c:#4a5068">
+            <div class="av">${esc(x.t.name.slice(0,1))}</div>
+            <div class="info"><div class="nm">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · ${esc(x.t.master||'无师傅')}</div></div>
+            <div class="tag" style="background:rgba(255,255,255,.08);color:var(--txt2)">休息</div>
+          </div>`)}
+      </div>
+    </div>
+  </div>
 
   <div class="sec">
     <div class="sec-h"><h2>门店当日表现</h2><span class="hint">按打卡率升序，最差的在上面</span></div>
@@ -875,6 +1045,11 @@ function viewMonth(){
   });
   const prev=months[months.length-2];
   const days=eachDay(m0.start,m0.end);
+  // 本月三类明细：延迟（可下钻看每天原因）/ 休息 / 进度分布
+  const dl=delayList(rows,curRange.start,curRange.end);
+  const rl=restList(rows,curRange.start,curRange.end);
+  const pb=progressBuckets(rows);
+  const delayTotalN=dl.reduce((a,x)=>a+x.n,0);
 
   const cal=monthCal(curRange,m0);
 
@@ -927,6 +1102,51 @@ function viewMonth(){
           <div>本月认证晋升：<b style="color:var(--emerald)">${curRange.certN}</b> 人${curRange.certN?'（'+esc(curRange.certList.slice(0,5).map(t=>t.name).join('、'))+(curRange.certN>5?' 等':'')+'）':''}</div>
           <div>工时超阈值（当前值）：<b style="color:var(--amber)">${curRange.warnN}</b> 人</div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-h"><h2>本月延迟明细</h2><span class="hint">共 ${delayTotalN} 次延迟 · ${dl.length} 人 · 点开可看每次延迟的日期与原因</span></div>
+    <div class="panel">
+      ${dl.length?`<div class="tbl-wrap"><table>
+        <thead><tr><th>学员</th><th>门店</th><th>师傅</th><th class="n">延迟次数</th><th>每次延迟的日期与原因</th></tr></thead>
+        <tbody>${dl.map(x=>`
+          <tr>
+            <td style="font-weight:500">${esc(x.t.name)}</td>
+            <td>${esc(x.t.store)}</td>
+            <td style="color:var(--txt3)">${esc(x.t.master||'-')}</td>
+            <td class="n" style="color:var(--amber);font-weight:600">${x.n}</td>
+            <td><details class="dd"><summary>展开 ${x.n} 次记录</summary>
+              <div class="dlist">${x.items.map(it=>`
+                <div class="ditem"><b>${it.ds.slice(5)}</b><span>${it.note?esc(it.note):'未填原因'}</span></div>`).join('')}
+              </div></details></td>
+          </tr>`).join('')}</tbody>
+      </table></div>`:'<div class="empty">本月没有人延迟</div>'}
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="grid g2">
+      <div class="panel">
+        <div class="panel-h"><h3>本月休息名单</h3><span class="cnt">${rl.length} 人</span></div>
+        ${rl.length?`<div class="plist">${rl.slice(0,15).map(x=>`
+          <div class="prow" style="--c:#4a5068">
+            <div class="av">${esc(x.t.name.slice(0,1))}</div>
+            <div class="info"><div class="nm">${esc(x.t.name)}</div>
+              <div class="meta">${esc(x.t.store)} · ${x.dates.map(d=>d.slice(5)).join('、')}</div></div>
+            <div class="tag" style="background:rgba(255,255,255,.08);color:var(--txt2)">休 ${x.n} 次</div>
+          </div>`).join('')}</div>${rl.length>15?`<div class="empty" style="padding:8px 0">还有 ${rl.length-15} 人未显示</div>`:''}
+          `:'<div class="empty">本月没有人休息</div>'}
+      </div>
+      <div class="panel">
+        <div class="panel-h"><h3>带训进度分布</h3><span class="cnt">${pb.total} 人 · 平均 ${pb.avg}%</span></div>
+        ${pb.total?pb.defs.map(d=>`
+          <div class="rowe" style="padding:7px 0">
+            <div class="nm" style="flex:0 0 88px;font-size:12.5px">${d.k}</div>
+            <div class="mini" style="flex:1"><i style="width:${Math.round(d.n/pb.max*100)}%;background:${d.c}"></i></div>
+            <div class="pc" style="flex:0 0 52px">${d.n} 人</div>
+          </div>`).join(''):'<div class="empty">暂无在训学员</div>'}
       </div>
     </div>
   </div>

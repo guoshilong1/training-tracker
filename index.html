@@ -286,6 +286,12 @@ const SUPABASE_URL = 'https://ltjmbmgofjqeezoskqrc.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_KrCOzlUPTcrb8S4-ajTjww_EhKibtaC';
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// ============ 管理看板：新版驾驶舱（v2）嵌入开关 ============
+// true  = 「管理看板」tab 内嵌 dashboard-v2.html（新版驾驶舱：单日/周/月/师傅四视图 + 延迟下钻）
+// false = 回退到本文件内置的旧看板（DashboardView / RegionDashboardView）
+// 旧看板代码仍完整保留在本文件中，改这一个开关即可一键切回，无需改动其他地方。
+const USE_V2_DASHBOARD = true;
+
 let _sbReady = false;
 let _sbPushing = false;
 let _sbSaveTimer = null;
@@ -5185,10 +5191,24 @@ function App() {
           workHours={workHours}
         />
       )}
-      {view === 'dashboard' && !isManager && (
+      {/* 管理看板 = 新版驾驶舱（同源 dashboard-v2.html，iframe 嵌入，自动共享登录态与数据范围）。
+          key 绑定账号 id：切换账号时强制重载，避免残留上一个账号的视角。
+          改 USE_V2_DASHBOARD=false 即可一键回退到下方旧看板。 */}
+      {USE_V2_DASHBOARD && (view === 'dashboard' || view === 'region_dashboard') && (
+        <div className="p-3">
+          <iframe
+            key={currentUser && currentUser.id ? currentUser.id : 'anon'}
+            src="dashboard-v2.html?embed=1"
+            title="管理看板 · 新版驾驶舱"
+            className="w-full rounded-xl border border-gray-800 bg-gray-950"
+            style={{ height: 'calc(100vh - 84px)', display: 'block' }}
+          />
+        </div>
+      )}
+      {!USE_V2_DASHBOARD && view === 'dashboard' && !isManager && (
         <DashboardView trainees={visibleTrainees} stores={stores} workHours={workHours} onUpdateNote={(id, note) => handleEditTrainee(id, { note })} />
       )}
-      {view === 'region_dashboard' && isManager && (
+      {!USE_V2_DASHBOARD && view === 'region_dashboard' && isManager && (
         <RegionDashboardView trainees={visibleTrainees} stores={stores} config={AREA_CONFIG} workHours={workHours} subAreas={currentUser?.role === 'manager' ? (AREA_MAP[currentUser.id]?.subAreas || []) : null} />
       )}
 

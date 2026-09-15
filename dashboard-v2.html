@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>带训驾驶舱 · 新版看板原型</title>
+<title>带训看板 · 新版原型</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
@@ -154,7 +154,8 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 <div class="wrap">
 
   <div class="topbar no-print">
-    <div class="brand">带训驾驶舱<small id="brandSub">新版看板原型</small></div>
+    <div class="brand">带训看板<small id="brandSub">新版原型</small></div>
+    <span id="scopeBadge" class="badge" style="display:none"></span>
     <span id="dataBadge" class="badge demo">加载中</span>
     <div class="spacer"></div>
     <select id="areaSel" class="btn"><option value="">全部区域</option></select>
@@ -179,7 +180,9 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 const SB_URL='https://ltjmbmgofjqeezoskqrc.supabase.co';
 const SB_KEY='sb_publishable_KrCOzlUPTcrb8S4-ajTjww_EhKibtaC';
 const AREA_NAMES={'000':'郭士龙区域','001':'李澳区域','002':'韩福亮区域','003':'王萌区域','004':'徐誌良区域','005':'郜一鸣区域','006':'李万玲区域','007':'江秀丽区域','666':'白高朋大区'};
-const areaName=id=>AREA_NAMES[String(id)]||String(id||'-');
+// 启动时会用 index.html 里的 AREA_CONFIG 覆盖这张表，保证区域名与生产系统完全一致
+let NAME_MAP={...AREA_NAMES};
+const areaName=id=>NAME_MAP[String(id)]||AREA_NAMES[String(id)]||String(id||'-');
 
 /* ---------- 基础日期 ---------- */
 function localDateStr(iso){
@@ -295,14 +298,29 @@ function rowToTrainee(row){
 
 /* ---------- 演示数据 ---------- */
 function makeDemoData(){
-  const stores=['太原01店','太原02店','太原03店','太原05店','太原08店','太原13店','太原19店','长治02店'];
+  // 演示数据覆盖 8 个小区，便于展示「大区视角」下的小区对比
+  const DEMO_STORES={
+    '000':['太原3店（北美新天地购物中心）','太原7店（康达时光里）','太原14店（铜锣湾国际购物中心）','太原15店（钟楼街）'],
+    '001':['太原1店（亲贤街）','太原2店（长风街）'],
+    '002':['太原5店（万象城）','太原6店（长兴路）'],
+    '003':['太原9店（迎泽大街）'],
+    '004':['太原11店（茂业天地）','太原12店（王府井）'],
+    '005':['长治1店（英雄中路）','长治2店（府后街）'],
+    '006':['长治3店（英雄南路）'],
+    '007':['太原18店（长风商务区）','太原19店（南中环）']
+  };
+  const AREA_POOL=Object.keys(DEMO_STORES);
   const masters=['王师傅','李师傅','张师傅','赵师傅','刘师傅'];
   const routes=['front_to_back','back_to_front','part_time'];
   const PT_SUBS=['front_part_time','back_part_time'];
   const td=today();
   const list=[];
-    for(let i=0;i<64;i++){
-      const route=routes[i%3];
+  const TOTAL=128;
+  for(let i=0;i<TOTAL;i++){
+    const area=AREA_POOL[i%AREA_POOL.length];
+    const storeList=DEMO_STORES[area];
+    const store=storeList[Math.floor(i/AREA_POOL.length)%storeList.length];
+    const route=routes[i%3];
       // 兼职路线必须带细分项，否则 getAllDays 返回 0 天 -> 会被误判成"已认证"且永远无法打卡
       const subRoute = route==='part_time' ? PT_SUBS[i%PT_SUBS.length] : '';
       const allDays=getAllDaysSafe(route,subRoute);
@@ -310,7 +328,7 @@ function makeDemoData(){
       if(!total) continue;
     const startDaysAgo=20+Math.floor(Math.random()*100);
     const sd=addDays(td,-startDaysAgo);
-    const maxDone=Math.max(0,Math.min(total-3, Math.floor(startDaysAgo/2)));
+    const maxDone=Math.max(0,Math.min(total,Math.floor(startDaysAgo/2)));
     const completed=Math.floor(Math.random()*(maxDone+1));
     const isoOf=ds=>new Date(ds+'T12:00:00').toISOString();
     const pg={};
@@ -354,12 +372,56 @@ function makeDemoData(){
       items[sl.idx]={checked:true,checkedAt:isoOf(ds)};
       pg[sl.key]={...prev,items};
     });
-    list.push({id:'demo-'+i,name:'学员'+(i+1),store:stores[i%stores.length],route,subRoute,
-      startDate:sd,master:masters[i%5],area:'000',note:'',empId:'D'+(10000+i),progress:pg,_updatedAt:Date.now()});
+    list.push({id:'demo-'+i,name:'学员'+(i+1),store,route,subRoute,
+      startDate:sd,master:masters[i%5],area,note:'',empId:'D'+(10000+i),progress:pg,_updatedAt:Date.now()});
   }
   const wh={};
   list.forEach(t=>{ wh[t.empId]={hours:Math.floor(Math.random()*560)}; });
   return {trainees:list,workHours:wh};
+}
+
+/* ---------- 账号与数据范围 ----------
+   与生产站点同源部署，直接复用登录态：
+   - 账号信息在 localStorage['training_tracker_user'] = {id, name, role}
+   - 组织架构 AREA_CONFIG 从同目录 index.html 正则提取（不再单独维护一份，避免与生产脱节）
+   - role='manager'（大区）→ 看 subAreas 下辖的全部小区
+   - role='area'（小区）  → 只看自己这一个小区
+   两个视角共用同一页面，靠账号自动区分，互不可见对方数据。
+*/
+let SCOPE=null;
+async function loadAreaConfig(){
+  try{
+    const res=await fetch('index.html',{cache:'no-store'});
+    const html=await res.text();
+    const m=html.match(/const AREA_CONFIG\s*=\s*(\[[\s\S]*?\n\s*\];)/);
+    if(!m) return null;
+    const arr=new Function('return '+m[1].replace(/;\s*$/,''))();
+    return Array.isArray(arr)&&arr.length?arr:null;
+  }catch(e){ return null; }
+}
+function readUser(){
+  try{ return JSON.parse(localStorage.getItem('training_tracker_user')||'null'); }catch(e){ return null; }
+}
+function resolveScope(user,cfgList){
+  if(!user) return {level:'all',label:'全部区域（未识别到登录账号）',subs:null,id:null};
+  const map={}; (cfgList||[]).forEach(c=>{ map[c.id]=c; });
+  const cfg=map[user.id]||{};
+  const clean=n=>String(n||'').replace(/大区带训追踪系统|区域带训追踪系统|带训追踪系统/g,'');
+  if(user.role==='manager'){
+    const subs=cfg.subAreas||[];
+    // 兜底：组织架构没读到（如 index.html 抓取失败）时不能把大区账号变成空白页
+    if(!subs.length) return {level:'all',label:clean(cfg.name||user.name)+'大区（未能读取下辖小区）',subs:null,id:user.id};
+    return {level:'manager',id:user.id,subs,label:clean(cfg.name||user.name)+'大区'};
+  }
+  return {level:'area',id:user.id,subs:null,label:clean(cfg.name||user.name)+'区域'};
+}
+function scopeFilter(rows,sc){
+  if(!sc||sc.level==='all') return rows;
+  if(sc.level==='manager'){
+    const subs=sc.subs||[];
+    return subs.length?rows.filter(t=>subs.includes(String(t.area||'000'))):[];
+  }
+  return rows.filter(t=>String(t.area||'000')===String(sc.id));
 }
 
 /* ---------- 数据加载 ---------- */
@@ -387,9 +449,14 @@ function buildBase(raw){
   const rows=(raw.trainees||[]).filter(t=>!isResigned(t)).map(t=>{
     const hours=t.empId&&raw.workHours[t.empId]?Number(raw.workHours[t.empId].hours)||0:null;
     const certAt=getCertifiedAt(t);
+    const certified=isCertified(t);
     return {
       ...t,_prog:calcProgress(t),_hours:hours,_warn:getWorkHoursWarning(t,hours),
-      _cert:isCertified(t),_certAt:certAt?localDateStr(certAt):'',_certMonth:isCertifiedThisMonth(t),
+      _cert:certified,
+      // _certAt 只对「已认证」的人有意义。以前把未认证者的最后完成日也写进来，
+      // 会导致历史回溯时把他误判成"那天已认证"而剔除出在训人群，人数与打卡率被算成 0。
+      _certAt: certified&&certAt?localDateStr(certAt):'',
+      _certMonth:isCertifiedThisMonth(t),
       _checked:checkedDatesOf(t),_completedDates:completedDatesOf(t),_cd:getCurrentDay(t)
     };
   });
@@ -416,9 +483,13 @@ function eachDay(start,end){
   while(d<=end && out.length<400){ out.push(d); d=addDays(d,1); }
   return out;
 }
-/* 某日仍在带训的人：未认证，或认证日期晚于该日 */
+/* 某日仍在带训的人：那天已入职，且那时还没完成全部带训（未认证，或认证日晚于该日） */
 function activeOn(rows,ds){
-  return rows.filter(t=> !t._certAt || t._certAt>ds );
+  return rows.filter(t=>{
+    if(t.startDate && t.startDate>ds) return false;
+    if(!t._cert) return true;
+    return !!t._certAt && t._certAt>ds;
+  });
 }
 
 /* ---------- 单日快照 ---------- */
@@ -451,10 +522,11 @@ function snapRange(base,start,end){
     if(r!==null){ rateSum+=r; dayCount++; }
     perDay.push({ds,rate:r,active:act.length,checked:ck});
   });
+  // 窗口内的在训人群：该窗口开始后才入职、且那时还没认证完
   const windowRows=rows.filter(t=>{
     if(t.startDate&&t.startDate>end) return false;
-    if(t._certAt&&t._certAt<start) return dayCount>0&&t._completedDates.size>0&& [...t._completedDates].some(d=>d>=start&&d<=end);
-    return true;
+    if(!t._cert) return true;
+    return !!t._certAt && t._certAt>=start;
   });
   const zeroCheck=windowRows.filter(t=> !days.some(d=>t._checked.has(d)));
   const everCheck=windowRows.filter(t=> days.some(d=>t._checked.has(d)));
@@ -851,6 +923,74 @@ function storeTable(stores){
   </table></div>`;
 }
 
+/* ---------- 小区维度（仅大区视角可见） ---------- */
+function areaStats(base,days){
+  const map={};
+  base.rows.forEach(t=>{
+    const k=String(t.area||'000');
+    if(!map[k]) map[k]={area:k,rateSum:0,n:0,zeroSet:new Set(),certN:0,warnN:0,doneN:0,rows:[]};
+    const s=map[k];
+    s.rows.push(t);
+    if(!days.some(d=>t._checked.has(d))) s.zeroSet.add(t.id);
+    if(days.length&&t._certAt&&t._certAt>=days[0]&&t._certAt<=days[days.length-1]) s.certN++;
+    if(t._warn) s.warnN++;
+    t._completedDates.forEach(d=>{ if(days.includes(d)) s.doneN++; });
+  });
+  const endDay=days[days.length-1]||base.today;
+  days.forEach(ds=>{
+    const byArea={};
+    activeOn(base.rows,ds).forEach(t=>{
+      const k=String(t.area||'000');
+      byArea[k]=byArea[k]||{a:0,c:0};
+      byArea[k].a++;
+      if(t._checked.has(ds)) byArea[k].c++;
+    });
+    Object.keys(byArea).forEach(k=>{
+      if(map[k]){ map[k].rateSum+=Math.round(byArea[k].c/byArea[k].a*100); map[k].n++; }
+    });
+  });
+  return Object.values(map).map(s=>({
+    area:s.area,areaLabel:areaName(s.area),
+    rate:s.n?Math.round(s.rateSum/s.n):100,
+    zeroN:s.zeroSet.size,
+    activeN:activeOn(s.rows,endDay).length,
+    certN:s.certN,warnN:s.warnN,doneN:s.doneN
+  })).sort((a,b)=>a.rate-b.rate);
+}
+function areaBlock(days){
+  // 小区账号看不到这一层；大区账号在没锁定单个小区时才显示
+  if(!SCOPE||SCOPE.level!=='manager') return '';
+  const picked=document.getElementById('areaSel')?.value||'';
+  if(picked) return '';
+  const st=areaStats(BASE,days);
+  if(st.length<2) return '';
+  return `
+  <div class="sec">
+    <div class="sec-h"><h2>小区对比</h2><span class="hint">大区下辖各小区横向排名 · 按打卡率升序，最需要盯的在最上面</span></div>
+    <div class="panel"><div class="tbl-wrap"><table>
+      <thead><tr><th>小区</th><th>打卡率</th><th class="n">在训</th><th class="n">零打卡</th><th class="n">完成带训日</th><th class="n">工时超标</th><th class="n">认证</th></tr></thead>
+      <tbody>${st.map(s=>`
+        <tr>
+          <td style="font-weight:500">${esc(s.areaLabel)}</td>
+          <td><div class="bar-cell"><span style="color:${rateStyle(s.rate)};font-variant-numeric:tabular-nums">${s.rate}%</span>
+            <div class="bar-sm"><i style="width:${s.rate}%;background:${rateStyle(s.rate)}"></i></div></div></td>
+          <td class="n">${s.activeN}</td>
+          <td class="n" style="color:${s.zeroN?'var(--red)':'var(--txt3)'}">${s.zeroN||'-'}</td>
+          <td class="n">${s.doneN||'-'}</td>
+          <td class="n" style="color:${s.warnN?'var(--amber)':'var(--txt3)'}">${s.warnN||'-'}</td>
+          <td class="n" style="color:${s.certN?'var(--emerald)':'var(--txt3)'}">${s.certN||'-'}</td>
+        </tr>`).join('')}</tbody>
+    </table></div></div>
+  </div>`;
+}
+/* 当前视图对应的时间区间（供小区维度使用） */
+function viewDays(){
+  if(MODE==='day') return [SEL];
+  if(MODE==='week'){ const w=weekWindow(WEEK_OFF); return eachDay(w.start,w.end).filter(d=>d<=BASE.today); }
+  const m=monthWindow(MONTH_OFF);
+  return eachDay(m.start,m.end).filter(d=>d<=BASE.today);
+}
+
 /* ---------- 总渲染 ---------- */
 function refresh(){
   if(!BASE) return;
@@ -858,7 +998,7 @@ function refresh(){
   const hm=`<div class="warnnote no-print">历史视图中的<b>「工时」一律是当前累计值</b>（库里没有每日工时快照，无法还原历史某天的工时）；打卡、完成带训日、认证三项均带时间戳，可精确回溯。</div>`;
   const body = MODE==='day'?viewDay():(MODE==='week'?viewWeek():viewMonth());
   const el=document.getElementById('root');
-  el.innerHTML=warn+hm+body;
+  el.innerHTML=warn+hm+body+areaBlock(viewDays());
   el.dataset.rendered='1';
   VIEW={mode:MODE};
 }
@@ -935,15 +1075,44 @@ window.addEventListener('unhandledrejection',e=>{
 });
 
 (async function init(){
+  // 先定身份，再拉数据：账号决定能看到哪些小区/门店
+  const cfgList=await loadAreaConfig();
+  SCOPE=resolveScope(readUser(),cfgList);
+  if(cfgList){
+    cfgList.forEach(c=>{
+      NAME_MAP[c.id]=String(c.name||'').replace(/大区带训追踪系统|区域带训追踪系统|带训追踪系统/g,'')+(c.role==='manager'?'大区':'区域');
+    });
+  }
+
   const raw=await loadData();
+  if(raw.trainees) raw.trainees=scopeFilter(raw.trainees,SCOPE);
   BASE=buildBase(raw);
+
   document.getElementById('dataBadge').className='badge '+(BASE.real?'live':'demo');
   document.getElementById('dataBadge').textContent=BASE.real?'真实数据':'演示数据';
-  document.getElementById('brandSub').textContent='新版看板原型 · '+(BASE.real?'已连接生产库':'离线演示');
+  document.getElementById('brandSub').textContent=BASE.real?'已连接生产库':'离线演示';
 
-  const areas=[...new Set(BASE.rows.map(t=>String(t.area)))].sort();
+  // 视角标记：大区 / 本小区（两个视角共用同一页面，靠账号自动区分）
+  const sb=document.getElementById('scopeBadge');
+  sb.style.display='inline-block';
+  if(SCOPE.level==='manager'){
+    sb.style.cssText='color:#7fb2f0;border-color:rgba(56,168,240,.4);background:rgba(56,168,240,.12)';
+    sb.textContent='大区视角 · '+SCOPE.label+'（下辖 '+(SCOPE.subs||[]).length+' 个小区）';
+  }else if(SCOPE.level==='area'){
+    sb.style.cssText='color:#22c98a;border-color:rgba(34,201,138,.4);background:rgba(34,201,138,.12)';
+    sb.textContent='本小区视角 · '+SCOPE.label;
+  }else{
+    sb.style.cssText='color:#f0a92a;border-color:rgba(240,169,42,.4);background:rgba(240,169,42,.12)';
+    sb.textContent='未识别登录账号 · 暂时显示全部';
+  }
+
   const aSel=document.getElementById('areaSel');
-  areas.forEach(a=>{ const o=document.createElement('option'); o.value=a; o.textContent=areaName(a); aSel.appendChild(o); });
+  if(SCOPE.level==='manager'){
+    (SCOPE.subs||[]).forEach(a=>{ const o=document.createElement('option'); o.value=a; o.textContent=areaName(a); aSel.appendChild(o); });
+  }else{
+    // 小区账号只管辖一个小区，小区下拉无意义，隐藏掉
+    aSel.style.display='none';
+  }
   const stores=[...new Set(BASE.rows.map(t=>t.store).filter(Boolean))].sort();
   const sSel=document.getElementById('storeSel');
   stores.forEach(s=>{ const o=document.createElement('option'); o.value=s; o.textContent=s; sSel.appendChild(o); });

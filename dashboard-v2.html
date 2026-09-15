@@ -180,6 +180,51 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   td{border-color:#e8ebf1}
   .cal .cell{outline:1px solid #e3e6ee}
 }
+/* ---------- 人名可点击下钻 ---------- */
+.nm.tlink{cursor:pointer;transition:.12s}
+.nm.tlink:hover{color:var(--sky);text-decoration:underline}
+td.tlink{cursor:pointer}
+td.tlink:hover{color:var(--sky)}
+
+/* ---------- 徒弟详情弹层 ---------- */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.62);display:none;z-index:60;align-items:flex-start;justify-content:center;padding:40px 16px;backdrop-filter:blur(2px)}
+.modal.open{display:flex}
+.modal-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:min(680px,100%);max-height:calc(100vh - 80px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line)}
+.modal-title{font-size:15px;font-weight:600}
+.modal-body{padding:16px;overflow:auto}
+.tk-info{margin-bottom:4px}
+.tk-name{font-size:18px;font-weight:600;display:flex;align-items:center;gap:8px}
+.tk-meta{font-size:12px;color:var(--txt2);margin-top:3px}
+.tk-banner{margin:12px 0;padding:11px 13px;border-radius:10px;font-size:13px;line-height:1.6}
+.tk-banner.red{background:rgba(240,82,82,.12);border:1px solid rgba(240,82,82,.4);color:#ffb4b4}
+.tk-banner.amber{background:rgba(240,169,42,.12);border:1px solid rgba(240,169,42,.4);color:#f6d28a}
+.tk-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:14px 0 10px}
+.tk-stat{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center}
+.tk-v{font-size:19px;font-weight:600;font-variant-numeric:tabular-nums}
+.tk-l{font-size:11px;color:var(--txt3);margin-top:2px}
+.tk-bar{height:7px;background:var(--panel2);border-radius:6px;overflow:hidden;margin-bottom:14px}
+.tk-bar i{display:block;height:100%;background:linear-gradient(90deg,var(--indigo),var(--emerald))}
+.tk-tl-title{font-size:13px;color:var(--txt2);margin-bottom:8px}
+.tk-tl{display:flex;flex-direction:column}
+.tl-row{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.tl-dot{width:9px;height:9px;border-radius:50%;margin-top:6px;flex-shrink:0;background:var(--txt3)}
+.tl-done .tl-dot{background:var(--emerald)}
+.tl-delay .tl-dot{background:var(--amber)}
+.tl-rest .tl-dot{background:#5f6580}
+.tl-part .tl-dot{background:var(--sky)}
+.tl-miss .tl-dot{background:var(--red)}
+.tl-main{flex:1;min-width:0}
+.tl-title{font-size:13px}
+.tl-sub{font-size:12px;color:var(--txt3);margin-top:1px;white-space:normal;word-break:break-word}
+.tl-st{flex-shrink:0;font-size:12px;padding:2px 9px;border-radius:20px;background:var(--panel2);color:var(--txt2)}
+.tl-st-done{color:var(--emerald);background:rgba(34,201,138,.12)}
+.tl-st-delay{color:var(--amber);background:rgba(240,169,42,.12)}
+.tl-st-rest{color:var(--txt2)}
+.tl-st-part{color:var(--sky);background:rgba(56,168,240,.12)}
+.tl-st-miss{color:var(--red);background:rgba(240,82,82,.12)}
+.tl-row.todo{opacity:.5}
+
 </style>
 </head>
 <body>
@@ -199,6 +244,12 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 
   <div id="ctrlbar" class="ctrlbar no-print"></div>
   <div id="root"><div class="loading">正在读取数据…</div></div>
+  <div id="traineeModal" class="modal" onclick="if(event.target===this)closeTrainee()">
+    <div class="modal-card">
+      <div class="modal-head"><div id="tmTitle" class="modal-title">带训详情</div><button class="btn sm" onclick="closeTrainee()">✕ 关闭</button></div>
+      <div id="tmBody" class="modal-body"></div>
+    </div>
+  </div>
 
 </div>
 
@@ -312,6 +363,17 @@ function getWorkHoursWarning(t,hours){
   if(hours>th) return {limit,threshold:th,hours:Number(hours),remaining:Math.max(0,limit-hours),isPartTime:isPartTime(t)};
   return null;
 }
+/* 假带训检测：打卡活跃但几乎没完成带训日（"人到了、卡打了、实际没在学"） */
+function fakeRisk(t){
+  if(!t||t._resigned||t._cert) return {level:null,checked:0,completed:0};
+  const checked=t._checked.size, completed=t._prog.completed;
+  if(checked<7) return {level:null,checked,completed};   // 入职不足 7 个打卡日，样本太少不判
+  let level=null;
+  if(completed===0) level='red';
+  else if(completed<=1) level='amber';
+  return level?{level,checked,completed}:{level:null,checked,completed};
+}
+
 function calcNoCheckInStreak(t,refDay){
   // 起点不早于「系统启用日」，也不早于入职日：
   // 否则系统上线之前的那段空白会被误算成"连续未打卡"，出现 101 天这种假信号。
@@ -787,6 +849,60 @@ function toggleMasterMore(btn){
   btn.setAttribute('data-open',open?'0':'1');
   btn.textContent=open?('点击展开显示剩余 '+more.length+' 位'):('收起（只显示前 '+MASTER_TOP+' 位）');
 }
+
+/* ---------- 徒弟单人下钻（点人名看完整带训轨迹） ---------- */
+let TRAINEES={};
+function rebuildTraineeIndex(){ TRAINEES={}; (BASE?BASE.rows:[]).forEach(t=>{ if(t&&t.id!=null) TRAINEES[t.id]=t; }); }
+function openTrainee(id){
+  const t=TRAINEES[id]; if(!t) return;
+  const body=document.getElementById('tmBody'); if(body) body.innerHTML=renderTrainee(t);
+  const tt=document.getElementById('tmTitle'); if(tt) tt.innerHTML=esc(t.name)+' 的带训详情';
+  const m=document.getElementById('traineeModal'); if(m) m.classList.add('open');
+  if(document.body) document.body.style.overflow='hidden';
+}
+function closeTrainee(){
+  const m=document.getElementById('traineeModal'); if(m) m.classList.remove('open');
+  if(document.body) document.body.style.overflow='';
+}
+function renderTrainee(t){
+  const allDays=getAllDaysSafe(t.route,t.subRoute);
+  const routeName=(typeof getRouteName==='function')?getRouteName(t.route,t.subRoute):t.route;
+  const fk=fakeRisk(t);
+  let delayN=0; Object.values(t.progress||{}).forEach(d=>{ if(!d||d._meta) return; if(Array.isArray(d.delayDates)) delayN+=d.delayDates.length; else if(d.delayed) delayN++; });
+  const fkBanner=fk.level?`<div class="tk-banner ${fk.level}"><b>⚠ 疑似假带训</b>：已打卡 ${fk.checked} 天，但仅完成 ${fk.completed} 个带训日。可能存在"人到了、卡打了，实际没在学"的情况，建议核查实际带训产出。</div>`:'';
+  const tl=allDays.length?allDays.map(d=>{
+    const pg=t.progress[d.key]||{};
+    let st='待开始', cls='todo', note='';
+    if(pg.completed){ st='完成'; cls='done'; if(pg.completedAt) note='完成于 '+localDateStr(pg.completedAt); }
+    else if(Array.isArray(pg.delayDates)&&pg.delayDates.length){ st='延迟'; cls='delay'; const ds=pg.delayDates[pg.delayDates.length-1]; note=(pg.delayNotes&&pg.delayNotes[ds])||pg.delayNote||'未填原因'; }
+    else if(Array.isArray(pg.restDates)&&pg.restDates.length){ st='休息'; cls='rest'; }
+    else if(pg.items&&Object.values(pg.items).some(it=>it&&it.checked)){ st='打卡未完训'; cls='part'; }
+    else { st='未打卡'; cls='miss'; }
+    return `<div class="tl-row tl-${cls}">
+      <div class="tl-dot"></div>
+      <div class="tl-main"><div class="tl-title">${esc(d.monthName||'')} ${esc(d.phaseName||'')} · 第 ${esc(d.day)} 天</div><div class="tl-sub">${esc(note)}</div></div>
+      <div class="tl-st tl-st-${cls}">${st}</div>
+    </div>`;
+  }).join(''):'<div class="empty">该路线暂无带训日定义</div>';
+  const warn=fk.level?`<span class="pill" style="background:rgba(240,82,82,.18);color:var(--red)">疑似假带训</span>`:'';
+  return `
+  <div class="tk-info">
+    <div class="tk-name">${esc(t.name)} ${warn}</div>
+    <div class="tk-meta">${esc(routeName)} · ${isPartTime(t)?'兼职':'全职'} · 师傅 ${esc(t.master||'无')} · ${esc(t.store||'')} · 入职 ${esc(t.startDate||'—')}</div>
+    <div class="tk-meta">状态：${t._cert?('已认证'+(t._certAt?' '+t._certAt:'')):(t._resigned?'已离职':'带训中')} · 区域 ${esc(areaName(t.area))}</div>
+  </div>
+  ${fkBanner}
+  <div class="tk-stats">
+    <div class="tk-stat"><div class="tk-v">${t._prog.percent}%</div><div class="tk-l">带训进度</div></div>
+    <div class="tk-stat"><div class="tk-v">${t._prog.completed}/${t._prog.total}</div><div class="tk-l">完成带训日</div></div>
+    <div class="tk-stat"><div class="tk-v" style="color:var(--sky)">${t._checked.size}</div><div class="tk-l">打卡天数</div></div>
+    <div class="tk-stat"><div class="tk-v" style="color:var(--amber)">${delayN}</div><div class="tk-l">延迟次数</div></div>
+    <div class="tk-stat"><div class="tk-v">${t._hours==null?'—':t._hours+'h'}</div><div class="tk-l">累计工时</div></div>
+  </div>
+  <div class="tk-bar"><i style="width:${t._prog.percent}%"></i></div>
+  <div class="tk-tl-title">带训时间线（共 ${allDays.length} 天）</div>
+  <div class="tk-tl">${tl}</div>`;
+}
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function rateStyle(r){ return r>=90?'var(--emerald)':r>=70?'var(--amber)':'var(--red)'; }
 function heatColor(r){
@@ -904,7 +1020,7 @@ function viewDay(){
         ${s.unchecked.length?`<div class="plist">${s.unchecked.slice(0,20).map(t=>`
           <div class="prow" style="--c:var(--red)">
             <div class="av" style="color:var(--red)">${esc(t.name.slice(0,1))}</div>
-            <div class="info"><div class="nm">${esc(t.name)}</div><div class="meta">${esc(t.store)} · ${esc(t.master||'无师傅')}</div></div>
+            <div class="info"><div class="nm tlink" onclick="openTrainee('${t.id}')">${esc(t.name)}</div><div class="meta">${esc(t.store)} · ${esc(t.master||'无师傅')}</div></div>
             <div class="tag" style="background:rgba(240,82,82,.15);color:var(--red)">进度 ${t._prog.percent}%</div>
           </div>`).join('')}</div>`:'<div class="empty">全员已打卡</div>'}
       </div>
@@ -913,7 +1029,7 @@ function viewDay(){
         ${streakList.length?`<div class="plist">${streakList.slice(0,20).map(x=>`
           <div class="prow" style="--c:var(--amber)">
             <div class="av" style="color:var(--amber)">${esc(x.t.name.slice(0,1))}</div>
-            <div class="info"><div class="nm">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · 距今 ${x.st.days} 天</div></div>
+            <div class="info"><div class="nm tlink" onclick="openTrainee('${x.t.id}')">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · 距今 ${x.st.days} 天</div></div>
             <div class="tag" style="background:rgba(240,169,42,.15);color:var(--amber)">${x.st.days>=9999?'从未打卡':x.st.days+'天'}</div>
           </div>`).join('')}</div>`:'<div class="empty">没有长期停滞的学员</div>'}
       </div>
@@ -928,7 +1044,7 @@ function viewDay(){
         ${miniList(dd.checked,'不在','当天还没有人勾选学习项',x=>`
           <div class="prow" style="--c:var(--sky)">
             <div class="av" style="color:var(--sky)">${esc(x.t.name.slice(0,1))}</div>
-            <div class="info"><div class="nm">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · ${esc(x.t.master||'无师傅')}</div></div>
+            <div class="info"><div class="nm tlink" onclick="openTrainee('${x.t.id}')">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · ${esc(x.t.master||'无师傅')}</div></div>
             <div class="tag" style="background:rgba(56,168,240,.15);color:var(--sky)">勾了 ${x.n} 项</div>
           </div>`)}
       </div>
@@ -937,7 +1053,7 @@ function viewDay(){
         ${miniList(dd.done,'不在','当天还没有人完成整天带训',x=>`
           <div class="prow" style="--c:var(--emerald)">
             <div class="av" style="color:var(--emerald)">${esc(x.t.name.slice(0,1))}</div>
-            <div class="info"><div class="nm">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · ${x.info?`${esc(x.info.monthName||'')}${esc(x.info.phaseName||'')} 第${x.info.day}天`:'—'}</div></div>
+            <div class="info"><div class="nm tlink" onclick="openTrainee('${x.t.id}')">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · ${x.info?`${esc(x.info.monthName||'')}${esc(x.info.phaseName||'')} 第${x.info.day}天`:'—'}</div></div>
             <div class="tag" style="background:rgba(34,201,138,.15);color:var(--emerald)">已完成</div>
           </div>`)}
       </div>
@@ -946,7 +1062,7 @@ function viewDay(){
         ${miniList(dd.cert,'不在','当天没有人认证通过',x=>`
           <div class="prow" style="--c:var(--purple)">
             <div class="av" style="color:var(--purple)">${esc(x.t.name.slice(0,1))}</div>
-            <div class="info"><div class="nm">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · ${esc(typeof getRouteName==='function'?getRouteName(x.t.route,x.t.subRoute):x.t.route)}</div></div>
+            <div class="info"><div class="nm tlink" onclick="openTrainee('${x.t.id}')">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · ${esc(typeof getRouteName==='function'?getRouteName(x.t.route,x.t.subRoute):x.t.route)}</div></div>
             <div class="tag" style="background:rgba(155,124,240,.15);color:var(--purple)">认证</div>
           </div>`)}
       </div>
@@ -956,7 +1072,7 @@ function viewDay(){
           <details class="dx">
             <summary class="prow" style="--c:var(--amber)">
               <div class="av" style="color:var(--amber)">${esc(x.t.name.slice(0,1))}</div>
-              <div class="info"><div class="nm">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · ${esc(x.t.master||'无师傅')}</div></div>
+              <div class="info"><div class="nm tlink" onclick="openTrainee('${x.t.id}')">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · ${esc(x.t.master||'无师傅')}</div></div>
               <div class="tag" style="background:rgba(240,169,42,.15);color:var(--amber)">延迟</div>
             </summary>
             <div class="dxb">
@@ -972,7 +1088,7 @@ function viewDay(){
         ${miniList(dd.rest,'不在','当天没有人休息',x=>`
           <div class="prow" style="--c:#4a5068">
             <div class="av">${esc(x.t.name.slice(0,1))}</div>
-            <div class="info"><div class="nm">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · ${esc(x.t.master||'无师傅')}</div></div>
+            <div class="info"><div class="nm tlink" onclick="openTrainee('${x.t.id}')">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · ${esc(x.t.master||'无师傅')}</div></div>
             <div class="tag" style="background:rgba(255,255,255,.08);color:var(--txt2)">休息</div>
           </div>`)}
       </div>
@@ -1064,7 +1180,7 @@ function viewWeek(){
     <div class="panel"><div class="plist">${cur.zero.slice(0,20).map(t=>`
       <div class="prow" style="--c:var(--red)">
         <div class="av" style="color:var(--red)">${esc(t.name.slice(0,1))}</div>
-        <div class="info"><div class="nm">${esc(t.name)}</div><div class="meta">${esc(t.store)} · ${esc(t.master||'无师傅')} · 进度 ${t._prog.percent}%</div></div>
+        <div class="info"><div class="nm tlink" onclick="openTrainee('${t.id}')">${esc(t.name)}</div><div class="meta">${esc(t.store)} · ${esc(t.master||'无师傅')} · 进度 ${t._prog.percent}%</div></div>
         <div class="tag" style="background:rgba(240,82,82,.15);color:var(--red)">${cur.days.length}天零打卡</div>
       </div>`).join('')}</div></div>
   </div>`:''}
@@ -1105,6 +1221,7 @@ function viewMonth(){
   const dl=delayList(rows,curRange.start,curRange.end);
   const rl=restList(rows,curRange.start,curRange.end);
   const pb=progressBuckets(rows);
+  const fakes=rows.filter(t=>!t._resigned&&!t._cert&&fakeRisk(t).level).map(t=>({t,fk:fakeRisk(t)}));
   const delayTotalN=dl.reduce((a,x)=>a+x.n,0);
 
   const cal=monthCal(curRange,m0);
@@ -1157,6 +1274,7 @@ function viewMonth(){
           <div>全月零打卡：<b style="color:var(--red)">${curRange.zeroN}</b> 人${curRange.zeroN?'（'+esc(curRange.zero.slice(0,5).map(t=>t.name).join('、'))+(curRange.zeroN>5?' 等':'')+'）':''}</div>
           <div>本月认证晋升：<b style="color:var(--emerald)">${curRange.certN}</b> 人${curRange.certN?'（'+esc(curRange.certList.slice(0,5).map(t=>t.name).join('、'))+(curRange.certN>5?' 等':'')+'）':''}</div>
           <div>工时超阈值（当前值）：<b style="color:var(--amber)">${curRange.warnN}</b> 人</div>
+          <div>疑似假带训：<b style="color:var(--red)">${fakes.length}</b> 人${fakes.length?'（'+esc(fakes.slice(0,5).map(x=>x.t.name).join('、'))+(fakes.length>5?' 等':'')+'）':''}</div>
         </div>
       </div>
     </div>
@@ -1169,7 +1287,7 @@ function viewMonth(){
         <thead><tr><th>学员</th><th>门店</th><th>师傅</th><th class="n">延迟次数</th><th>每次延迟的日期与原因</th></tr></thead>
         <tbody>${dl.map((x,i)=>`
           <tr class="${i>=DELAY_TOP?'dl-more':''}"${i>=DELAY_TOP?' style="display:none"':''}>
-            <td style="font-weight:500">${esc(x.t.name)}</td>
+            <td style="font-weight:500" class="tlink" onclick="openTrainee('${x.t.id}')">${esc(x.t.name)}</td>
             <td>${esc(x.t.store)}</td>
             <td style="color:var(--txt3)">${esc(x.t.master||'-')}</td>
             <td class="n" style="color:var(--amber);font-weight:600">${x.n}</td>
@@ -1187,13 +1305,25 @@ function viewMonth(){
   </div>
 
   <div class="sec">
+    <div class="sec-h"><h2>疑似假带训（高打卡 · 零进度）</h2><span class="hint">打卡 ≥7 天但完成带训日 ≤1，建议核查实际产出</span></div>
+    <div class="panel">
+      ${fakes.length?`<div class="plist">${fakes.map(({t,fk})=>`
+        <div class="prow" style="--c:var(--red)">
+          <div class="av" style="color:var(--red)">${esc(t.name.slice(0,1))}</div>
+          <div class="info"><div class="nm tlink" onclick="openTrainee('${t.id}')">${esc(t.name)}</div><div class="meta">${esc(t.store)} · 打卡 ${fk.checked} 天 / 完成 ${fk.completed} 天</div></div>
+          <div class="tag" style="background:rgba(240,82,82,.15);color:var(--red)">${fk.level==='red'?'零进度':'低进度'}</div>
+        </div>`).join('')}</div>`:'<div class="empty">没有发现假带训嫌疑，带训状态健康 👍</div>'}
+    </div>
+  </div>
+
+  <div class="sec">
     <div class="grid g2">
       <div class="panel">
         <div class="panel-h"><h3>本月休息名单</h3><span class="cnt">${rl.length} 人</span></div>
         ${rl.length?`<div class="plist">${rl.slice(0,15).map(x=>`
           <div class="prow" style="--c:#4a5068">
             <div class="av">${esc(x.t.name.slice(0,1))}</div>
-            <div class="info"><div class="nm">${esc(x.t.name)}</div>
+            <div class="info"><div class="nm tlink" onclick="openTrainee('${x.t.id}')">${esc(x.t.name)}</div>
               <div class="meta">${esc(x.t.store)} · ${x.dates.map(d=>d.slice(5)).join('、')}</div></div>
             <div class="tag" style="background:rgba(255,255,255,.08);color:var(--txt2)">休 ${x.n} 次</div>
           </div>`).join('')}</div>${rl.length>15?`<div class="empty" style="padding:8px 0">还有 ${rl.length-15} 人未显示</div>`:''}
@@ -1581,6 +1711,7 @@ window.addEventListener('unhandledrejection',e=>{
   const raw=await loadData();
   if(raw.trainees) raw.trainees=scopeFilter(raw.trainees,SCOPE);
   BASE=buildBase(raw);
+  rebuildTraineeIndex();
 
   document.getElementById('dataBadge').className='badge '+(BASE.real?'live':'demo');
   document.getElementById('dataBadge').textContent=BASE.real?'真实数据':'演示数据';

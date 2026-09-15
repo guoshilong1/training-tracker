@@ -19,7 +19,7 @@ body{background:var(--bg);color:var(--txt);font-family:"PingFang SC","Microsoft 
 .wrap{max-width:1440px;margin:0 auto;padding:16px}
 
 /* ---------- 顶栏 ---------- */
-.topbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 0 18px;border-bottom:1px solid var(--line);margin-bottom:18px}
+.topbar{display:flex;align-items:center;gap:11px;flex-wrap:wrap;padding:14px 0 18px;border-bottom:1px solid var(--line);margin-bottom:18px}
 .brand{font-size:17px;font-weight:600;letter-spacing:.5px}
 .brand small{display:block;font-size:11px;color:var(--txt3);font-weight:400;letter-spacing:0}
 .badge{padding:3px 9px;border-radius:20px;font-size:11px;border:1px solid}
@@ -30,11 +30,22 @@ body{background:var(--bg);color:var(--txt);font-family:"PingFang SC","Microsoft 
 .btn:hover{border-color:#3a4055;background:#222636}
 .btn.pri{background:var(--indigo);border-color:var(--indigo);color:#fff}
 .btn.pri:hover{background:#4a5ae8}
+.btn.sm{padding:5px 9px;font-size:12px}
 select.btn{padding-right:26px;appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M1 1l4 4 4-4' stroke='%239096ad' fill='none'/></svg>");background-repeat:no-repeat;background-position:right 9px center}
+input[type=date]{background:var(--panel2);border:1px solid var(--line);color:var(--txt);padding:6px 10px;border-radius:8px;font-family:inherit;font-size:13px;color-scheme:dark}
+
+/* ---------- 模式切换 ---------- */
+.tabs{display:flex;gap:3px;background:var(--panel2);padding:3px;border-radius:10px}
+.tab{padding:6px 15px;border-radius:8px;font-size:13px;cursor:pointer;color:var(--txt2);border:0;background:transparent;font-family:inherit;transition:.15s}
+.tab:hover{color:var(--txt)}
+.tab.on{background:var(--indigo);color:#fff}
+.ctrlbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 14px;margin-bottom:16px}
+.ctrlbar .lb{font-size:12px;color:var(--txt3)}
+.navgrp{display:flex;align-items:center;gap:6px}
 
 /* ---------- 区块 ---------- */
 .sec{margin-bottom:22px}
-.sec-h{display:flex;align-items:baseline;gap:10px;margin-bottom:11px}
+.sec-h{display:flex;align-items:baseline;gap:10px;margin-bottom:11px;flex-wrap:wrap}
 .sec-h h2{font-size:14px;font-weight:600}
 .sec-h .hint{font-size:12px;color:var(--txt3)}
 .grid{display:grid;gap:12px}
@@ -42,7 +53,7 @@ select.btn{padding-right:26px;appearance:none;background-image:url("data:image/s
 .g3{grid-template-columns:repeat(3,1fr)}
 .g2{grid-template-columns:repeat(2,1fr)}
 
-/* ---------- KPI 卡 ---------- */
+/* ---------- KPI ---------- */
 .kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px 16px;position:relative;overflow:hidden}
 .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent,var(--indigo))}
 .kpi .lb{font-size:12px;color:var(--txt2)}
@@ -50,9 +61,8 @@ select.btn{padding-right:26px;appearance:none;background-image:url("data:image/s
 .kpi .sub{font-size:11.5px;color:var(--txt3)}
 .kpi .sub b{font-weight:500}
 
-/* ---------- 通用面板 ---------- */
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px 16px}
-.panel-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.panel-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:10px}
 .panel-h h3{font-size:13px;font-weight:600}
 .cnt{font-size:11px;padding:2px 8px;border-radius:20px;background:var(--panel2);color:var(--txt2)}
 
@@ -66,19 +76,20 @@ select.btn{padding-right:26px;appearance:none;background-image:url("data:image/s
 .prow .tag{font-size:11px;padding:2px 8px;border-radius:6px;white-space:nowrap;flex-shrink:0}
 .empty{padding:22px 10px;text-align:center;color:var(--txt3);font-size:12.5px}
 
-/* ---------- 趋势图 ---------- */
+/* ---------- 趋势 ---------- */
 .spark{display:flex;align-items:flex-end;gap:3px;height:120px;padding-top:8px}
 .spark .bar{flex:1;border-radius:3px 3px 0 0;min-height:3px;position:relative;background:var(--indigo);opacity:.85;transition:.15s}
 .spark .bar:hover{opacity:1}
 .spark .bar.zero{background:#333849}
 .axis{display:flex;justify-content:space-between;font-size:10.5px;color:var(--txt3);margin-top:6px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--txt3);margin-top:10px}
+.legend span{display:flex;align-items:center;gap:5px}
+.dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px}
 
 /* ---------- 门店榜 ---------- */
 .rowe{display:flex;align-items:center;gap:11px;padding:9px 0;border-bottom:1px solid rgba(38,42,56,.6)}
 .rowe:last-child{border-bottom:0}
 .rank{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0;background:rgba(255,255,255,.06);color:var(--txt2)}
-.rank.top{background:rgba(34,201,138,.16);color:var(--emerald)}
-.rank.bot{background:rgba(240,82,82,.16);color:var(--red)}
 .rowe .nm{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mini{flex:0 0 84px;height:6px;border-radius:3px;background:#242835;overflow:hidden}
 .mini i{display:block;height:100%;border-radius:3px}
@@ -96,13 +107,17 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .bar-sm{flex:1;height:5px;border-radius:3px;background:#242835;overflow:hidden;min-width:36px}
 .bar-sm i{display:block;height:100%;border-radius:3px}
 .pill{display:inline-block;padding:1.5px 7px;border-radius:5px;font-size:11px;white-space:nowrap}
+.cur-row{background:rgba(91,108,255,.08)}
+.cur-row td{border-bottom-color:rgba(91,108,255,.2)}
 
-/* ---------- 其他 ---------- */
-.loading{padding:60px;text-align:center;color:var(--txt3)}
-.dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px}
-.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--txt3);margin-top:10px}
-.legend span{display:flex;align-items:center;gap:5px}
+/* ---------- 月历热力图 ---------- */
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+.cal .hd{text-align:center;font-size:11px;color:var(--txt3);padding-bottom:3px}
+.cal .cell{aspect-ratio:1/1;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;position:relative;min-height:38px}
+.cal .cell.out{background:transparent;color:#31364a}
+.cal .cell .pc-t{font-size:11px;font-weight:500}
 .note{background:rgba(91,108,255,.08);border:1px solid rgba(91,108,255,.25);border-radius:9px;padding:10px 13px;font-size:12px;color:#b9c0e8;margin-bottom:16px}
+.warnnote{background:rgba(240,169,42,.08);border:1px solid rgba(240,169,42,.28);border-radius:9px;padding:9px 13px;font-size:12px;color:#e8c98a;margin-bottom:16px}
 
 @media(max-width:980px){
   .g4{grid-template-columns:repeat(2,1fr)}
@@ -114,11 +129,10 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   .kpi{padding:12px}
   .kpi .vl{font-size:24px}
   .brand small{display:none}
-  .desktop-only{display:none}
   .sec-h .hint{display:none}
+  .tab{padding:6px 11px;font-size:12px}
+  .cal .cell{min-height:32px;font-size:10px}
 }
-@media(min-width:641px){ .mobile-only{display:none} }
-
 @media print{
   body{background:#fff;color:#000}
   .no-print{display:none!important}
@@ -128,11 +142,11 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   .prow{background:#f5f6f9;border-left-color:#999}
   .rowe{border-bottom-color:#e3e6ee}
   .rank,.pill{background:#eee}
-  .bar-sm i,.mini i{filter:saturate(1.4)}
   .spark .bar{background:#4a5ae8!important}
   table{border:1px solid #d5d9e2}
   th{background:#f0f2f6;border-color:#d5d9e2}
   td{border-color:#e8ebf1}
+  .cal .cell{outline:1px solid #e3e6ee}
 }
 </style>
 </head>
@@ -150,46 +164,46 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
     <button class="btn pri" onclick="exportXlsx()">导出 xlsx</button>
   </div>
 
-  <div id="root">
-    <div class="loading">正在读取数据…</div>
-  </div>
+  <div id="ctrlbar" class="ctrlbar no-print"></div>
+  <div id="root"><div class="loading">正在读取数据…</div></div>
 
 </div>
 
 <script>
 /* ==================================================================
-   带训驾驶舱 v2 原型
-   数据：直连 Supabase（沿用生产同域名登录态），无登录态时降级为演示数据
-   口径：与生产 index.html 完全一致（复制自其工具函数，逐行对齐）
+   带训驾驶舱 v2 —— 日 / 周 / 月 三维度 + 任意日期回溯
+   数据：Supabase（复用生产同域名登录态），无登录态降级演示数据
+   口径：工具函数与生产 index.html 逐行对齐
    ================================================================== */
 
-const SB_URL = 'https://ltjmbmgofjqeezoskqrc.supabase.co';
-const SB_KEY = 'sb_publishable_KrCOzlUPTcrb8S4-ajTjww_EhKibtaC';
+const SB_URL='https://ltjmbmgofjqeezoskqrc.supabase.co';
+const SB_KEY='sb_publishable_KrCOzlUPTcrb8S4-ajTjww_EhKibtaC';
+const AREA_NAMES={'000':'郭士龙区域','001':'李澳区域','002':'韩福亮区域','003':'王萌区域','004':'徐誌良区域','005':'郜一鸣区域','006':'李万玲区域','007':'江秀丽区域','666':'白高朋大区'};
+const areaName=id=>AREA_NAMES[String(id)]||String(id||'-');
 
-const AREA_NAMES = {'000':'郭士龙区域','001':'李澳区域','002':'韩福亮区域','003':'王萌区域','004':'徐誌良区域','005':'郜一鸣区域','006':'李万玲区域','007':'江秀丽区域','666':'白高朋大区'};
-const areaName = id => AREA_NAMES[String(id)] || String(id || '-');
-
-/* ---------- 工具函数：与生产一致 ---------- */
+/* ---------- 基础日期 ---------- */
 function localDateStr(iso){
-  const d = new Date(iso);
+  const d=new Date(iso);
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
-function dateStrOf(d){
-  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-}
+function dateStrOf(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function addDays(ds,n){ const d=new Date(ds+'T00:00:00'); d.setDate(d.getDate()+n); return dateStrOf(d); }
 function daysBetween(a,b){ return Math.round((new Date(b+'T00:00:00')-new Date(a+'T00:00:00'))/86400000); }
-function getAllDaysSafe(route,sub){ try{ return (typeof getAllDays==='function'? getAllDays(route,sub):null)||[] }catch(e){ return [] } }
+function today(){ return dateStrOf(new Date()); }
+function weekdayCN(ds){ return ['日','一','二','三','四','五','六'][new Date(ds+'T00:00:00').getDay()]; }
 
+/* ---------- 与生产对齐的业务口径 ---------- */
+function getAllDaysSafe(route,sub){ try{ return (typeof getAllDays==='function'?getAllDays(route,sub):null)||[] }catch(e){ return [] } }
 function calcProgress(t){
-  const allDays = getAllDaysSafe(t.route,t.subRoute);
-  const total = allDays.length||0;
+  const allDays=getAllDaysSafe(t.route,t.subRoute);
+  const total=allDays.length||0;
   if(!total) return {completed:0,total:0,percent:0,remaining:0};
   let c=0; const pg=t.progress||{};
   for(const d of allDays){ const dp=pg[d.key]; if(dp&&dp.completed) c++; }
   return {completed:c,total,percent:Math.min(100,Math.round(c/total*100)),remaining:Math.max(0,total-c)};
 }
 function getCurrentDay(t){
-  const allDays = getAllDaysSafe(t.route,t.subRoute).filter(d=>d.items&&d.items.length>0);
+  const allDays=getAllDaysSafe(t.route,t.subRoute).filter(d=>d.items&&d.items.length>0);
   const pg=t.progress||{};
   for(const d of allDays){ const dp=pg[d.key]; if(!dp||!dp.completed) return d; }
   return null;
@@ -203,7 +217,7 @@ function getCertifiedAt(t){
 function isCertifiedThisMonth(t){
   if(!isCertified(t)) return false;
   const at=getCertifiedAt(t); if(!at) return false;
-  const d=new Date(at), n=new Date();
+  const d=new Date(at),n=new Date();
   return d.getFullYear()===n.getFullYear()&&d.getMonth()===n.getMonth();
 }
 function isCheckedOnDate(t,ds){
@@ -221,460 +235,722 @@ function isCheckedOnDate(t,ds){
   }
   return false;
 }
+/* 加速版：一次性算出学员所有"打卡日"集合，避免历史回溯时反复遍历 */
+function checkedDatesOf(t){
+  const s=new Set(); const pg=t.progress||{};
+  for(const day of Object.values(pg)){
+    if(!day||day._meta) continue;
+    for(const it of Object.values(day.items||{})){
+      if(it.checked===true&&it.checkedAt) s.add(localDateStr(it.checkedAt));
+    }
+    if(Array.isArray(day.restDates)) day.restDates.forEach(d=>s.add(d));
+    else if(day.rest===true&&day.restAt) s.add(localDateStr(day.restAt));
+    if(Array.isArray(day.delayDates)) day.delayDates.forEach(d=>s.add(d));
+    else if(day.delayed===true&&day.delayAt) s.add(localDateStr(day.delayAt));
+    if(day.completed&&day.completedAt) s.add(localDateStr(day.completedAt));
+  }
+  return s;
+}
+/* 完成带训日 -> 日期集合 */
+function completedDatesOf(t){
+  const s=new Set(); const pg=t.progress||{};
+  for(const k of Object.keys(pg)){
+    if(k==='_meta') continue;
+    const day=pg[k];
+    if(day&&day.completed&&day.completedAt) s.add(localDateStr(day.completedAt));
+  }
+  return s;
+}
 function isPartTime(t){ return t.route==='part_time'; }
 function getWorkHoursLimit(t){ return isPartTime(t)?300:500; }
 function getWorkHoursThreshold(t){ return isPartTime(t)?200:300; }
 function getWorkHoursWarning(t,hours){
   if(hours==null||Number.isNaN(Number(hours))) return null;
-  const limit=getWorkHoursLimit(t), th=getWorkHoursThreshold(t);
+  const limit=getWorkHoursLimit(t),th=getWorkHoursThreshold(t);
   if(hours>th) return {limit,threshold:th,hours:Number(hours),remaining:Math.max(0,limit-hours),isPartTime:isPartTime(t)};
   return null;
 }
-function calcNoCheckInStreak(t,today){
-  const dates=new Set(); const pg=t.progress||{};
-  Object.values(pg).forEach(day=>{
-    Object.values(day.items||{}).forEach(it=>{ if(it.checked&&it.checkedAt) dates.add(localDateStr(it.checkedAt)); });
-    if(day.completed&&day.completedAt) dates.add(localDateStr(day.completedAt));
-    if(Array.isArray(day.restDates)) day.restDates.forEach(d=>dates.add(d));
-    else if(day.rest&&day.restAt) dates.add(localDateStr(day.restAt));
-  });
-  if(dates.size===0){
-    if(t.startDate) return {days:Math.max(1,daysBetween(t.startDate,today)),label:'连续'+Math.max(1,daysBetween(t.startDate,today))+'天未打卡'};
+function calcNoCheckInStreak(t,refDay){
+  const dates=checkedDatesOf(t);
+  const d0=t.startDate?new Date(t.startDate+'T00:00:00'):null;
+  const ref=new Date(refDay+'T00:00:00');
+  const past=[...dates].filter(d=>new Date(d+'T00:00:00')<=ref).sort();
+  if(past.length===0){
+    if(d0){ const n=Math.max(1,Math.round((ref-d0)/86400000)); return {days:n,label:'连续'+n+'天未打卡'}; }
     return {days:9999,label:'从未打卡'};
   }
-  const sorted=[...dates].sort();
-  if(sorted[sorted.length-1]>=today) return {days:0,label:'今日已打卡'};
-  const days=daysBetween(sorted[sorted.length-1],today);
-  return {days,label:'连续'+days+'天未打卡'};
+  if(past[past.length-1]>=refDay) return {days:0,label:'当日已打卡'};
+  return {days:daysBetween(past[past.length-1],refDay),label:'连续'+daysBetween(past[past.length-1],refDay)+'天未打卡'};
 }
 function rowToTrainee(row){
-  let subRoute = row.sub_route || row.progress?._meta?.subRoute || '';
-  if(!subRoute && row.route==='part_time' && row.progress){
+  let subRoute=row.sub_route||row.progress?._meta?.subRoute||'';
+  if(!subRoute&&row.route==='part_time'&&row.progress){
     const keys=Object.keys(row.progress).filter(k=>k.startsWith('part_time_'));
     if(keys.length){ const m=keys[0].match(/^part_time_(.+?)_\d+-\d+-\d+$/); if(m) subRoute=m[1]; }
   }
-  return {
-    id:row.id,name:row.name||'',store:row.store||'',route:row.route,subRoute:subRoute||'',
+  return {id:row.id,name:row.name||'',store:row.store||'',route:row.route,subRoute:subRoute||'',
     startDate:row.start_date||'',master:row.master||'',area:row.area||'000',note:row.note||'',
-    empId:row.emp_id||'',progress:row.progress||{},_updatedAt:row.updated_at||0
-  };
+    empId:row.emp_id||'',progress:row.progress||{},_updatedAt:row.updated_at||0};
 }
 
-/* ---------- 演示数据（无登录态时兜底） ---------- */
+/* ---------- 演示数据 ---------- */
 function makeDemoData(){
   const stores=['太原01店','太原02店','太原03店','太原05店','太原08店','太原13店','太原19店','长治02店'];
   const masters=['王师傅','李师傅','张师傅','赵师傅','刘师傅'];
   const routes=['front_to_back','back_to_front','part_time'];
+  const PT_SUBS=['front_part_time','back_part_time'];
+  const td=today();
   const list=[];
-  for(let i=0;i<64;i++){
-    const route=routes[i%3];
-    const allDays=getAllDaysSafe(route,'');
-    const total=allDays.length;
-    const completed=Math.floor(Math.random()*(total+1));
+    for(let i=0;i<64;i++){
+      const route=routes[i%3];
+      // 兼职路线必须带细分项，否则 getAllDays 返回 0 天 -> 会被误判成"已认证"且永远无法打卡
+      const subRoute = route==='part_time' ? PT_SUBS[i%PT_SUBS.length] : '';
+      const allDays=getAllDaysSafe(route,subRoute);
+      const total=allDays.length;
+      if(!total) continue;
+    const startDaysAgo=20+Math.floor(Math.random()*100);
+    const sd=addDays(td,-startDaysAgo);
+    const maxDone=Math.max(0,Math.min(total-3, Math.floor(startDaysAgo/2)));
+    const completed=Math.floor(Math.random()*(maxDone+1));
+    const isoOf=ds=>new Date(ds+'T12:00:00').toISOString();
     const pg={};
-    const startDaysAgo=Math.floor(Math.random()*90)+5;
-    const sd=new Date(); sd.setDate(sd.getDate()-startDaysAgo);
-    allDays.slice(0,completed).forEach((d,idx)=>{
-      const done=new Date(sd); done.setDate(done.getDate()+idx*2+1);
-      pg[d.key]={completed:true,completedAt:done.toISOString(),items:{},masterSignature:masters[i%5],
-        trainingTimes:['09:00-12:00']};
-    });
-    if(completed<total && Math.random()>0.45){
-      const ld=new Date(); ld.setDate(ld.getDate()-Math.floor(Math.random()*6));
-      const last=allDays[completed];
-      if(last){
-        pg[last.key]={...(pg[last.key]||{}),items:{0:{checked:true,checkedAt:ld.toISOString()}}};
-      }
+    // 1) 已完成带训日：从入职日起每 2 天推进一个
+    const doneDates=new Set();
+    for(let k=0;k<completed;k++){
+      const ds=addDays(sd,k*2+1);
+      if(ds>td) break;
+      doneDates.add(ds);
+      pg[allDays[k].key]={completed:true,completedAt:isoOf(ds),masterSignature:masters[i%5],
+        trainingTimes:['09:00-12:00'],items:{0:{checked:true,checkedAt:isoOf(ds)}}};
     }
-    list.push({
-      id:'demo-'+i, name:'学员'+(i+1), store:stores[i%stores.length], route,
-      subRoute:'', startDate:dateStrOf(sd), master:masters[i%5], area:'000',
-      note:'', empId:'D'+(10000+i), progress:pg, _updatedAt:Date.now()
+    // 2) 最近活跃日：大多数人今天刚打过卡，少量作为长期停滞样本
+    const roll=Math.random();
+    let lastActiveDays;
+    if(roll<0.72) lastActiveDays=0;                                   // 今天已打卡
+    else if(roll<0.84) lastActiveDays=1+Math.floor(Math.random()*2);  // 1-2 天前
+    else if(roll<0.92) lastActiveDays=3+Math.floor(Math.random()*5);  // 3-7 天前
+    else lastActiveDays=8+Math.floor(Math.random()*28);               // 长期停滞
+    const lastActive=addDays(td,-lastActiveDays);
+    // 3) 日常打卡日：从入职铺到最近活跃日，密度随机，但保证最后活跃日一定有打卡
+    const extra=[];
+    let cur0=sd;
+    while(cur0<=lastActive){
+      if(cur0===lastActive||Math.random()>0.3) extra.push(cur0);
+      cur0=addDays(cur0,1);
+    }
+    // 槽位要用足「所有天 × 每天所有学习项」，否则数量不够时最新的打卡日期会被丢掉
+    const slotList=[];
+    allDays.forEach((d,di)=>{
+      d.items.forEach((_,idx)=>{ if(!(di<completed&&idx===0)) slotList.push({key:d.key,idx}); });
     });
+    // 槽位有限时，必须优先保留「最近的」打卡日期（正序填充会把最新日期丢掉）
+    const extraList=extra.filter(d=>!doneDates.has(d));
+    const keep=extraList.slice(Math.max(0,extraList.length-slotList.length));
+    keep.forEach(ds=>{
+      const sl=slotList[keep.indexOf(ds)];
+      if(!sl) return;
+      const prev=pg[sl.key]||{};
+      const items={...(prev.items||{})};
+      items[sl.idx]={checked:true,checkedAt:isoOf(ds)};
+      pg[sl.key]={...prev,items};
+    });
+    list.push({id:'demo-'+i,name:'学员'+(i+1),store:stores[i%stores.length],route,subRoute,
+      startDate:sd,master:masters[i%5],area:'000',note:'',empId:'D'+(10000+i),progress:pg,_updatedAt:Date.now()});
   }
   const wh={};
   list.forEach(t=>{ wh[t.empId]={hours:Math.floor(Math.random()*560)}; });
-  return {trainees:list, workHours:wh};
+  return {trainees:list,workHours:wh};
 }
 
 /* ---------- 数据加载 ---------- */
 let _sb=null;
 async function loadData(){
   try{
-    if(typeof window.supabase==='undefined') throw new Error('SDK未加载');
-    _sb = window.supabase.createClient(SB_URL, SB_KEY);
-    const {data:{session}} = await _sb.auth.getSession();
+    if(typeof window.supabase==='undefined') throw new Error('运行环境未能加载 Supabase SDK（本地 file:// 打开时常发生）');
+    _sb=window.supabase.createClient(SB_URL,SB_KEY);
+    const {data:{session}}=await _sb.auth.getSession();
     if(!session) throw new Error('未登录');
-    const [{data:tr,error:e1},{data:wh,error:e2}] = await Promise.all([
+    const [{data:tr,error:e1},{data:wh,error:e2}]=await Promise.all([
       _sb.from('trainees').select('*').eq('deleted',false),
       _sb.from('work_hours').select('emp_id,hours')
     ]);
     if(e1||e2) throw new Error('查询失败');
-    if(!tr||tr.length===0) throw new Error('无数据');
+    if(!tr||tr.length===0) throw new Error('返回空数据集');
     const whMap={}; (wh||[]).forEach(r=>{ whMap[r.emp_id]={hours:r.hours}; });
-    return {trainees:tr.map(rowToTrainee), workHours:whMap, real:true};
-  }catch(err){
-    if(String(err.message||'').includes('SDK未加载')) return demoWrap('运行环境未能加载 Supabase SDK（本地 file:// 打开时常发生）');
-    return demoWrap(err.message||'未知原因');
-  }
-}
-function demoWrap(reason){
-  const d=makeDemoData();
-  return {...d, real:false, reason};
+    return {trainees:tr.map(rowToTrainee),workHours:whMap,real:true};
+  }catch(err){ return {...makeDemoData(),real:false,reason:err.message||'未知原因'}; }
 }
 
-/* ---------- 模型计算 ---------- */
-function buildModel(raw){
-  const today=dateStrOf(new Date());
-  const yesterday=dateStrOf(new Date(Date.now()-86400000));
-  const all=(raw.trainees||[]).filter(t=>!isResigned(t));
-  const active=all.filter(t=>!isCertified(t));
-
-  const enriched=all.map(t=>{
-    const prog=calcProgress(t);
+/* ---------- 预处理：给每个学员挂上日期集合 ---------- */
+function buildBase(raw){
+  const td=today();
+  const rows=(raw.trainees||[]).filter(t=>!isResigned(t)).map(t=>{
     const hours=t.empId&&raw.workHours[t.empId]?Number(raw.workHours[t.empId].hours)||0:null;
-    const warn=getWorkHoursWarning(t,hours);
-    const streak=calcNoCheckInStreak(t,today);
-    const cd=getCurrentDay(t);
+    const certAt=getCertifiedAt(t);
     return {
-      ...t,_prog:prog,_hours:hours,_warn:warn,_streak:streak,_cd:cd,
-      _cert:isCertified(t),_certMonth:isCertifiedThisMonth(t),
-      _checkedToday:isCheckedOnDate(t,today),_checkedY:isCheckedOnDate(t,yesterday)
+      ...t,_prog:calcProgress(t),_hours:hours,_warn:getWorkHoursWarning(t,hours),
+      _cert:isCertified(t),_certAt:certAt?localDateStr(certAt):'',_certMonth:isCertifiedThisMonth(t),
+      _checked:checkedDatesOf(t),_completedDates:completedDatesOf(t),_cd:getCurrentDay(t)
     };
   });
-  const act=enriched.filter(t=>!t._cert);
+  return {rows,real:raw.real,reason:raw.reason,today:td};
+}
 
-  // 近 14 天趋势
-  const trend=[];
-  for(let i=13;i>=0;i--){
-    const d=new Date(); d.setDate(d.getDate()-i);
-    const ds=dateStrOf(d);
-    const pool=enriched.filter(t=>!t._cert||isCheckedOnDate(t,ds));
-    const ok=pool.filter(t=>isCheckedOnDate(t,ds)).length;
-    trend.push({ds,label:(d.getMonth()+1)+'/'+d.getDate(),rate:pool.length?Math.round(ok/pool.length*100):0,n:ok,total:pool.length});
-  }
+/* ---------- 时间窗口 ---------- */
+function weekWindow(offset){
+  const now=new Date();
+  const off=(now.getDay()+6)%7;
+  const mon=new Date(now); mon.setDate(now.getDate()-off+offset*7);
+  const sun=new Date(mon); sun.setDate(mon.getDate()+6);
+  return {start:dateStrOf(mon),end:dateStrOf(sun),offset};
+}
+function monthWindow(offset){
+  const now=new Date();
+  const y=now.getFullYear(),m=now.getMonth()+offset;
+  const first=new Date(y,m,1);
+  const last=new Date(y,m+1,0);
+  return {start:dateStrOf(first),end:dateStrOf(last),year:y,month:m+1};
+}
+function eachDay(start,end){
+  const out=[]; let d=start;
+  while(d<=end && out.length<400){ out.push(d); d=addDays(d,1); }
+  return out;
+}
+/* 某日仍在带训的人：未认证，或认证日期晚于该日 */
+function activeOn(rows,ds){
+  return rows.filter(t=> !t._certAt || t._certAt>ds );
+}
 
-  // 待办三类
-  const stalled=act.filter(t=>t._streak.days>=3).sort((a,b)=>b._streak.days-a._streak.days);
-  const overHours=act.filter(t=>t._warn).sort((a,b)=>b._warn.hours-a._warn.hours);
-  const lagging=act.filter(t=>{
-    if(!t.startDate) return false;
-    return daysBetween(t.startDate,today)>=45 && t._prog.percent<60;
-  }).sort((a,b)=>a._prog.percent-b._prog.percent);
-
-  // 门店榜
-  const storeMap={};
-  enriched.forEach(t=>{
-    const k=t.store||'未知门店';
-    if(!storeMap[k]) storeMap[k]={store:k,area:t.area,total:0,active:0,cert:0,certMonth:0,checkedToday:0,checkedY:0,progSum:0,warn:0,stalled:0};
-    const s=storeMap[k];
-    s.total++; s.area=t.area;
-    if(!t._cert){ s.active++; s.progSum+=t._prog.percent; if(t._checkedToday) s.checkedToday++; if(t._checkedY) s.checkedY++; if(t._warn) s.warn++; if(t._streak.days>=3) s.stalled++; }
-    if(t._cert) s.cert++;
-    if(t._certMonth) s.certMonth++;
-  });
-  const stores=Object.values(storeMap).map(s=>({
-    ...s,
-    rate:s.active?Math.round(s.checkedToday/s.active*100):100,
-    avgProg:s.active?Math.round(s.progSum/s.active):100
-  })).sort((a,b)=>a.rate-b.rate);
-
+/* ---------- 单日快照 ---------- */
+function snapDay(base,ds){
+  const rows=base.rows;
+  const act=activeOn(rows,ds);
+  const checked=act.filter(t=>t._checked.has(ds));
+  const un=act.filter(t=>!t._checked.has(ds));
+  const certThatDay=rows.filter(t=>t._certAt===ds);
+  const doneThatDay=rows.filter(t=>t._completedDates.has(ds));
   return {
-    today,yesterday,real:raw.real,reason:raw.reason,
-    all:enriched, active:act,
-    total:all.length, activeN:act.length,
-    todayChecked:act.filter(t=>t._checkedToday).length,
-    yChecked:act.filter(t=>t._checkedY).length,
-    yUnchecked:act.filter(t=>!t._checkedY).length,
-    certMonth:enriched.filter(t=>t._certMonth).length,
-    certTotal:enriched.filter(t=>t._cert).length,
-    avgProg:act.length?Math.round(act.reduce((s,t)=>s+t._prog.percent,0)/act.length):0,
-    trend,stalled,overHours,lagging,stores
+    ds,weekday:weekdayCN(ds),isFuture:ds>base.today,
+    active:act.length,checked:checked.length,unchecked:un,
+    rate:act.length?Math.round(checked.length/act.length*100):0,
+    certN:certThatDay.length,certList:certThatDay,
+    doneN:doneThatDay.length,doneList:doneThatDay
   };
 }
 
-/* ---------- 渲染 ---------- */
-let MODEL=null;
-let BASE=null;
+/* ---------- 区间汇总（周/月通用） ---------- */
+function snapRange(base,start,end){
+  const days=eachDay(start,end).filter(d=>d<=base.today);
+  const rows=base.rows;
+  let rateSum=0,dayCount=0;
+  const perDay=[];
+  days.forEach(ds=>{
+    const act=activeOn(rows,ds);
+    const ck=act.filter(t=>t._checked.has(ds)).length;
+    const r=act.length?Math.round(ck/act.length*100):null;
+    if(r!==null){ rateSum+=r; dayCount++; }
+    perDay.push({ds,rate:r,active:act.length,checked:ck});
+  });
+  const windowRows=rows.filter(t=>{
+    if(t.startDate&&t.startDate>end) return false;
+    if(t._certAt&&t._certAt<start) return dayCount>0&&t._completedDates.size>0&& [...t._completedDates].some(d=>d>=start&&d<=end);
+    return true;
+  });
+  const zeroCheck=windowRows.filter(t=> !days.some(d=>t._checked.has(d)));
+  const everCheck=windowRows.filter(t=> days.some(d=>t._checked.has(d)));
+  let doneN=0;
+  rows.forEach(t=>{ t._completedDates.forEach(d=>{ if(d>=start&&d<=end) doneN++; }); });
+  const certN=rows.filter(t=>t._certAt&&t._certAt>=start&&t._certAt<=end).length;
+  const certList=rows.filter(t=>t._certAt&&t._certAt>=start&&t._certAt<=end);
+  const warnN=rows.filter(t=>t._warn).length;
+  const activeEnd=activeOn(rows,end).length;
+  return {
+    start,end,label:'',days:perDay,dayCount,
+    avgRate:dayCount?Math.round(rateSum/dayCount):0,
+    overtime:days.length, DONE:doneN, certN, certList,
+    zero:zeroCheck, zeroN:zeroCheck.length, everN:everCheck.length,
+    windowN:windowRows.length, warnN, activeEnd
+  };
+}
+
+/* ---------- 门店维度（按窗口算平均打卡率） ---------- */
+function storeStats(base,days){
+  const map={};
+  base.rows.forEach(t=>{
+    const k=t.store||'未知门店';
+    if(!map[k]) map[k]={store:k,area:t.area,rateSum:0,n:0,zeroSet:new Set(),regSet:new Set(),certN:0,warnN:0,doneN:0,activeEnd:0};
+    const s=map[k];
+    s.regSet.add(t.id);
+    if(!days.some(d=>t._checked.has(d))) s.zeroSet.add(t.id);
+    if(t._certAt&&days.length&&t._certAt>=days[0]&&t._certAt<=days[days.length-1]) s.certN++;
+    if(t._warn) s.warnN++;
+    t._completedDates.forEach(d=>{ if(days.includes(d)) s.doneN++; });
+  });
+  days.forEach(ds=>{
+    const act=activeOn(base.rows,ds).filter(t=>(t.store||'未知门店')!==undefined);
+    const byStore={};
+    act.forEach(t=>{ const k=t.store||'未知门店'; byStore[k]=byStore[k]||{a:0,c:0}; byStore[k].a++; if(t._checked.has(ds)) byStore[k].c++; });
+    Object.keys(byStore).forEach(k=>{
+      if(map[k]){ map[k].rateSum+=Math.round(byStore[k].c/byStore[k].a*100); map[k].n++; }
+    });
+  });
+  const endDay=days[days.length-1]||base.today;
+  return Object.values(map).map(s=>{
+    const actEnd=activeOn(base.rows.filter(t=>(t.store||'未知门店')===s.store),endDay).length;
+    return {...s,rate:s.n?Math.round(s.rateSum/s.n):100,zeroN:s.zeroSet.size,regN:s.regSet.size,activeEnd:actEnd};
+  }).sort((a,b)=>a.rate-b.rate);
+}
+
+/* ---------- 全局状态 ---------- */
+let BASE=null, VIEW=null, MODE='week', SEL=today(), WEEK_OFF=0, MONTH_OFF=0;
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-
-function render(m){
-  MODEL=m;
-  const rate=m.activeN?Math.round(m.todayChecked/m.activeN*100):100;
-  const rateColor=rate>=90?'--emerald':rate>=70?'--amber':'--red';
-
-  const todayPanel=`
-    <div class="sec">
-      <div class="sec-h"><h2>今日概况</h2><span class="hint"><span id="viewSum">${m.today}</span> · 数据截至此刻</span></div>
-      <div class="grid g4">
-        <div class="kpi" style="--accent:var(--indigo)">
-          <div class="lb">在训学员</div><div class="vl">${m.activeN}</div>
-          <div class="sub">总计 <b>${m.total}</b> 人 · 已认证 <b>${m.certTotal}</b> 人</div>
-        </div>
-        <div class="kpi" style="--accent:var(--${rate>=90?'emerald':rate>=70?'amber':'red'})">
-          <div class="lb">今日打卡率</div><div class="vl" style="color:var(${rateColor})">${rate}%</div>
-          <div class="sub">已打卡 <b>${m.todayChecked}</b> / ${m.activeN} 人</div>
-        </div>
-        <div class="kpi" style="--accent:var(--red)">
-          <div class="lb">昨日未打卡</div><div class="vl">${m.yUnchecked}</div>
-          <div class="sub">昨日已打卡 <b>${m.yChecked}</b> 人</div>
-        </div>
-        <div class="kpi" style="--accent:var(--purple)">
-          <div class="lb">本月认证晋升</div><div class="vl">${m.certMonth}</div>
-          <div class="sub">平均带训进度 <b>${m.avgProg}%</b></div>
-        </div>
-      </div>
-    </div>`;
-
-  const pList=(arr,color,fnEmpty,fnRow)=>{
-    if(!arr.length) return `<div class="empty">${fnEmpty}</div>`;
-    return `<div class="plist">${arr.slice(0,12).map(fnRow).join('')}</div>`;
-  };
-
-  const attention=`
-    <div class="sec">
-      <div class="sec-h"><h2>今天要盯的人</h2><span class="hint">按紧急度排序，点击名单即可定位到门店</span></div>
-      <div class="grid g3">
-        <div class="panel">
-          <div class="panel-h"><h3 style="color:var(--red)">● 连续未打卡 ≥3 天</h3><span class="cnt">${m.stalled.length} 人</span></div>
-          ${pList(m.stalled,'', '全部按时打卡，继续保持', t=>`
-            <div class="prow" style="--c:var(--red)">
-              <div class="av" style="color:var(--red)">${esc(t.name.slice(0,1))}</div>
-              <div class="info"><div class="nm">${esc(t.name)}</div><div class="meta">${esc(t.store)} · ${esc(t.master||'无师傅')}</div></div>
-              <div class="tag" style="background:rgba(240,82,82,.15);color:var(--red)">${t._streak.days>=9999?'从未打卡':t._streak.days+'天'}</div>
-            </div>`)}
-        </div>
-        <div class="panel">
-          <div class="panel-h"><h3 style="color:var(--amber)">● 工时超标</h3><span class="cnt">${m.overHours.length} 人</span></div>
-          ${pList(m.overHours,'', '暂无工时超阈值学员', t=>`
-            <div class="prow" style="--c:var(--amber)">
-              <div class="av" style="color:var(--amber)">${esc(t.name.slice(0,1))}</div>
-              <div class="info"><div class="nm">${esc(t.name)}</div><div class="meta">${esc(t.store)} · 进度 ${t._prog.percent}%</div></div>
-              <div class="tag" style="background:rgba(240,169,42,.15);color:var(--amber)">${t._hours}h / ${t._warn.limit}h</div>
-            </div>`)}
-        </div>
-        <div class="panel">
-          <div class="panel-h"><h3 style="color:var(--sky)">● 带训进度滞后</h3><span class="cnt">${m.lagging.length} 人</span></div>
-          ${pList(m.lagging,'', '无进度滞后学员', t=>`
-            <div class="prow" style="--c:var(--sky)">
-              <div class="av" style="color:var(--sky)">${esc(t.name.slice(0,1))}</div>
-              <div class="info"><div class="nm">${esc(t.name)}</div><div class="meta">${esc(t.store)} · 入职 ${daysBetween(t.startDate,m.today)} 天</div></div>
-              <div class="tag" style="background:rgba(56,168,240,.15);color:var(--sky)">${t._prog.percent}%</div>
-            </div>`)}
-        </div>
-      </div>
-    </div>`;
-
-  const maxRate=Math.max(100,...m.trend.map(t=>t.rate));
-  const trend=`
-    <div class="sec">
-      <div class="grid g2">
-        <div class="panel">
-          <div class="panel-h"><h3>近 14 天打卡率</h3><span class="hint" style="font-size:11px;color:var(--txt3)">口径：当日有任一打卡动作即算</span></div>
-          <div class="spark">${m.trend.map(t=>`
-            <div class="bar ${t.rate===0?'zero':''}" style="height:${Math.max(3,t.rate/maxRate*100)}%;background:${t.rate>=90?'var(--emerald)':t.rate>=70?'var(--amber)':'var(--red)'}" title="${t.ds} ${t.rate}% (${t.n}/${t.total})"></div>`).join('')}</div>
-          <div class="axis"><span>${m.trend[0].label}</span><span>${m.trend[13].label}</span></div>
-          <div class="legend">
-            <span><i class="dot" style="background:var(--emerald)"></i>≥90% 健康</span>
-            <span><i class="dot" style="background:var(--amber)"></i>70-89% 需关注</span>
-            <span><i class="dot" style="background:var(--red)"></i>&lt;70% 预警</span>
-          </div>
-        </div>
-        <div class="panel">
-          <div class="panel-h"><h3>门店今日打卡率榜</h3><span class="cnt">${m.stores.length} 家店</span></div>
-          <div style="max-height:165px;overflow-y:auto">
-            ${m.stores.length?m.stores.map((s,i)=>`
-              <div class="rowe">
-                <div class="rank ${i<3?'bot':''}">${i+1}</div>
-                <div class="nm">${esc(s.store)}</div>
-                <div class="mini"><i style="width:${s.rate}%;background:${s.rate>=90?'var(--emerald)':s.rate>=70?'var(--amber)':'var(--red)'}"></i></div>
-                <div class="pc" style="color:${s.rate>=90?'var(--emerald)':s.rate>=70?'var(--amber)':'var(--red)'}">${s.rate}%</div>
-                <div class="num">${s.active}人</div>
-              </div>`).join(''):'<div class="empty">暂无门店数据</div>'}
-          </div>
-        </div>
-      </div>
-    </div>`;
-
-  const bcolor=p=>p>=90?'var(--emerald)':p>=60?'var(--amber)':'var(--red)';
-  const storeTbl=`
-    <div class="sec">
-      <div class="sec-h"><h2>门店对比</h2><span class="hint">按今日打卡率升序，最需要催的在最上面</span></div>
-      <div class="panel">
-        <div class="tbl-wrap">
-          <table>
-            <thead><tr>
-              <th>门店</th><th class="n">在训</th><th>今日打卡</th><th class="n">昨日打卡</th>
-              <th>平均进度</th><th class="n">工时超标</th><th class="n">停滞≥3天</th><th class="n">本月晋升</th><th class="n">已认证</th>
-            </tr></thead>
-            <tbody>
-              ${m.stores.map(s=>`
-                <tr>
-                  <td style="font-weight:500">${esc(s.store)}<div style="font-size:11px;color:var(--txt3)">${esc(areaName(s.area))}</div></td>
-                  <td class="n">${s.active}</td>
-                  <td><div class="bar-cell"><span style="color:${s.rate>=90?'var(--emerald)':s.rate>=70?'var(--amber)':'var(--red)'};font-variant-numeric:tabular-nums">${s.rate}%</span><div class="bar-sm"><i style="width:${s.rate}%;background:${s.rate>=90?'var(--emerald)':s.rate>=70?'var(--amber)':'var(--red)'}"></i></div></div></td>
-                  <td class="n">${s.active?s.checkedY+'/'+s.active:'-'}</td>
-                  <td><div class="bar-cell"><span style="font-variant-numeric:tabular-nums">${s.avgProg}%</span><div class="bar-sm"><i style="width:${s.avgProg}%;background:${bcolor(s.avgProg)}"></i></div></div></td>
-                  <td class="n" style="color:${s.warn?'var(--amber)':'var(--txt3)'}">${s.warn||'-'}</td>
-                  <td class="n" style="color:${s.stalled?'var(--red)':'var(--txt3)'}">${s.stalled||'-'}</td>
-                  <td class="n" style="color:${s.certMonth?'var(--emerald)':'var(--txt3)'}">${s.certMonth||'-'}</td>
-                  <td class="n">${s.cert||'-'}</td>
-                </tr>`).join('')}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>`;
-
-  const warn=m.real?'':`<div class="note no-print">当前为<b>演示数据</b>（原因：${esc(m.reason||'未登录')}）。在生产站点已登录状态下打开本页面，会自动切换成你的真实学员数据。</div>`;
-
-  const el=document.getElementById('root');
-  el.innerHTML = warn+todayPanel+attention+trend+storeTbl;
-  el.dataset.rendered='1';
+function rateStyle(r){ return r>=90?'var(--emerald)':r>=70?'var(--amber)':'var(--red)'; }
+function heatColor(r){
+  if(r==null) return 'rgba(255,255,255,.03)';
+  if(r>=95) return 'rgba(34,201,138,.85)';
+  if(r>=85) return 'rgba(34,201,138,.55)';
+  if(r>=70) return 'rgba(240,169,42,.6)';
+  if(r>=50) return 'rgba(240,169,42,.35)';
+  return 'rgba(240,82,82,.55)';
 }
 
-/* ---------- 筛选 ---------- */
-function filteredModel(m){
+/* ---------- 控制条 ---------- */
+function renderCtrl(){
+  const el=document.getElementById('ctrlbar');
+  const tabs=`<div class="tabs">
+    <button class="tab ${MODE==='day'?'on':''}" onclick="setMode('day')">指定某天</button>
+    <button class="tab ${MODE==='week'?'on':''}" onclick="setMode('week')">周对比</button>
+    <button class="tab ${MODE==='month'?'on':''}" onclick="setMode('month')">月度</button>
+  </div>`;
+  let extra='';
+  if(MODE==='day'){
+    extra=`<span class="lb">查看日期</span>
+      <input type="date" id="datePick" value="${SEL}" max="${BASE.today}" onchange="setDate(this.value)">
+      <button class="btn sm" onclick="setDate('${BASE.today}')">回到今天</button>
+      <button class="btn sm" onclick="setDate('${addDays(SEL,-1)}')">前一天</button>
+      <button class="btn sm" onclick="setDate('${addDays(SEL,1)}')" ${SEL>=BASE.today?'disabled style="opacity:.4"':''}>后一天</button>`;
+  }else if(MODE==='week'){
+    extra=`<div class="navgrp">
+      <button class="btn sm" onclick="setWeekOff(${WEEK_OFF-1})">← 更早</button>
+      <button class="btn sm" onclick="setWeekOff(0)" ${WEEK_OFF===0?'disabled style="opacity:.4"':''}>回本周</button>
+      <button class="btn sm" onclick="setWeekOff(${WEEK_OFF+1})" ${WEEK_OFF>=0?'disabled style="opacity:.4"':''}>更晚 →</button>
+    </div><span class="lb">当前基准：第 ${WEEK_OFF===0?'本':Math.abs(WEEK_OFF)} 周${WEEK_OFF<0?'（往前'+Math.abs(WEEK_OFF)+'周）':''}</span>`;
+  }else{
+    extra=`<div class="navgrp">
+      <button class="btn sm" onclick="setMonthOff(${MONTH_OFF-1})">← 上月</button>
+      <button class="btn sm" onclick="setMonthOff(0)" ${MONTH_OFF===0?'disabled style="opacity:.4"':''}>回本月</button>
+      <button class="btn sm" onclick="setMonthOff(${MONTH_OFF+1})" ${MONTH_OFF>=0?'disabled style="opacity:.4"':''}>下月 →</button>
+    </div>`;
+  }
+  el.innerHTML=tabs+'<div class="spacer"></div>'+extra;
+}
+function setMode(m){ MODE=m; if(m==='day'&&SEL>BASE.today) SEL=BASE.today; renderCtrl(); refresh(); }
+function setDate(v){ if(!v) return; SEL=v>BASE.today?BASE.today:v; renderCtrl(); refresh(); }
+function setWeekOff(n){ WEEK_OFF=Math.min(0,n); renderCtrl(); refresh(); }
+function setMonthOff(n){ MONTH_OFF=Math.min(0,n); renderCtrl(); refresh(); }
+
+/* ---------- 视图过滤 ---------- */
+function rowsFiltered(){
   const area=document.getElementById('areaSel')?.value||'';
   const store=document.getElementById('storeSel')?.value||'';
-  const rows=m.all.filter(t=>{
+  return BASE.rows.filter(t=>{
     if(area&&String(t.area)!==area) return false;
     if(store&&t.store!==store) return false;
     return true;
   });
-  const act=rows.filter(t=>!t._cert);
-  const today=m.today;
-  const storeMap={};
-  rows.forEach(t=>{
-    const k=t.store||'未知门店';
-    if(!storeMap[k]) storeMap[k]={store:k,area:t.area,total:0,active:0,cert:0,certMonth:0,checkedToday:0,checkedY:0,progSum:0,warn:0,stalled:0};
-    const s=storeMap[k]; s.total++;
-    if(!t._cert){ s.active++; s.progSum+=t._prog.percent; if(t._checkedToday) s.checkedToday++; if(t._checkedY) s.checkedY++; if(t._warn) s.warn++; if(t._streak.days>=3) s.stalled++; }
-    if(t._cert) s.cert++;
-    if(t._certMonth) s.certMonth++;
-  });
-  const stores=Object.values(storeMap).map(s=>({
-    ...s, rate:s.active?Math.round(s.checkedToday/s.active*100):100, avgProg:s.active?Math.round(s.progSum/s.active):100
-  })).sort((a,b)=>a.rate-b.rate);
-  const trend=m.trend.map(t0=>{
-    const pool=rows.filter(t=>!t._cert||isCheckedOnDate(t,t0.ds));
-    const ok=pool.filter(t=>isCheckedOnDate(t,t0.ds)).length;
-    return {...t0,rate:pool.length?Math.round(ok/pool.length*100):0,n:ok,total:pool.length};
-  });
-  return {
-    ...m, all:rows, active:act, trend, stores,
-    total:rows.length, activeN:act.length,
-    todayChecked:act.filter(t=>t._checkedToday).length,
-    yChecked:act.filter(t=>t._checkedY).length,
-    yUnchecked:act.filter(t=>!t._checkedY).length,
-    certMonth:rows.filter(t=>t._certMonth).length,
-    certTotal:rows.filter(t=>t._cert).length,
-    avgProg:act.length?Math.round(act.reduce((s,t)=>s+t._prog.percent,0)/act.length):0,
-    stalled:act.filter(t=>t._streak.days>=3).sort((a,b)=>b._streak.days-a._streak.days),
-    overHours:act.filter(t=>t._warn).sort((a,b)=>b._warn.hours-a._warn.hours),
-    lagging:act.filter(t=>t.startDate&&daysBetween(t.startDate,today)>=45&&t._prog.percent<60).sort((a,b)=>a._prog.percent-b._prog.percent)
-  };
 }
+
+/* ---------- 渲染：某一天 ---------- */
+function viewDay(){
+  const rows=rowsFiltered();
+  const b={...BASE,rows};
+  const s=snapDay(b,SEL);
+  const y=yesterdayOf(SEL);
+  const sy=snapDay(b,y);
+  const rate=s.rate;
+  const streakList=activeOn(rows,SEL).filter(t=>t._certAt===null||t._certAt>SEL)
+    .map(t=>({t,st:calcNoCheckInStreak(t,SEL)})).filter(x=>x.st.days>=3)
+    .sort((a,b2)=>b2.st.days-a.st.days);
+
+  const certIds=new Set(s.certList.map(t=>t.id));
+  const doneOnly=s.doneList.filter(t=>!certIds.has(t.id));
+
+  return `
+  <div class="sec">
+    <div class="sec-h"><h2>${SEL} 星期${s.weekday} 实况</h2><span class="hint">${s.isFuture?'未来日期，无数据':'可自由切换到任意历史日期'}</span></div>
+    <div class="grid g4">
+      <div class="kpi" style="--accent:var(--indigo)">
+        <div class="lb">当日在训</div><div class="vl">${s.active}</div>
+        <div class="sub">当前在训 ${rows.filter(t=>!t._cert).length} 人</div>
+      </div>
+      <div class="kpi" style="--accent:var(--${rate>=90?'emerald':rate>=70?'amber':'red'})">
+        <div class="lb">当日打卡率</div><div class="vl" style="color:${rateStyle(rate)}">${rate}%</div>
+        <div class="sub">已打卡 <b>${s.checked}</b> / ${s.active} 人</div>
+      </div>
+      <div class="kpi" style="--accent:var(--red)">
+        <div class="lb">当日未打卡</div><div class="vl">${s.unchecked.length}</div>
+        <div class="sub">前一日 ${sy.rate}% · 变化 <b style="color:${rate>=sy.rate?'var(--emerald)':'var(--red)'}">${rate-sy.rate>=0?'+':''}${rate-sy.rate}</b></div>
+      </div>
+      <div class="kpi" style="--accent:var(--purple)">
+        <div class="lb">当日发生</div><div class="vl">${s.certN+s.doneN}</div>
+        <div class="sub">完成带训日 <b>${s.doneN}</b> · 认证 <b>${s.certN}</b> 人</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="grid g2">
+      <div class="panel">
+        <div class="panel-h"><h3>当日未打卡名单</h3><span class="cnt">${s.unchecked.length} 人</span></div>
+        ${s.unchecked.length?`<div class="plist">${s.unchecked.slice(0,20).map(t=>`
+          <div class="prow" style="--c:var(--red)">
+            <div class="av" style="color:var(--red)">${esc(t.name.slice(0,1))}</div>
+            <div class="info"><div class="nm">${esc(t.name)}</div><div class="meta">${esc(t.store)} · ${esc(t.master||'无师傅')}</div></div>
+            <div class="tag" style="background:rgba(240,82,82,.15);color:var(--red)">进度 ${t._prog.percent}%</div>
+          </div>`).join('')}</div>`:'<div class="empty">全员已打卡</div>'}
+      </div>
+      <div class="panel">
+        <div class="panel-h"><h3>连续未打卡 ≥3 天</h3><span class="cnt">${streakList.length} 人</span></div>
+        ${streakList.length?`<div class="plist">${streakList.slice(0,20).map(x=>`
+          <div class="prow" style="--c:var(--amber)">
+            <div class="av" style="color:var(--amber)">${esc(x.t.name.slice(0,1))}</div>
+            <div class="info"><div class="nm">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · 距今 ${x.st.days} 天</div></div>
+            <div class="tag" style="background:rgba(240,169,42,.15);color:var(--amber)">${x.st.days>=9999?'从未打卡':x.st.days+'天'}</div>
+          </div>`).join('')}</div>`:'<div class="empty">没有长期停滞的学员</div>'}
+      </div>
+    </div>
+  </div>
+
+  ${s.certList.length?`<div class="sec">
+    <div class="sec-h"><h2>当日认证 / 完成带训日</h2><span class="hint">${SEL} 当天发生的记录</span></div>
+    <div class="panel"><div class="tbl-wrap"><table>
+      <thead><tr><th>姓名</th><th>门店</th><th>路线</th><th>类型</th><th class="n">当前进度</th></tr></thead>
+      <tbody>${s.certList.map(t=>`<tr><td style="font-weight:500">${esc(t.name)}</td><td>${esc(t.store)}</td>
+        <td>${esc(typeof getRouteName==='function'?getRouteName(t.route,t.subRoute):t.route)}</td>
+        <td><span class="pill" style="background:rgba(155,124,240,.15);color:var(--purple)">认证通过</span></td>
+        <td class="n">100%</td></tr>`).join('')}
+      ${doneOnly.slice(0,30).map(t=>`<tr><td style="font-weight:500">${esc(t.name)}</td><td>${esc(t.store)}</td>
+        <td>${esc(typeof getRouteName==='function'?getRouteName(t.route,t.subRoute):t.route)}</td>
+        <td><span class="pill" style="background:rgba(34,201,138,.15);color:var(--emerald)">完成带训日</span></td>
+        <td class="n">${t._prog.percent}%</td></tr>`).join('')}
+      </tbody></table></div></div>
+  </div>`:''}
+
+  <div class="sec">
+    <div class="sec-h"><h2>门店当日表现</h2><span class="hint">按打卡率升序，最差的在上面</span></div>
+    <div class="panel">${storeTable(storeStats(b,[SEL]))}</div>
+  </div>`;
+}
+function yesterdayOf(ds){ return addDays(ds,-1); }
+
+/* ---------- 渲染：周对比 ---------- */
+function viewWeek(){
+  const rows=rowsFiltered();
+  const b={...BASE,rows};
+  const weeks=[0,1,2,3].map(i=>{ const w=weekWindow(WEEK_OFF-i); const r=snapRange(b,w.start,w.end); return {...r,w}; });
+  // 标签必须按真实 offset 算，否则往回翻页后会错标成"本周"
+  weeks.forEach(r=>{
+    const off=r.w.offset;
+    r.label = off===0?'本周':(off===-1?'上周':'前 '+Math.abs(off)+' 周');
+  });
+  weeks.reverse();
+  const cur=weeks[weeks.length-1];
+
+  const rowsHtml=weeks.map(r=>{
+    const isCur=r.w.offset===0;
+    return `<tr class="${isCur?'cur-row':''}">
+      <td style="font-weight:${isCur?'600':'400'}">${r.label}
+        <div style="font-size:11px;color:var(--txt3);font-weight:400">${r.start.slice(5)} ~ ${r.end.slice(5)}</div>
+        ${isCur?'<span class="pill" style="background:rgba(91,108,255,.18);color:var(--indigo);margin-top:2px">进行中</span>':''}
+      </td>
+      <td><div class="bar-cell"><span style="color:${rateStyle(r.avgRate)};font-variant-numeric:tabular-nums">${r.avgRate}%</span>
+        <div class="bar-sm"><i style="width:${r.avgRate}%;background:${rateStyle(r.avgRate)}"></i></div></div></td>
+      <td class="n">${r.dayCount?r.dayCount:'-'}</td>
+      <td class="n" style="color:${r.zeroN?'var(--red)':'var(--txt3)'}">${r.zeroN||'-'}</td>
+      <td class="n">${r.DONE||'-'}</td>
+      <td class="n" style="color:${r.certN?'var(--emerald)':'var(--txt3)'}">${r.certN||'-'}</td>
+      <td>${weekSpark(r.days)}</td>
+    </tr>`;
+  }).join('');
+
+  const prev=weeks[weeks.length-2];
+  const delta=prev?(cur.avgRate-prev.avgRate):0;
+
+  return `
+  <div class="sec">
+    <div class="sec-h"><h2>前三周 + 本周 对比</h2><span class="hint">按周一看起，周日为止</span></div>
+    <div class="grid g4">
+      <div class="kpi" style="--accent:var(--indigo)">
+        <div class="lb">本周平均打卡率</div><div class="vl" style="color:${rateStyle(cur.avgRate)}">${cur.avgRate}%</div>
+        <div class="sub">较上周 <b style="color:${delta>=0?'var(--emerald)':'var(--red)'}">${delta>=0?'+':''}${delta}</b> 个百分点</div>
+      </div>
+      <div class="kpi" style="--accent:var(--red)">
+        <div class="lb">整周未打卡</div><div class="vl">${cur.zeroN}</div>
+        <div class="sub">本周有打卡 <b>${cur.everN}</b> 人</div>
+      </div>
+      <div class="kpi" style="--accent:var(--emerald)">
+        <div class="lb">本周完成带训日</div><div class="vl">${cur.DONE}</div>
+        <div class="sub">上周 ${prev?prev.DONE:'-'} 个</div>
+      </div>
+      <div class="kpi" style="--accent:var(--purple)">
+        <div class="lb">本周认证</div><div class="vl">${cur.certN}</div>
+        <div class="sub">上周 ${prev?prev.certN:'-'} 人</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="panel">
+      <div class="panel-h"><h3>四周横向对比</h3><span class="cnt">单位：人 / %</span></div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>周次</th><th>平均打卡率</th><th class="n">有效天数</th><th class="n">整周未打卡</th><th class="n">完成带训日</th><th class="n">认证</th><th>每日走势</th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table></div>
+    </div>
+  </div>
+
+  ${cur.zeroN?`<div class="sec">
+    <div class="sec-h"><h2>本周整周零打卡名单</h2><span class="hint">最需要用电话催的一批人</span></div>
+    <div class="panel"><div class="plist">${cur.zero.slice(0,20).map(t=>`
+      <div class="prow" style="--c:var(--red)">
+        <div class="av" style="color:var(--red)">${esc(t.name.slice(0,1))}</div>
+        <div class="info"><div class="nm">${esc(t.name)}</div><div class="meta">${esc(t.store)} · ${esc(t.master||'无师傅')} · 进度 ${t._prog.percent}%</div></div>
+        <div class="tag" style="background:rgba(240,82,82,.15);color:var(--red)">7天零打卡</div>
+      </div>`).join('')}</div></div>
+  </div>`:''}
+
+  <div class="sec">
+    <div class="sec-h"><h2>门店本周表现</h2><span class="hint">按本周平均打卡率排序</span></div>
+    <div class="panel">${storeTable(storeStats(b,eachDay(cur.start,Math.min(cur.end,BASE.today))))}</div>
+  </div>`;
+}
+function weekSpark(days){
+  return `<div class="spark" style="height:26px;gap:2px;padding-top:0">${days.map(d=>{
+    const r=d.rate;
+    return `<div class="bar" style="height:${r==null?6:Math.max(6,r)}%;background:${r==null?'#333849':rateStyle(r)}" title="${d.ds} ${r==null?'无数据':r+'%'}"></div>`;
+  }).join('')}</div>`;
+}
+
+/* ---------- 渲染：月度 ---------- */
+function viewMonth(){
+  const rows=rowsFiltered();
+  const b={...BASE,rows};
+  const m0=monthWindow(MONTH_OFF);
+  const curRange=snapRange(b,m0.start,m0.end);
+  curRange.label=m0.year+'年'+m0.month+'月';
+  const months=[2,1,0].map(i=>{ const w=monthWindow(MONTH_OFF-i); const r=snapRange(b,w.start,w.end); r.label=w.year+'年'+w.month+'月'; r.isCur=i===0; return r; });
+  const prev=months[1];
+  const days=eachDay(m0.start,m0.end);
+
+  const cal=monthCal(curRange,m0);
+
+  return `
+  <div class="sec">
+    <div class="sec-h"><h2>${m0.year} 年 ${m0.month} 月 月度数据</h2><span class="hint">每一天都可单独点开查看</span></div>
+    <div class="grid g4">
+      <div class="kpi" style="--accent:var(--indigo)">
+        <div class="lb">月均打卡率</div><div class="vl" style="color:${rateStyle(curRange.avgRate)}">${curRange.avgRate}%</div>
+        <div class="sub">较上月 <b style="color:${curRange.avgRate-(prev?prev.avgRate:0)>=0?'var(--emerald)':'var(--red)'}">${curRange.avgRate-(prev?prev.avgRate:0)>=0?'+':''}${curRange.avgRate-(prev?prev.avgRate:0)}</b></div>
+      </div>
+      <div class="kpi" style="--accent:var(--red)">
+        <div class="lb">全月零打卡</div><div class="vl">${curRange.zeroN}</div>
+        <div class="sub">月内有打卡 <b>${curRange.everN}</b> 人</div>
+      </div>
+      <div class="kpi" style="--accent:var(--emerald)">
+        <div class="lb">月内完成带训日</div><div class="vl">${curRange.DONE}</div>
+        <div class="sub">上月 ${prev?prev.DONE:'-'} 个</div>
+      </div>
+      <div class="kpi" style="--accent:var(--purple)">
+        <div class="lb">本月认证晋升</div><div class="vl">${curRange.certN}</div>
+        <div class="sub">上月 ${prev?prev.certN:'-'} 人</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="grid g2">
+      <div class="panel">
+        <div class="panel-h"><h3>本月每日打卡率</h3><span class="cnt">点击某天查看当天实况</span></div>
+        ${cal}
+      </div>
+      <div class="panel">
+        <div class="panel-h"><h3>近三个月对比</h3></div>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>月份</th><th>平均打卡率</th><th class="n">零打卡</th><th class="n">完成带训日</th><th class="n">认证</th></tr></thead>
+          <tbody>${months.map(r=>`
+            <tr class="${r.isCur?'cur-row':''}">
+              <td style="font-weight:${r.isCur?'600':'400'}">${r.label}${r.isCur?' <span class="pill" style="background:rgba(91,108,255,.18);color:var(--indigo)">本月</span>':''}</td>
+              <td><div class="bar-cell"><span style="color:${rateStyle(r.avgRate)};font-variant-numeric:tabular-nums">${r.avgRate}%</span>
+                <div class="bar-sm"><i style="width:${r.avgRate}%;background:${rateStyle(r.avgRate)}"></i></div></div></td>
+              <td class="n" style="color:${r.zeroN?'var(--red)':'var(--txt3)'}">${r.zeroN||'-'}</td>
+              <td class="n">${r.DONE||'-'}</td>
+              <td class="n" style="color:${r.certN?'var(--emerald)':'var(--txt3)'}">${r.certN||'-'}</td>
+            </tr>`).join('')}</tbody>
+        </table></div>
+        <div class="panel-h" style="margin:18px 0 10px"><h3>本月关键名单</h3></div>
+        <div style="font-size:12.5px;color:var(--txt2);line-height:1.9">
+          <div>全月零打卡：<b style="color:var(--red)">${curRange.zeroN}</b> 人${curRange.zeroN?'（'+esc(curRange.zero.slice(0,5).map(t=>t.name).join('、'))+(curRange.zeroN>5?' 等':'')+'）':''}</div>
+          <div>本月认证晋升：<b style="color:var(--emerald)">${curRange.certN}</b> 人${curRange.certN?'（'+esc(curRange.certList.slice(0,5).map(t=>t.name).join('、'))+(curRange.certN>5?' 等':'')+'）':''}</div>
+          <div>工时超阈值（当前值）：<b style="color:var(--amber)">${curRange.warnN}</b> 人</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-h"><h2>门店本月表现</h2><span class="hint">按本月平均打卡率排序</span></div>
+    <div class="panel">${storeTable(storeStats(b,days.filter(d=>d<=BASE.today)))}</div>
+  </div>`;
+}
+function monthCal(range,mw){
+  const map={}; range.days.forEach(d=>{ map[d.ds]=d.rate; });
+  const first=new Date(mw.start+'T00:00:00');
+  const lead=first.getDay();
+  const total=new Date(mw.year,mw.month,0).getDate();
+  let html='<div class="cal">';
+  ['日','一','二','三','四','五','六'].forEach(w=>{ html+=`<div class="hd">${w}</div>`; });
+  for(let i=0;i<lead;i++) html+='<div class="cell out"></div>';
+  for(let d=1;d<=total;d++){
+    const ds=mw.start.slice(0,8)+String(d).padStart(2,'0');
+    const future=ds>BASE.today;
+    const r=future?null:map[ds];
+    const clickable=!future;
+    html+=`<div class="cell" style="background:${heatColor(r)};${clickable?'cursor:pointer':''}"
+      ${clickable?`onclick="openDay('${ds}')"`:''}
+      title="${ds} ${r==null?'无数据':r+'%'}">
+      <span class="pc-t" style="color:${future?'#31364a':(r!=null&&r<70?'#fff':'var(--txt)')}">${d}</span>
+    </div>`;
+  }
+  html+='</div>';
+  html+=`<div class="legend">
+    <span><i class="dot" style="background:rgba(34,201,138,.85)"></i>≥95%</span>
+    <span><i class="dot" style="background:rgba(240,169,42,.6)"></i>70-94%</span>
+    <span><i class="dot" style="background:rgba(240,82,82,.55)"></i>&lt;70%</span>
+    <span><i class="dot" style="background:rgba(255,255,255,.06)"></i>未来/无数据</span>
+  </div>`;
+  return html;
+}
+function openDay(ds){ SEL=ds; MODE='day'; renderCtrl(); refresh(); window.scrollTo({top:0,behavior:'smooth'}); }
+
+/* ---------- 门店表 ---------- */
+function storeTable(stores){
+  if(!stores.length) return '<div class="empty">当前筛选下没有门店数据</div>';
+  return `<div class="tbl-wrap"><table>
+    <thead><tr><th>门店</th><th>打卡率</th><th class="n">在训</th><th class="n">零打卡</th><th class="n">完成天数</th><th class="n">工时超标</th><th class="n">认证</th></tr></thead>
+    <tbody>${stores.map(s=>`
+      <tr>
+        <td style="font-weight:500">${esc(s.store)}<div style="font-size:11px;color:var(--txt3)">${esc(areaName(s.area))}</div></td>
+        <td><div class="bar-cell"><span style="color:${rateStyle(s.rate)};font-variant-numeric:tabular-nums">${s.rate}%</span>
+          <div class="bar-sm"><i style="width:${s.rate}%;background:${rateStyle(s.rate)}"></i></div></div></td>
+        <td class="n">${s.activeEnd}</td>
+        <td class="n" style="color:${s.zeroN?'var(--red)':'var(--txt3)'}">${s.zeroN||'-'}</td>
+        <td class="n">${s.doneN||'-'}</td>
+        <td class="n" style="color:${s.warnN?'var(--amber)':'var(--txt3)'}">${s.warnN||'-'}</td>
+        <td class="n" style="color:${s.certN?'var(--emerald)':'var(--txt3)'}">${s.certN||'-'}</td>
+      </tr>`).join('')}</tbody>
+  </table></div>`;
+}
+
+/* ---------- 总渲染 ---------- */
 function refresh(){
   if(!BASE) return;
-  const view=filteredModel(BASE);
-  render(view);
-  const sum=document.getElementById('viewSum');
-  if(sum){
-    const parts=[BASE.today];
-    const a=document.getElementById('areaSel').value, s=document.getElementById('storeSel').value;
-    if(a) parts.push(areaName(a));
-    if(s) parts.push(s);
-    sum.textContent=parts.join(' · ');
-  }
+  const warn=BASE.real?'':`<div class="note no-print">当前为<b>演示数据</b>（原因：${esc(BASE.reason||'未登录')}）。在生产站点已登录状态下打开本页面，会自动切换成你的真实学员数据。</div>`;
+  const hm=`<div class="warnnote no-print">历史视图中的<b>「工时」一律是当前累计值</b>（库里没有每日工时快照，无法还原历史某天的工时）；打卡、完成带训日、认证三项均带时间戳，可精确回溯。</div>`;
+  const body = MODE==='day'?viewDay():(MODE==='week'?viewWeek():viewMonth());
+  const el=document.getElementById('root');
+  el.innerHTML=warn+hm+body;
+  el.dataset.rendered='1';
+  VIEW={mode:MODE};
 }
 
 /* ---------- 导出 ---------- */
-function currentRows(){
-  if(!MODEL) return [];
-  return MODEL.all;
+function exportCtx(){
+  const rows=rowsFiltered();
+  if(MODE==='day'){ const s=snapDay({...BASE,rows},SEL); return {tag:SEL+'_当日',rows,snap:s}; }
+  if(MODE==='week'){ const w=weekWindow(WEEK_OFF); const r=snapRange({...BASE,rows},w.start,w.end); return {tag:w.start+'_'+w.end+'_周报',rows,snap:r}; }
+  const m=monthWindow(MONTH_OFF); const r=snapRange({...BASE,rows},m.start,m.end);
+  return {tag:m.year+'-'+String(m.month).padStart(2,'0')+'_月报',rows,snap:r};
 }
 function exportXlsx(){
-  if(!MODEL){ alert('数据尚未加载完成'); return; }
+  if(!BASE){ alert('数据尚未加载完成'); return; }
   if(typeof XLSX==='undefined'){ alert('导出组件未加载成功，请检查网络'); return; }
+  const ctx=exportCtx();
   const wb=XLSX.utils.book_new();
+  const days=MODE==='day'?[ctx.snap.ds]:(eachDay(ctx.snap.start,Math.min(ctx.snap.end,BASE.today)));
 
-  const s1=MODEL.stores.map(s=>({
-    '门店':s.store,'区域':areaName(s.area),'在训人数':s.active,'今日打卡率':s.rate+'%',
-    '昨日打卡':s.checkedY+'/'+s.active,'平均进度':s.avgProg+'%','工时超标':s.warn,'停滞≥3天':s.stalled,
-    '本月晋升':s.certMonth,'累计认证':s.cert
-  }));
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(s1),'门店汇总');
+  const st=storeStats({...BASE,rows:ctx.rows},days);
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(st.map(s=>({
+    '门店':s.store,'区域':areaName(s.area),'打卡率':s.rate+'%','在训人数':s.activeEnd,
+    '零打卡人数':s.zeroN,'完成带训日':s.doneN,'工时超标(当前值)':s.warnN,'期间认证':s.certN
+  }))),'门店汇总');
 
-  const s2=currentRows().map(t=>({
-    '姓名':t.name,'门店':t.store,'区域':areaName(t.area),'路线':(typeof getRouteName==='function'?getRouteName(t.route,t.subRoute):t.route),
-    '师傅':t.master||'','工号':t.empId||'','入职日期':t.startDate||'','雇佣性质':isPartTime(t)?'兼职':'全职',
-    '是否认证':t._cert?'已认证':'带训中','进度':t._prog.percent+'%','完成天数':t._prog.completed+'/'+t._prog.total,
-    '当前天数':t._cd?t._cd.day:'','累计工时':t._hours==null?'':t._hours,'工时上限':getWorkHoursLimit(t),
-    '今日打卡':t._checkedToday?'是':'否','昨日打卡':t._checkedY?'是':'否','连续未打卡':t._streak.days>=9999?'从未打卡':t._streak.days,
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(ctx.rows.map(t=>({
+    '姓名':t.name,'门店':t.store,'区域':areaName(t.area),
+    '路线':(typeof getRouteName==='function'?getRouteName(t.route,t.subRoute):t.route),
+    '师傅':t.master||'','工号':t.empId||'','入职日期':t.startDate||'',
+    '雇佣性质':isPartTime(t)?'兼职':'全职','是否认证':t._cert?'已认证':'带训中',
+    '认证日期':t._certAt||'','当前进度':t._prog.percent+'%',
+    '完成天数':t._prog.completed+'/'+t._prog.total,
+    '期间打卡天数':days.filter(d=>t._checked.has(d)).length,
+    '期间零打卡':days.some(d=>t._checked.has(d))?'':'是',
+    '累计工时(当前值)':t._hours==null?'':t._hours,'工时上限':getWorkHoursLimit(t),
     '备注':t.note||''
-  }));
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(s2),'学员明细');
+  }))),'学员明细');
 
-  const s3=MODEL.stalled.concat(MODEL.overHours).filter((v,i,a)=>a.findIndex(x=>x.id===v.id)===i)
-    .map(t=>({'姓名':t.name,'门店':t.store,'类型':MODEL.stalled.includes(t)?'连续未打卡':'工时超标',
-      '详情':MODEL.stalled.includes(t)?(t._streak.days>=9999?'从未打卡':t._streak.days+'天'):(t._hours+'h/上限'+getWorkHoursLimit(t)+'h'),
-      '师傅':t.master||'','进度':t._prog.percent+'%'}));
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(s3),'重点跟进');
-
-  XLSX.writeFile(wb,'带训周报_'+MODEL.today+'.xlsx');
+  if(MODE!=='day'){
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(ctx.snap.zero.map(t=>({
+      '姓名':t.name,'门店':t.store,'区域':areaName(t.area),'师傅':t.master||'',
+      '当前进度':t._prog.percent+'%','问题':'整区间零打卡'
+    }))),'零打卡名单');
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(ctx.snap.certList.map(t=>({
+      '姓名':t.name,'门店':t.store,'区域':areaName(t.area),'认证日期':t._certAt,
+      '路线':(typeof getRouteName==='function'?getRouteName(t.route,t.subRoute):t.route)
+    }))),'期间认证');
+  }
+  XLSX.writeFile(wb,'带训'+ctx.tag+'.xlsx');
 }
 function exportImage(){
   const el=document.getElementById('root');
-  if(!el){ return; }
   if(typeof html2canvas==='undefined'){ alert('截图组件未加载成功，请检查网络'); return; }
-  const btn=document.querySelector('button.pri');
   html2canvas(el,{backgroundColor:'#0a0b0f',scale:2,scrollY:-window.scrollY,windowWidth:document.documentElement.clientWidth})
-    .then(cv=>{
-      const a=document.createElement('a');
-      a.href=cv.toDataURL('image/png');
-      a.download='带训周报_'+(MODEL?MODEL.today:'')+'.png';
-      a.click();
-    }).catch(e=>alert('截图失败：'+e.message));
+    .then(cv=>{ const a=document.createElement('a'); a.href=cv.toDataURL('image/png');
+      a.download='带训看板_'+(BASE?BASE.today:'')+'.png'; a.click(); })
+    .catch(e=>alert('截图失败：'+e.message));
 }
-function exportPdf(){
-  if(!MODEL){ alert('数据尚未加载完成'); return; }
-  window.print();
-}
+function exportPdf(){ if(!BASE){ alert('数据尚未加载完成'); return; } window.print(); }
 
 /* ---------- 启动 ---------- */
-// 兜底：任何运行时异常都显示出来，避免白屏无从排查
 window.addEventListener('error',e=>{
   const r=document.getElementById('root');
-  if(r && !r.dataset.rendered){
+  if(r&&!r.dataset.rendered){
     r.innerHTML='<div class="loading" style="color:var(--red)">页面出错：'+esc(e.message||'')+
       '<div style="font-size:11px;color:var(--txt3);margin-top:8px">行 '+e.lineno+' · 请把这行信息截图发给开发者</div></div>';
   }
 });
 window.addEventListener('unhandledrejection',e=>{
   const r=document.getElementById('root');
-  if(r && !r.dataset.rendered){
-    r.innerHTML='<div class="loading" style="color:var(--red)">数据加载出错：'+esc(String(e.reason&&e.reason.message||e.reason||''))+'</div>';
+  if(r&&!r.dataset.rendered){
+    r.innerHTML='<div class="loading" style="color:var(--red)">数据加载出错：'+esc(String((e.reason&&e.reason.message)||e.reason||''))+'</div>';
   }
 });
 
 (async function init(){
   const raw=await loadData();
-  const model=buildModel(raw);
-  document.getElementById('dataBadge').className='badge '+(model.real?'live':'demo');
-  document.getElementById('dataBadge').textContent=model.real?'真实数据':'演示数据';
-  document.getElementById('brandSub').textContent='新版看板原型 · '+(model.real?'已连接生产库':'离线演示');
+  BASE=buildBase(raw);
+  document.getElementById('dataBadge').className='badge '+(BASE.real?'live':'demo');
+  document.getElementById('dataBadge').textContent=BASE.real?'真实数据':'演示数据';
+  document.getElementById('brandSub').textContent='新版看板原型 · '+(BASE.real?'已连接生产库':'离线演示');
 
-  const areas=[...new Set(model.all.map(t=>String(t.area)))].sort();
+  const areas=[...new Set(BASE.rows.map(t=>String(t.area)))].sort();
   const aSel=document.getElementById('areaSel');
   areas.forEach(a=>{ const o=document.createElement('option'); o.value=a; o.textContent=areaName(a); aSel.appendChild(o); });
-  const stores=[...new Set(model.all.map(t=>t.store).filter(Boolean))].sort();
+  const stores=[...new Set(BASE.rows.map(t=>t.store).filter(Boolean))].sort();
   const sSel=document.getElementById('storeSel');
   stores.forEach(s=>{ const o=document.createElement('option'); o.value=s; o.textContent=s; sSel.appendChild(o); });
-
-  BASE=model;
   aSel.addEventListener('change',refresh);
   sSel.addEventListener('change',refresh);
+
+  renderCtrl();
   refresh();
 })();
 </script>

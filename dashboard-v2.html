@@ -65,6 +65,20 @@ details.dd .dlist{margin-top:8px;display:flex;flex-direction:column;gap:5px;bord
 details.dd .ditem{font-size:12px;color:var(--txt2);display:flex;gap:8px;align-items:baseline}
 details.dd .ditem b{font-weight:500;color:var(--txt);flex-shrink:0;font-variant-numeric:tabular-nums}
 
+/* ---------- 单日延迟：点人名行展开原因 ---------- */
+details.dx{border-radius:9px}
+details.dx>summary{list-style:none;cursor:pointer;outline:none}
+details.dx>summary::-webkit-details-marker{display:none}
+details.dx>summary.prow:hover{background:#282d3d}
+details.dx[open]>summary.prow{background:#282d3d}
+details.dx>summary .tag::after{content:"▾";margin-left:5px;font-size:9px;opacity:.75}
+details.dx[open]>summary .tag::after{content:"▴"}
+details.dx .dxb{margin:5px 0 2px;padding:9px 11px;border-radius:9px;background:var(--panel2);border:1px solid var(--line);display:flex;flex-direction:column;gap:5px}
+details.dx .dxb .rowd{display:flex;gap:9px;align-items:flex-start;font-size:12px;line-height:1.65}
+details.dx .dxb .k{color:var(--txt3);flex:0 0 54px}
+details.dx .dxb b{font-weight:500;color:var(--txt)}
+details.dx .dxb .full{white-space:normal;word-break:break-word}
+
 /* ---------- KPI ---------- */
 .kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px 16px;position:relative;overflow:hidden}
 .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent,var(--indigo))}
@@ -152,6 +166,8 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   .kpi .vl,.prow .nm,.brand,.sec-h h2,.panel-h h3{color:#000}
   .kpi .lb,.kpi .sub,.prow .meta,.sec-h .hint,.num{color:#666}
   .prow{background:#f5f6f9;border-left-color:#999}
+  details.dx>summary.prow:hover,details.dx[open]>summary.prow{background:#eceef5}
+  details.dx .dxb{background:#f5f6f9;border-color:#d5d9e2}
   .rowe{border-bottom-color:#e3e6ee}
   .rank,.pill{background:#eee}
   .spark .bar{background:#4a5ae8!important}
@@ -606,7 +622,7 @@ function dayDetail(rows,ds){
       // 4) 当天延迟（含历史日期数组与旧时间戳两种存法）
       const hasDelayArr=Array.isArray(day.delayDates)&&day.delayDates.includes(ds);
       const hasDelayTs=day.delayed===true&&day.delayAt&&localDateStr(day.delayAt)===ds;
-      if(hasDelayArr||hasDelayTs) delayDay=day;
+      if(hasDelayArr||hasDelayTs) delayDay={key:k,day};
       // 5) 当天休息
       const hasRestArr=Array.isArray(day.restDates)&&day.restDates.includes(ds);
       const hasRestTs=day.rest===true&&day.restAt&&localDateStr(day.restAt)===ds;
@@ -615,8 +631,13 @@ function dayDetail(rows,ds){
     if(hitN>0) checked.push({t,n:hitN});
     if(doneDay){ const info=dayInfoOf(t,doneDay.key); done.push({t,day:doneDay.day,info}); }
     if(t._certAt===ds) cert.push({t});
-    // 延迟原因：优先取按日期存的 delayNotes[ds]，回退到旧的单值 delayNote
-    if(delayDay) delay.push({t,note:(delayDay.delayNotes&&delayDay.delayNotes[ds])||delayDay.delayNote||''});
+    // 延迟原因：优先取按日期存的 delayNotes[ds]，回退到旧的单值 delayNote；同时带上"被延迟的带训日"
+    if(delayDay) delay.push({
+      t,ds,
+      note:(delayDay.day.delayNotes&&delayDay.day.delayNotes[ds])||delayDay.day.delayNote||'',
+      full:(delayDay.day.delayNotes&&delayDay.day.delayNotes[ds])||delayDay.day.delayNote||'',
+      info:dayInfoOf(t,delayDay.key),key:delayDay.key
+    });
     if(restDay) rest.push({t});
   });
   return {checked,done,cert,delay,rest};
@@ -739,6 +760,16 @@ function storeStats(base,days){
 
 /* ---------- 全局状态 ---------- */
 let BASE=null, VIEW=null, MODE='week', SEL=today(), WEEK_OFF=0, MONTH_OFF=0;
+const DELAY_TOP=10;   // 月度延迟明细默认展示人数，其余点按钮展开
+// 月度延迟明细：展开/收起"剩余 N 人"
+function toggleDelayMore(btn){
+  const tb=btn.closest('tbody'); if(!tb) return;
+  const more=tb.querySelectorAll('tr.dl-more');
+  const open=btn.getAttribute('data-open')==='1';
+  more.forEach(r=>{ r.style.display=open?'none':''; });
+  btn.setAttribute('data-open',open?'0':'1');
+  btn.textContent=open?('点击展开显示剩余 '+more.length+' 人'):('收起（只显示前 '+DELAY_TOP+' 人）');
+}
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function rateStyle(r){ return r>=90?'var(--emerald)':r>=70?'var(--amber)':'var(--red)'; }
 function heatColor(r){
@@ -904,12 +935,20 @@ function viewDay(){
       </div>
       <div class="panel">
         <div class="panel-h"><h3 style="color:var(--amber)">● 延迟（含原因）</h3><span class="cnt">${dd.delay.length} 人</span></div>
-        ${miniList(dd.delay,'不在','当天没有人延迟',x=>`
-          <div class="prow" style="--c:var(--amber)">
-            <div class="av" style="color:var(--amber)">${esc(x.t.name.slice(0,1))}</div>
-            <div class="info"><div class="nm">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · ${x.note?'原因：'+esc(x.note):'未填原因'}</div></div>
-            <div class="tag" style="background:rgba(240,169,42,.15);color:var(--amber)">延迟</div>
-          </div>`)}
+        ${dd.delay.length?`<div class="plist">${dd.delay.slice(0,15).map(x=>`
+          <details class="dx">
+            <summary class="prow" style="--c:var(--amber)">
+              <div class="av" style="color:var(--amber)">${esc(x.t.name.slice(0,1))}</div>
+              <div class="info"><div class="nm">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · ${esc(x.t.master||'无师傅')}</div></div>
+              <div class="tag" style="background:rgba(240,169,42,.15);color:var(--amber)">延迟</div>
+            </summary>
+            <div class="dxb">
+              <div class="rowd"><span class="k">延迟日期</span><span>${esc(SEL)}</span></div>
+              <div class="rowd"><span class="k">带训日</span><span>${x.info?`${esc((x.info.monthName||'')+' '+(x.info.phaseName||''))} 第 ${x.info.day} 天`:'未能定位到具体带训日'}</span></div>
+              <div class="rowd"><span class="k">延迟原因</span><b class="full" style="color:${x.note?'var(--amber)':'var(--txt3)'}">${x.note?esc(x.note):'学员/师傅未填写原因'}</b></div>
+            </div>
+          </details>`).join('')}</div>${dd.delay.length>15?`<div class="empty" style="padding:8px 0">还有 ${dd.delay.length-15} 人未显示</div>`:''}`
+        :'<div class="empty">当天没有人延迟</div>'}
       </div>
       <div class="panel">
         <div class="panel-h"><h3 style="color:var(--txt2)">● 休息</h3><span class="cnt">${dd.rest.length} 人</span></div>
@@ -1107,12 +1146,12 @@ function viewMonth(){
   </div>
 
   <div class="sec">
-    <div class="sec-h"><h2>本月延迟明细</h2><span class="hint">共 ${delayTotalN} 次延迟 · ${dl.length} 人 · 点开可看每次延迟的日期与原因</span></div>
+    <div class="sec-h"><h2>本月延迟明细</h2><span class="hint">共 ${delayTotalN} 次延迟 · ${dl.length} 人 · 默认显示前 ${DELAY_TOP} 人，点人名行可看每次延迟的日期与原因</span></div>
     <div class="panel">
       ${dl.length?`<div class="tbl-wrap"><table>
         <thead><tr><th>学员</th><th>门店</th><th>师傅</th><th class="n">延迟次数</th><th>每次延迟的日期与原因</th></tr></thead>
-        <tbody>${dl.map(x=>`
-          <tr>
+        <tbody>${dl.map((x,i)=>`
+          <tr class="${i>=DELAY_TOP?'dl-more':''}"${i>=DELAY_TOP?' style="display:none"':''}>
             <td style="font-weight:500">${esc(x.t.name)}</td>
             <td>${esc(x.t.store)}</td>
             <td style="color:var(--txt3)">${esc(x.t.master||'-')}</td>
@@ -1121,7 +1160,11 @@ function viewMonth(){
               <div class="dlist">${x.items.map(it=>`
                 <div class="ditem"><b>${it.ds.slice(5)}</b><span>${it.note?esc(it.note):'未填原因'}</span></div>`).join('')}
               </div></details></td>
-          </tr>`).join('')}</tbody>
+          </tr>`).join('')}
+          ${dl.length>DELAY_TOP?`<tr class="dl-morebtn"><td colspan="5" style="text-align:center;padding:11px 0">
+            <button class="btn sm" onclick="toggleDelayMore(this)">点击展开显示剩余 ${dl.length-DELAY_TOP} 人</button>
+          </td></tr>`:''}
+        </tbody>
       </table></div>`:'<div class="empty">本月没有人延迟</div>'}
     </div>
   </div>

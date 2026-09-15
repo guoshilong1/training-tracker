@@ -17,6 +17,10 @@
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--txt);font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;font-size:14px;line-height:1.5}
 .wrap{max-width:1440px;margin:0 auto;padding:16px}
+/* 嵌入模式：被生产站点以 iframe 引入时（body.embed）取消限宽与外层留白，贴合内容区 */
+body.embed{overflow-x:hidden}
+body.embed .wrap{max-width:none;margin:0;padding:12px 14px 20px}
+body.embed .topbar{padding-top:2px;padding-bottom:14px;margin-bottom:14px}
 
 /* ---------- 顶栏 ---------- */
 .topbar{display:flex;align-items:center;gap:11px;flex-wrap:wrap;padding:14px 0 18px;border-bottom:1px solid var(--line);margin-bottom:18px}
@@ -211,6 +215,9 @@ const SB_KEY='sb_publishable_KrCOzlUPTcrb8S4-ajTjww_EhKibtaC';
 // 所有视图（日期选择、周/月翻页、连续未打卡天数）都不早于这一天，
 // 否则会把"系统还没上线"误读成"学员长期没打卡"。若将来数据更早，只需改这里。
 const DATA_START='2026-08-01';
+// 嵌入模式：被生产站点 index.html 的管理看板以 iframe 引入时带 ?embed=1，
+// 此时去掉外层限宽/留白，让页面贴合内容区宽度（独立打开本页则不受影响）
+const EMBED=/[?&]embed=1/.test(location.search);
 const AREA_NAMES={'000':'郭士龙区域','001':'李澳区域','002':'韩福亮区域','003':'王萌区域','004':'徐誌良区域','005':'郜一鸣区域','006':'李万玲区域','007':'江秀丽区域','666':'白高朋大区'};
 // 启动时会用 index.html 里的 AREA_CONFIG 覆盖这张表，保证区域名与生产系统完全一致
 let NAME_MAP={...AREA_NAMES};
@@ -1551,6 +1558,7 @@ window.addEventListener('unhandledrejection',e=>{
 });
 
 (async function init(){
+  if(EMBED) document.body.classList.add('embed');
   // 先定身份，再拉数据：账号决定能看到哪些小区/门店
   const cfgList=await loadAreaConfig();
   SCOPE=resolveScope(readUser(),cfgList);

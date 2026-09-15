@@ -831,6 +831,7 @@ function storeStats(base,days){
 let BASE=null, VIEW=null, MODE='week', SEL=today(), WEEK_OFF=0, MONTH_OFF=0;
 const DELAY_TOP=10;   // 月度延迟明细默认展示人数，其余点按钮展开
 const MASTER_TOP=10;  // 师傅排名默认展示人数，其余点按钮展开
+const STORE_TOP=10;   // 门店表现表（日/周/月共用）默认展示行数，其余点按钮展开
 // 月度延迟明细：展开/收起"剩余 N 人"
 function toggleDelayMore(btn){
   const tb=btn.closest('tbody'); if(!tb) return;
@@ -848,6 +849,15 @@ function toggleMasterMore(btn){
   more.forEach(r=>{ r.style.display=open?'none':''; });
   btn.setAttribute('data-open',open?'0':'1');
   btn.textContent=open?('点击展开显示剩余 '+more.length+' 位'):('收起（只显示前 '+MASTER_TOP+' 位）');
+}
+// 门店表现表：展开/收起"剩余 N 家"（日/周/月三个视图共用 storeTable，同一套交互）
+function toggleStoreMore(btn){
+  const tb=btn.closest('tbody'); if(!tb) return;
+  const more=tb.querySelectorAll('tr.st-more');
+  const open=btn.getAttribute('data-open')==='1';
+  more.forEach(r=>{ r.style.display=open?'none':''; });
+  btn.setAttribute('data-open',open?'0':'1');
+  btn.textContent=open?('点击展开显示剩余 '+more.length+' 家'):('收起（只显示前 '+STORE_TOP+' 家）');
 }
 
 /* ---------- 徒弟单人下钻（点人名看完整带训轨迹） ---------- */
@@ -1096,7 +1106,7 @@ function viewDay(){
   </div>
 
   <div class="sec">
-    <div class="sec-h"><h2>门店当日表现</h2><span class="hint">按打卡率升序，最差的在上面</span></div>
+    <div class="sec-h"><h2>门店当日表现</h2><span class="hint">按打卡率升序，最差的在上面 · 默认显示前 ${STORE_TOP} 家</span></div>
     <div class="panel">${storeTable(storeStats(b,[SEL]))}</div>
   </div>`;
 }
@@ -1186,7 +1196,7 @@ function viewWeek(){
   </div>`:''}
 
   <div class="sec">
-    <div class="sec-h"><h2>门店${wl}表现</h2><span class="hint">按${wl}平均打卡率排序</span></div>
+    <div class="sec-h"><h2>门店${wl}表现</h2><span class="hint">按${wl}平均打卡率排序 · 默认显示前 ${STORE_TOP} 家</span></div>
     <div class="panel">${storeTable(storeStats(b,eachDay(cur.start,Math.min(cur.end,BASE.today))))}</div>
   </div>`;
 }
@@ -1342,7 +1352,7 @@ function viewMonth(){
   </div>
 
   <div class="sec">
-    <div class="sec-h"><h2>门店本月表现</h2><span class="hint">按本月平均打卡率排序</span></div>
+    <div class="sec-h"><h2>门店本月表现</h2><span class="hint">按本月平均打卡率排序 · 默认显示前 ${STORE_TOP} 家</span></div>
     <div class="panel">${storeTable(storeStats(b,days.filter(d=>d<=BASE.today)))}</div>
   </div>`;
 }
@@ -1521,8 +1531,8 @@ function storeTable(stores){
   if(!stores.length) return '<div class="empty">当前筛选下没有门店数据</div>';
   return `<div class="tbl-wrap"><table>
     <thead><tr><th>门店</th><th>打卡率</th><th class="n">在训</th><th class="n">零打卡</th><th class="n">完成天数</th><th class="n">工时超标</th><th class="n">认证</th></tr></thead>
-    <tbody>${stores.map(s=>`
-      <tr>
+    <tbody>${stores.map((s,i)=>`
+      <tr class="${i>=STORE_TOP?'st-more':''}"${i>=STORE_TOP?' style="display:none"':''}>
         <td style="font-weight:500">${esc(s.store)}<div style="font-size:11px;color:var(--txt3)">${esc(areaName(s.area))}</div></td>
         <td><div class="bar-cell"><span style="color:${rateStyle(s.rate)};font-variant-numeric:tabular-nums">${s.rate}%</span>
           <div class="bar-sm"><i style="width:${s.rate}%;background:${rateStyle(s.rate)}"></i></div></div></td>
@@ -1531,7 +1541,7 @@ function storeTable(stores){
         <td class="n">${s.doneN||'-'}</td>
         <td class="n" style="color:${s.warnN?'var(--amber)':'var(--txt3)'}">${s.warnN||'-'}</td>
         <td class="n" style="color:${s.certN?'var(--emerald)':'var(--txt3)'}">${s.certN||'-'}</td>
-      </tr>`).join('')}</tbody>
+      </tr>`).join('')}${stores.length>STORE_TOP?`<tr class="st-morebtn"><td colspan="7" style="text-align:center;padding:11px 0"><button class="btn sm" onclick="toggleStoreMore(this)">点击展开显示全部（共 ${stores.length} 家门店）</button></td></tr>`:''}</tbody>
   </table></div>`;
 }
 

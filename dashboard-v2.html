@@ -768,6 +768,7 @@ function storeStats(base,days){
 /* ---------- 全局状态 ---------- */
 let BASE=null, VIEW=null, MODE='week', SEL=today(), WEEK_OFF=0, MONTH_OFF=0;
 const DELAY_TOP=10;   // 月度延迟明细默认展示人数，其余点按钮展开
+const MASTER_TOP=10;  // 师傅排名默认展示人数，其余点按钮展开
 // 月度延迟明细：展开/收起"剩余 N 人"
 function toggleDelayMore(btn){
   const tb=btn.closest('tbody'); if(!tb) return;
@@ -776,6 +777,15 @@ function toggleDelayMore(btn){
   more.forEach(r=>{ r.style.display=open?'none':''; });
   btn.setAttribute('data-open',open?'0':'1');
   btn.textContent=open?('点击展开显示剩余 '+more.length+' 人'):('收起（只显示前 '+DELAY_TOP+' 人）');
+}
+// 师傅排名：展开/收起"剩余 N 位"（与延迟明细同一套交互，保持体验一致）
+function toggleMasterMore(btn){
+  const tb=btn.closest('tbody'); if(!tb) return;
+  const more=tb.querySelectorAll('tr.mr-more');
+  const open=btn.getAttribute('data-open')==='1';
+  more.forEach(r=>{ r.style.display=open?'none':''; });
+  btn.setAttribute('data-open',open?'0':'1');
+  btn.textContent=open?('点击展开显示剩余 '+more.length+' 位'):('收起（只显示前 '+MASTER_TOP+' 位）');
 }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function rateStyle(r){ return r>=90?'var(--emerald)':r>=70?'var(--amber)':'var(--red)'; }
@@ -1279,7 +1289,7 @@ function viewMaster(){
 
   const body=st.length?st.map((s,i)=>{
     const riskLeave=s.resigned>0;
-    return `<tr class="${s.isUnassigned?'':''}">
+    return `<tr class="${i>=MASTER_TOP?'mr-more':''}"${i>=MASTER_TOP?' style="display:none"':''}>
       <td class="n">${s.isUnassigned?'-':(i+1)}</td>
       <td style="font-weight:500">${esc(s.master)}${s.multiStore?'<div style="font-size:11px;color:var(--amber)">跨店带教</div>':''}</td>
       <td>${esc(s.store)}</td>
@@ -1334,7 +1344,7 @@ function viewMaster(){
           <th class="n">#</th><th>师傅</th><th>门店</th><th class="n">带过</th><th class="n">在训</th><th class="n">出师</th><th class="n">离职</th>
           <th>出师率</th><th>留存率</th><th class="n">平均带训</th><th class="n">徒弟打卡</th><th class="n">徒弟均工时</th><th class="n">综合分</th><th>评级</th>
         </tr></thead>
-        <tbody>${body}</tbody>
+        <tbody>${body}${st.length>MASTER_TOP?`<tr class="mr-morebtn"><td colspan="14" style="text-align:center;padding:11px 0"><button class="btn sm" onclick="toggleMasterMore(this)">点击展开显示全部（共 ${st.length} 位）</button></td></tr>`:''}</tbody>
       </table></div>
       <div class="legend" style="margin-top:12px">
         <span>综合分权重：留存率 ${SCORE_W.stay*100}% + 出师率 ${SCORE_W.cert*100}% + 带训效率 ${SCORE_W.eff*100}% + 徒弟打卡率 ${SCORE_W.attend*100}%</span>

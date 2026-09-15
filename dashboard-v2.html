@@ -179,6 +179,10 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 
 const SB_URL='https://ltjmbmgofjqeezoskqrc.supabase.co';
 const SB_KEY='sb_publishable_KrCOzlUPTcrb8S4-ajTjww_EhKibtaC';
+// 系统启用日：这一天之前系统还没有数据。
+// 所有视图（日期选择、周/月翻页、连续未打卡天数）都不早于这一天，
+// 否则会把"系统还没上线"误读成"学员长期没打卡"。若将来数据更早，只需改这里。
+const DATA_START='2026-08-01';
 const AREA_NAMES={'000':'郭士龙区域','001':'李澳区域','002':'韩福亮区域','003':'王萌区域','004':'徐誌良区域','005':'郜一鸣区域','006':'李万玲区域','007':'江秀丽区域','666':'白高朋大区'};
 // 启动时会用 index.html 里的 AREA_CONFIG 覆盖这张表，保证区域名与生产系统完全一致
 let NAME_MAP={...AREA_NAMES};
@@ -274,16 +278,20 @@ function getWorkHoursWarning(t,hours){
   return null;
 }
 function calcNoCheckInStreak(t,refDay){
+  // 起点不早于「系统启用日」，也不早于入职日：
+  // 否则系统上线之前的那段空白会被误算成"连续未打卡"，出现 101 天这种假信号。
+  const from=(t.startDate&&t.startDate>DATA_START)?t.startDate:DATA_START;
+  if(refDay<from) return {days:0,label:'尚未入职'};
   const dates=checkedDatesOf(t);
-  const d0=t.startDate?new Date(t.startDate+'T00:00:00'):null;
   const ref=new Date(refDay+'T00:00:00');
-  const past=[...dates].filter(d=>new Date(d+'T00:00:00')<=ref).sort();
+  const past=[...dates].filter(d=>d>=from&&d<=refDay).sort();
   if(past.length===0){
-    if(d0){ const n=Math.max(1,Math.round((ref-d0)/86400000)); return {days:n,label:'连续'+n+'天未打卡'}; }
-    return {days:9999,label:'从未打卡'};
+    const n=Math.max(1,Math.round((ref-new Date(from+'T00:00:00'))/86400000));
+    return {days:n,label:'连续'+n+'天未打卡'};
   }
   if(past[past.length-1]>=refDay) return {days:0,label:'当日已打卡'};
-  return {days:daysBetween(past[past.length-1],refDay),label:'连续'+daysBetween(past[past.length-1],refDay)+'天未打卡'};
+  const n=daysBetween(past[past.length-1],refDay);
+  return {days:n,label:'连续'+n+'天未打卡'};
 }
 function rowToTrainee(row){
   let subRoute=row.sub_route||row.progress?._meta?.subRoute||'';
@@ -478,6 +486,19 @@ function monthWindow(offset){
   const last=new Date(y,m+1,0);
   return {start:dateStrOf(first),end:dateStrOf(last),year:y,month:m+1};
 }
+/* 翻页下限：不允许翻到系统启用日（DATA_START）之前 */
+function weekMinOffset(){
+  const d=new Date(DATA_START+'T00:00:00');
+  const off=(d.getDay()+6)%7;
+  const mon=new Date(d); mon.setDate(d.getDate()-off);
+  const cur=new Date(weekWindow(0).start+'T00:00:00');
+  return -Math.round((cur-mon)/604800000);
+}
+function monthMinOffset(){
+  const now=new Date();
+  const d=new Date(DATA_START+'T00:00:00');
+  return -((now.getFullYear()-d.getFullYear())*12+(now.getMonth()-d.getMonth()));
+}
 function eachDay(start,end){
   const out=[]; let d=start;
   while(d<=end && out.length<400){ out.push(d); d=addDays(d,1); }
@@ -511,7 +532,9 @@ function snapDay(base,ds){
 
 /* ---------- 区间汇总（周/月通用） ---------- */
 function snapRange(base,start,end){
-  const days=eachDay(start,end).filter(d=>d<=base.today);
+  // 统计起点不早于系统启用日：8/1 之前系统没数据，算进去只会把打卡率拉成假低值
+  const s0=start<DATA_START?DATA_START:start;
+  const days=eachDay(s0,end).filter(d=>d<=base.today&&d>=DATA_START);
   const rows=base.rows;
   let rateSum=0,dayCount=0;
   const perDay=[];
@@ -526,18 +549,18 @@ function snapRange(base,start,end){
   const windowRows=rows.filter(t=>{
     if(t.startDate&&t.startDate>end) return false;
     if(!t._cert) return true;
-    return !!t._certAt && t._certAt>=start;
+    return !!t._certAt && t._certAt>=s0;
   });
   const zeroCheck=windowRows.filter(t=> !days.some(d=>t._checked.has(d)));
   const everCheck=windowRows.filter(t=> days.some(d=>t._checked.has(d)));
   let doneN=0;
-  rows.forEach(t=>{ t._completedDates.forEach(d=>{ if(d>=start&&d<=end) doneN++; }); });
-  const certN=rows.filter(t=>t._certAt&&t._certAt>=start&&t._certAt<=end).length;
-  const certList=rows.filter(t=>t._certAt&&t._certAt>=start&&t._certAt<=end);
+  rows.forEach(t=>{ t._completedDates.forEach(d=>{ if(d>=s0&&d<=end) doneN++; }); });
+  const certN=rows.filter(t=>t._certAt&&t._certAt>=s0&&t._certAt<=end).length;
+  const certList=rows.filter(t=>t._certAt&&t._certAt>=s0&&t._certAt<=end);
   const warnN=rows.filter(t=>t._warn).length;
   const activeEnd=activeOn(rows,end).length;
   return {
-    start,end,label:'',days:perDay,dayCount,
+    start:s0,end,label:'',days:perDay,dayCount,
     avgRate:dayCount?Math.round(rateSum/dayCount):0,
     overtime:days.length, DONE:doneN, certN, certList,
     zero:zeroCheck, zeroN:zeroCheck.length, everN:everCheck.length,
@@ -595,31 +618,39 @@ function renderCtrl(){
     <button class="tab ${MODE==='month'?'on':''}" onclick="setMode('month')">月度</button>
   </div>`;
   let extra='';
+  const wMin=weekMinOffset(), mMin=monthMinOffset();
   if(MODE==='day'){
     extra=`<span class="lb">查看日期</span>
-      <input type="date" id="datePick" value="${SEL}" max="${BASE.today}" onchange="setDate(this.value)">
+      <input type="date" id="datePick" value="${SEL}" min="${DATA_START}" max="${BASE.today}" onchange="setDate(this.value)">
       <button class="btn sm" onclick="setDate('${BASE.today}')">回到今天</button>
-      <button class="btn sm" onclick="setDate('${addDays(SEL,-1)}')">前一天</button>
-      <button class="btn sm" onclick="setDate('${addDays(SEL,1)}')" ${SEL>=BASE.today?'disabled style="opacity:.4"':''}>后一天</button>`;
+      <button class="btn sm" onclick="setDate('${addDays(SEL,-1)}')" ${SEL<=DATA_START?'disabled style="opacity:.4"':''}>前一天</button>
+      <button class="btn sm" onclick="setDate('${addDays(SEL,1)}')" ${SEL>=BASE.today?'disabled style="opacity:.4"':''}>后一天</button>
+      <span class="lb">数据自 ${DATA_START} 起</span>`;
   }else if(MODE==='week'){
     extra=`<div class="navgrp">
-      <button class="btn sm" onclick="setWeekOff(${WEEK_OFF-1})">← 更早</button>
+      <button class="btn sm" onclick="setWeekOff(${WEEK_OFF-1})" ${WEEK_OFF<=wMin?'disabled style="opacity:.4"':''}>← 更早</button>
       <button class="btn sm" onclick="setWeekOff(0)" ${WEEK_OFF===0?'disabled style="opacity:.4"':''}>回本周</button>
       <button class="btn sm" onclick="setWeekOff(${WEEK_OFF+1})" ${WEEK_OFF>=0?'disabled style="opacity:.4"':''}>更晚 →</button>
-    </div><span class="lb">当前基准：第 ${WEEK_OFF===0?'本':Math.abs(WEEK_OFF)} 周${WEEK_OFF<0?'（往前'+Math.abs(WEEK_OFF)+'周）':''}</span>`;
+    </div><span class="lb">${WEEK_OFF===0?'本周':(WEEK_OFF===-1?'上周':'前 '+Math.abs(WEEK_OFF)+' 周')} · 最早回溯至 ${DATA_START}</span>`;
   }else{
     extra=`<div class="navgrp">
-      <button class="btn sm" onclick="setMonthOff(${MONTH_OFF-1})">← 上月</button>
+      <button class="btn sm" onclick="setMonthOff(${MONTH_OFF-1})" ${MONTH_OFF<=mMin?'disabled style="opacity:.4"':''}>← 上月</button>
       <button class="btn sm" onclick="setMonthOff(0)" ${MONTH_OFF===0?'disabled style="opacity:.4"':''}>回本月</button>
       <button class="btn sm" onclick="setMonthOff(${MONTH_OFF+1})" ${MONTH_OFF>=0?'disabled style="opacity:.4"':''}>下月 →</button>
-    </div>`;
+    </div><span class="lb">最早回溯至 ${DATA_START} 所在月</span>`;
   }
   el.innerHTML=tabs+'<div class="spacer"></div>'+extra;
 }
-function setMode(m){ MODE=m; if(m==='day'&&SEL>BASE.today) SEL=BASE.today; renderCtrl(); refresh(); }
-function setDate(v){ if(!v) return; SEL=v>BASE.today?BASE.today:v; renderCtrl(); refresh(); }
-function setWeekOff(n){ WEEK_OFF=Math.min(0,n); renderCtrl(); refresh(); }
-function setMonthOff(n){ MONTH_OFF=Math.min(0,n); renderCtrl(); refresh(); }
+function clampDate(v){
+  if(!v) return null;
+  if(v>BASE.today) return BASE.today;
+  if(v<DATA_START) return DATA_START;
+  return v;
+}
+function setMode(m){ MODE=m; if(m==='day'){ const c=clampDate(SEL); if(c) SEL=c; } renderCtrl(); refresh(); }
+function setDate(v){ const c=clampDate(v); if(!c) return; SEL=c; renderCtrl(); refresh(); }
+function setWeekOff(n){ WEEK_OFF=Math.max(weekMinOffset(),Math.min(0,n)); renderCtrl(); refresh(); }
+function setMonthOff(n){ MONTH_OFF=Math.max(monthMinOffset(),Math.min(0,n)); renderCtrl(); refresh(); }
 
 /* ---------- 视图过滤 ---------- */
 function rowsFiltered(){
@@ -640,7 +671,8 @@ function viewDay(){
   const y=yesterdayOf(SEL);
   const sy=snapDay(b,y);
   const rate=s.rate;
-  const streakList=activeOn(rows,SEL).filter(t=>t._certAt===null||t._certAt>SEL)
+  // activeOn 已经保证是"那天的在训人群"，此处不要再按 _certAt 判空（_certAt 对未认证者是 ''）
+  const streakList=activeOn(rows,SEL)
     .map(t=>({t,st:calcNoCheckInStreak(t,SEL)})).filter(x=>x.st.days>=3)
     .sort((a,b2)=>b2.st.days-a.st.days);
 
@@ -719,7 +751,11 @@ function yesterdayOf(ds){ return addDays(ds,-1); }
 function viewWeek(){
   const rows=rowsFiltered();
   const b={...BASE,rows};
-  const weeks=[0,1,2,3].map(i=>{ const w=weekWindow(WEEK_OFF-i); const r=snapRange(b,w.start,w.end); return {...r,w}; });
+  // 固定取 WEEK_OFF 及其前 3 周；但翻到下限附近时可用周不足 4 个，
+  // 必须按真实可回溯范围取，否则会渲染出系统启用日之前的周
+  const from=Math.max(weekMinOffset(),WEEK_OFF-3);
+  const offs=[]; for(let o=from;o<=WEEK_OFF;o++) offs.push(o);
+  const weeks=offs.map(o=>{ const w=weekWindow(o); const r=snapRange(b,w.start,w.end); return {...r,w}; });
   // 标签必须按真实 offset 算，否则往回翻页后会错标成"本周"
   weeks.forEach(r=>{
     const off=r.w.offset;
@@ -747,33 +783,36 @@ function viewWeek(){
 
   const prev=weeks[weeks.length-2];
   const delta=prev?(cur.avgRate-prev.avgRate):0;
+  // 往回翻页后基准周不再是"本周"，文案跟着变，避免误读
+  const wl=WEEK_OFF===0?'本周':'该周';
+  const pl=WEEK_OFF===0?'上周':'前一周';
 
   return `
   <div class="sec">
-    <div class="sec-h"><h2>前三周 + 本周 对比</h2><span class="hint">按周一看起，周日为止</span></div>
+    <div class="sec-h"><h2>${weeks.length>=4?'前三周 + 本周 对比':weeks.length+' 周对比'}</h2><span class="hint">按周一起算，周日为止 · 最早可回溯至 ${DATA_START}</span></div>
     <div class="grid g4">
       <div class="kpi" style="--accent:var(--indigo)">
-        <div class="lb">本周平均打卡率</div><div class="vl" style="color:${rateStyle(cur.avgRate)}">${cur.avgRate}%</div>
-        <div class="sub">较上周 <b style="color:${delta>=0?'var(--emerald)':'var(--red)'}">${delta>=0?'+':''}${delta}</b> 个百分点</div>
+        <div class="lb">${wl}平均打卡率</div><div class="vl" style="color:${rateStyle(cur.avgRate)}">${cur.avgRate}%</div>
+        <div class="sub">较${pl} <b style="color:${delta>=0?'var(--emerald)':'var(--red)'}">${delta>=0?'+':''}${delta}</b> 个百分点</div>
       </div>
       <div class="kpi" style="--accent:var(--red)">
         <div class="lb">整周未打卡</div><div class="vl">${cur.zeroN}</div>
-        <div class="sub">本周有打卡 <b>${cur.everN}</b> 人</div>
+        <div class="sub">${wl}有打卡 <b>${cur.everN}</b> 人</div>
       </div>
       <div class="kpi" style="--accent:var(--emerald)">
-        <div class="lb">本周完成带训日</div><div class="vl">${cur.DONE}</div>
-        <div class="sub">上周 ${prev?prev.DONE:'-'} 个</div>
+        <div class="lb">${wl}完成带训日</div><div class="vl">${cur.DONE}</div>
+        <div class="sub">${pl} ${prev?prev.DONE:'-'} 个</div>
       </div>
       <div class="kpi" style="--accent:var(--purple)">
-        <div class="lb">本周认证</div><div class="vl">${cur.certN}</div>
-        <div class="sub">上周 ${prev?prev.certN:'-'} 人</div>
+        <div class="lb">${wl}认证</div><div class="vl">${cur.certN}</div>
+        <div class="sub">${pl} ${prev?prev.certN:'-'} 人</div>
       </div>
     </div>
   </div>
 
   <div class="sec">
     <div class="panel">
-      <div class="panel-h"><h3>四周横向对比</h3><span class="cnt">单位：人 / %</span></div>
+      <div class="panel-h"><h3>${weeks.length} 周横向对比</h3><span class="cnt">单位：人 / %</span></div>
       <div class="tbl-wrap"><table>
         <thead><tr><th>周次</th><th>平均打卡率</th><th class="n">有效天数</th><th class="n">整周未打卡</th><th class="n">完成带训日</th><th class="n">认证</th><th>每日走势</th></tr></thead>
         <tbody>${rowsHtml}</tbody>
@@ -782,17 +821,17 @@ function viewWeek(){
   </div>
 
   ${cur.zeroN?`<div class="sec">
-    <div class="sec-h"><h2>本周整周零打卡名单</h2><span class="hint">最需要用电话催的一批人</span></div>
+    <div class="sec-h"><h2>${wl}整周零打卡名单</h2><span class="hint">最需要用电话催的一批人</span></div>
     <div class="panel"><div class="plist">${cur.zero.slice(0,20).map(t=>`
       <div class="prow" style="--c:var(--red)">
         <div class="av" style="color:var(--red)">${esc(t.name.slice(0,1))}</div>
         <div class="info"><div class="nm">${esc(t.name)}</div><div class="meta">${esc(t.store)} · ${esc(t.master||'无师傅')} · 进度 ${t._prog.percent}%</div></div>
-        <div class="tag" style="background:rgba(240,82,82,.15);color:var(--red)">7天零打卡</div>
+        <div class="tag" style="background:rgba(240,82,82,.15);color:var(--red)">${cur.days.length}天零打卡</div>
       </div>`).join('')}</div></div>
   </div>`:''}
 
   <div class="sec">
-    <div class="sec-h"><h2>门店本周表现</h2><span class="hint">按本周平均打卡率排序</span></div>
+    <div class="sec-h"><h2>门店${wl}表现</h2><span class="hint">按${wl}平均打卡率排序</span></div>
     <div class="panel">${storeTable(storeStats(b,eachDay(cur.start,Math.min(cur.end,BASE.today))))}</div>
   </div>`;
 }
@@ -810,8 +849,18 @@ function viewMonth(){
   const m0=monthWindow(MONTH_OFF);
   const curRange=snapRange(b,m0.start,m0.end);
   curRange.label=m0.year+'年'+m0.month+'月';
-  const months=[2,1,0].map(i=>{ const w=monthWindow(MONTH_OFF-i); const r=snapRange(b,w.start,w.end); r.label=w.year+'年'+w.month+'月'; r.isCur=i===0; return r; });
-  const prev=months[1];
+  // 对比月份也要裁掉系统启用日之前的月份（否则会多出一行 7 月的空数据）
+  const mStartKey=DATA_START.slice(0,7);
+  const months=[2,1,0].map(i=>{
+    const w=monthWindow(MONTH_OFF-i);
+    return {w,key:w.year+'-'+String(w.month).padStart(2,'0'),isCur:i===0};
+  }).filter(x=>x.key>=mStartKey).map(x=>{
+    const r=snapRange(b,x.w.start,x.w.end);
+    r.label=x.w.year+'年'+x.w.month+'月';
+    r.isCur=x.isCur;
+    return r;
+  });
+  const prev=months[months.length-2];
   const days=eachDay(m0.start,m0.end);
 
   const cal=monthCal(curRange,m0);
@@ -902,7 +951,7 @@ function monthCal(range,mw){
   </div>`;
   return html;
 }
-function openDay(ds){ SEL=ds; MODE='day'; renderCtrl(); refresh(); window.scrollTo({top:0,behavior:'smooth'}); }
+function openDay(ds){ const c=clampDate(ds); if(!c) return; SEL=c; MODE='day'; renderCtrl(); refresh(); window.scrollTo({top:0,behavior:'smooth'}); }
 
 /* ---------- 门店表 ---------- */
 function storeTable(stores){
@@ -983,19 +1032,20 @@ function areaBlock(days){
     </table></div></div>
   </div>`;
 }
-/* 当前视图对应的时间区间（供小区维度使用） */
+/* 当前视图对应的时间区间（供小区维度使用），同样不早于系统启用日 */
 function viewDays(){
+  const inRange=d=>d<=BASE.today&&d>=DATA_START;
   if(MODE==='day') return [SEL];
-  if(MODE==='week'){ const w=weekWindow(WEEK_OFF); return eachDay(w.start,w.end).filter(d=>d<=BASE.today); }
+  if(MODE==='week'){ const w=weekWindow(WEEK_OFF); return eachDay(w.start,w.end).filter(inRange); }
   const m=monthWindow(MONTH_OFF);
-  return eachDay(m.start,m.end).filter(d=>d<=BASE.today);
+  return eachDay(m.start,m.end).filter(inRange);
 }
 
 /* ---------- 总渲染 ---------- */
 function refresh(){
   if(!BASE) return;
   const warn=BASE.real?'':`<div class="note no-print">当前为<b>演示数据</b>（原因：${esc(BASE.reason||'未登录')}）。在生产站点已登录状态下打开本页面，会自动切换成你的真实学员数据。</div>`;
-  const hm=`<div class="warnnote no-print">历史视图中的<b>「工时」一律是当前累计值</b>（库里没有每日工时快照，无法还原历史某天的工时）；打卡、完成带训日、认证三项均带时间戳，可精确回溯。</div>`;
+  const hm=`<div class="warnnote no-print"><b>统计范围自 ${DATA_START} 起</b>（系统启用日，更早的日期没有数据，也不计入任何统计）。历史视图中的<b>「工时」一律是当前累计值</b>（库里没有每日工时快照，无法还原历史某天的工时）；打卡、完成带训日、认证三项均带时间戳，可精确回溯。</div>`;
   const body = MODE==='day'?viewDay():(MODE==='week'?viewWeek():viewMonth());
   const el=document.getElementById('root');
   el.innerHTML=warn+hm+body+areaBlock(viewDays());

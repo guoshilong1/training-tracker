@@ -234,6 +234,7 @@ td.tlink:hover{color:var(--sky)}
     <div class="spacer"></div>
     <select id="areaSel" class="btn"><option value="">全部区域</option></select>
     <select id="storeSel" class="btn"><option value="">全部门店</option></select>
+    <select id="routeSel" class="btn"><option value="">全部路线</option></select>
     <button class="btn" onclick="exportImage()">导出长图</button>
     <button class="btn" onclick="exportPdf()">导出 PDF</button>
     <button class="btn pri" onclick="exportXlsx()">导出 xlsx</button>
@@ -413,7 +414,7 @@ function makeDemoData(){
   };
   const AREA_POOL=Object.keys(DEMO_STORES);
   const masters=['王师傅','李师傅','张师傅','赵师傅','刘师傅'];
-  const routes=['front_to_back','back_to_front','part_time'];
+  const routes=['front_to_back','back_to_front','part_time','master','supervisor'];
   const PT_SUBS=['front_part_time','back_part_time'];
   const td=today();
   const list=[];
@@ -422,7 +423,7 @@ function makeDemoData(){
     const area=AREA_POOL[i%AREA_POOL.length];
     const storeList=DEMO_STORES[area];
     const store=storeList[Math.floor(i/AREA_POOL.length)%storeList.length];
-    const route=routes[i%3];
+    const route=routes[i%routes.length];
       // 兼职路线必须带细分项，否则 getAllDays 返回 0 天 -> 会被误判成"已认证"且永远无法打卡
       const subRoute = route==='part_time' ? PT_SUBS[i%PT_SUBS.length] : '';
       const allDays=getAllDaysSafe(route,subRoute);
@@ -971,9 +972,11 @@ function setMonthOff(n){ MONTH_OFF=Math.max(monthMinOffset(),Math.min(0,n)); ren
 function rowsFiltered(){
   const area=document.getElementById('areaSel')?.value||'';
   const store=document.getElementById('storeSel')?.value||'';
+  const route=document.getElementById('routeSel')?.value||'';
   return BASE.rows.filter(t=>{
     if(area&&String(t.area)!==area) return false;
     if(store&&t.store!==store) return false;
+    if(route&&t.route!==route) return false;
     return true;
   });
 }
@@ -1775,8 +1778,17 @@ window.addEventListener('unhandledrejection',e=>{
   const stores=[...new Set(BASE.rows.map(t=>t.store).filter(Boolean))].sort();
   const sSel=document.getElementById('storeSel');
   stores.forEach(s=>{ const o=document.createElement('option'); o.value=s; o.textContent=s; sSel.appendChild(o); });
+  const rSel=document.getElementById('routeSel');
+  if(typeof TRAINING_DATA!=='undefined' && TRAINING_DATA.routes){
+    TRAINING_DATA.routes.forEach(r=>{
+      const o=document.createElement('option'); o.value=r.id;
+      o.textContent=(typeof getRouteName==='function')?getRouteName(r.id,''):r.name;
+      rSel.appendChild(o);
+    });
+  }
   aSel.addEventListener('change',refresh);
   sSel.addEventListener('change',refresh);
+  rSel.addEventListener('change',refresh);
 
   renderCtrl();
   refresh();

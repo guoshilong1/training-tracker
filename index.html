@@ -11,7 +11,7 @@
   <script src="https://cdn.jsdelivr.net/npm/lz-string@1.4.4/libs/lz-string.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="training-data.js?v=20261122g"></script>
+  <script src="training-data.js?v=20261122h"></script>
   <style>
     * { -webkit-tap-highlight-color: transparent; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
@@ -1026,18 +1026,21 @@ function getRestDays(trainee) {
   return Array.isArray(prog._restDays) ? prog._restDays : [];
 }
 // 连续工作日校验：相邻两次打卡之间，若存在非休息日的自然日空档 → 判定断档
-function drillContinuity(records, restDays) {
+// 规则：第一阶段(phaseIndex=0)允许断档；第二、三阶段(phaseIndex>0)必须按排班表连续
+function isContinuityRequired(phaseIndex) { return phaseIndex !== 0; }
+function drillContinuity(records, restDays, phaseIndex) {
+  const required = isContinuityRequired(phaseIndex);
   const dates = (records || []).map(r => r.date).filter(DRILL_DATE_RE.test.bind(DRILL_DATE_RE)).sort();
-  if (dates.length < 2) return { broken: false, gapDays: 0, gaps: [] };
+  if (dates.length < 2) return { required, broken: false, gapDays: 0, gaps: [] };
   const gaps = [];
   for (let i = 1; i < dates.length; i++) {
     let miss = 0, d = addDaysStr(dates[i - 1], 1);
     while (d < dates[i]) { if (restDays.indexOf(d) < 0) miss++; d = addDaysStr(d, 1); }
     if (miss > 0) gaps.push({ from: dates[i - 1], to: dates[i], days: miss });
   }
-  return { broken: gaps.length > 0, gapDays: gaps.reduce((s, g) => s + g.days, 0), gaps };
+  return { required, broken: required && gaps.length > 0, gapDays: gaps.reduce((s, g) => s + g.days, 0), gaps };
 }
-function getDrillStat(trainee, dayKey, itemIdx, drillIdx, need) {
+function getDrillStat(trainee, dayKey, itemIdx, drillIdx, need, phaseIndex) {
   const raw = getDrillRecords(trainee, dayKey, itemIdx, drillIdx);
   const uniq = {};
   raw.forEach(r => { if (r && DRILL_DATE_RE.test(r.date)) uniq[r.date] = r; });
@@ -1045,7 +1048,7 @@ function getDrillStat(trainee, dayKey, itemIdx, drillIdx, need) {
   const makeupCount = list.filter(r => r.makeup).length;
   return {
     records: list, doneCount: list.length, need: need, reached: list.length >= need,
-    makeupCount: makeupCount, continuity: drillContinuity(list, getRestDays(trainee))
+    makeupCount: makeupCount, continuity: drillContinuity(list, getRestDays(trainee), phaseIndex)
   };
 }
 // 某练习项（item）的所有 drill 是否全部达标
@@ -1063,7 +1066,7 @@ function getPhasePracticeStat(trainee, allDays, phaseIndex) {
     d.items.forEach((it, idx) => {
       if (!it.drills || !it.drills.length) return;
       it.drills.forEach((dr, di) => {
-        const s = getDrillStat(trainee, d.key, idx, di, dr.count);
+        const s = getDrillStat(trainee, d.key, idx, di, dr.count, phaseIndex);
         total++; if (s.reached) reached++; makeup += s.makeupCount; if (s.continuity.broken) broken++;
       });
     });
@@ -1776,6 +1779,11 @@ function FreeStageCard({ phaseIndex, phaseDays, progressMap, trainee, onToggleIt
             </div>
           </div>
         ) : null}
+        {pstat.total > 0 && (
+          <div className="mt-1 text-[10px] text-gray-500">
+            {phaseIndex === 0 ? '第一阶段练习允许断档；第二、三阶段须按排班表连续打卡，断档将拦截阶段确认' : '本阶段练习须按排班表连续打卡，断档会拦截阶段确认；休息日请录入下方排班表'}
+          </div>
+        )}
       </div>
       <div className={"px-4 py-3 space-y-2" + (!unlocked ? " opacity-60" : "")}>
         {entries.map(e => {
@@ -1821,7 +1829,7 @@ function FreeStageCard({ phaseIndex, phaseDays, progressMap, trainee, onToggleIt
                 {s.done && e.item.drills && e.item.drills.length > 0 && (
                   <div className="mt-2.5 pt-2.5 border-t border-gray-700/50 space-y-2.5">
                     {e.item.drills.map((dr, di) => {
-                      const stt = getDrillStat(trainee, e.day.key, e.idx, di, dr.count);
+                      const stt = getDrillStat(trainee, e.day.key, e.idx, di, dr.count, phaseIndex);
                       return (
                         <div key={di} className="rounded-lg bg-gray-950/50 border border-gray-800/60 p-2">
                           <div className="flex items-center justify-between gap-2 flex-wrap mb-1.5">
@@ -2123,9 +2131,15 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
     if (level === 'student') {
       const allDays = getAllDays(selected.route, selected.subRoute).filter(x => x.items.length > 0);
       const phaseDays = allDays.filter(x => x.phaseIndex === phaseIndex);
-      let ok = true;
-      phaseDays.forEach(d => d.items.forEach((it, i) => { if (!isPracticeItemReached(selected, d, i, it)) ok = false; }));
+      let ok = true, brokenCnt = 0;
+      phaseDays.forEach(d => d.items.forEach((it, i) => {
+        if (!isPracticeItemReached(selected, d, i, it)) ok = false;
+        if (isContinuityRequired(phaseIndex) && it.drills) it.drills.forEach((dr, di) => {
+          if (getDrillStat(selected, d.key, i, di, dr.count, phaseIndex).continuity.broken) brokenCnt++;
+        });
+      }));
       if (!ok) { alert('本阶段全部练习动作达标后，学员才能确认'); return; }
+      if (brokenCnt) { alert('第二、三阶段练习必须按排班表连续，当前有 ' + brokenCnt + ' 处断档。请补记或核对排班休息日后再确认'); return; }
       cur.student = { id: who.id, name: who.name, at: nowISO() };
     } else {
       if (!cur.student) { alert('请先由学员确认'); return; }
@@ -5860,7 +5874,7 @@ function App() {
         <div className="p-3">
           <iframe
             key={currentUser && currentUser.id ? currentUser.id : 'anon'}
-            src="dashboard-v2.html?embed=1&v=20261122g"
+            src="dashboard-v2.html?embed=1&v=20261122h"
             title="管理看板 · 新版驾驶舱"
             className="w-full rounded-xl border border-gray-800 bg-gray-950"
             style={{ height: 'calc(100vh - 84px)', display: 'block' }}

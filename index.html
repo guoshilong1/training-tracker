@@ -11,7 +11,7 @@
   <script src="https://cdn.jsdelivr.net/npm/lz-string@1.4.4/libs/lz-string.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="training-data.js?v=20261122c"></script>
+  <script src="training-data.js?v=20261122d"></script>
   <style>
     * { -webkit-tap-highlight-color: transparent; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
@@ -401,6 +401,23 @@ function mergeDayProgress(lProgress, rProgress) {
   const merged = {};
   for (const day of allDays) {
     // _meta 是进度元数据（subRoute / 离职标记等），不参与 day 级合并
+    if (day === '_restDays') { merged._restDays = Array.from(new Set([...(lProgress?._restDays || []), ...(rProgress?._restDays || [])])).sort(); continue; }
+    if (day === '_phaseSign') {
+      const ls = lProgress?._phaseSign || {}, rs = rProgress?._phaseSign || {};
+      const ps = {};
+      for (const pk of new Set([...Object.keys(ls), ...Object.keys(rs)])) {
+        const lv = ls[pk] || {}, rv = rs[pk] || {};
+        const one = {};
+        for (const role of ['student', 'manager']) {
+          const a = lv[role], b = rv[role];
+          if (!a) one[role] = b;
+          else if (!b) one[role] = a;
+          else one[role] = ((Date.parse(b.at || 0) || 0) >= (Date.parse(a.at || 0) || 0)) ? b : a;
+        }
+        ps[pk] = one;
+      }
+      merged._phaseSign = ps; continue;
+    }
     if (day === '_meta') {
       const lm = lProgress?._meta || {};
       const rm = rProgress?._meta || {};
@@ -446,11 +463,35 @@ function mergeDayProgress(lProgress, rProgress) {
       const rTs = ri.checkedAt || '';
       const winner = (rTs >= lTs) ? ri : li;
       // 保留痕迹（即使 checked:false），否则下次合并时另一台设备的旧勾选会复活
-      items[idx] = {
+      const itemMerged = {
         checked: !!winner.checked,
         checkedAt: winner.checkedAt || new Date().toISOString(),
         choice: winner.choice || undefined
       };
+      // 刻意练习打卡记录：按 drillIdx + date 取并集，不能整条丢弃。
+      // 同一天若两侧都有记录，取操作时间(at)较新的一条；撤销用 deleted 墓碑传播。
+      const ldr = li.drillRecords || {};
+      const rdr = ri.drillRecords || {};
+      const drillIdxs = new Set([...Object.keys(ldr), ...Object.keys(rdr)]);
+      if (drillIdxs.size > 0) {
+        const dm = {};
+        for (const dk of drillIdxs) {
+          const byDate = {};
+          const allRec = [...(ldr[dk] || []), ...(rdr[dk] || [])];
+          for (const r of allRec) {
+            if (!r || !DRILL_DATE_RE.test(r.date || '')) continue;
+            const prev = byDate[r.date];
+            if (!prev) { byDate[r.date] = r; continue; }
+            // deleted 墓碑优先；同类则取 at 较新者
+            const rScore = (r.deleted ? 1e13 : 0) + (Date.parse(r.at || 0) || 0);
+            const pScore = (prev.deleted ? 1e13 : 0) + (Date.parse(prev.at || 0) || 0);
+            if (rScore >= pScore) byDate[r.date] = r;
+          }
+          dm[dk] = Object.keys(byDate).sort().map(k => byDate[k]);
+        }
+        itemMerged.drillRecords = dm;
+      }
+      items[idx] = itemMerged;
     }
     dayMerged.items = items;
 
@@ -976,7 +1017,9 @@ const DRILL_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 function getDrillRecords(trainee, dayKey, itemIdx, drillIdx) {
   const prog = (trainee && trainee.progress) || {};
   const st = ((prog[dayKey] || {}).items || {})[itemIdx] || {};
-  return (st.drillRecords && st.drillRecords[drillIdx]) || [];
+  const raw = (st.drillRecords && st.drillRecords[drillIdx]) || [];
+  // 过滤撤销墓碑：撤销记录保留在进度里，确保跨设备合并时能传播"已撤销"状态
+  return raw.filter(r => r && !r.deleted);
 }
 function getRestDays(trainee) {
   const prog = (trainee && trainee.progress) || {};
@@ -1872,21 +1915,33 @@ function FreeStageCard({ phaseIndex, phaseDays, progressMap, trainee, onToggleIt
         )}
       </div>
 
-      {/* 补记弹窗：日期 + 原因，留痕写入 */}
+      {/* 补记弹窗：fixed 全屏遮罩 + 屏幕居中，点按钮立刻可见（原嵌在卡片底部，项目多时看不见像"没反应"） */}
       {makeupTarget && (
-        <div className="px-4 pb-4">
-          <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
-            <div className="text-xs text-amber-300 mb-2">补记练习：{makeupTarget.name}（将记录补记人、补记时间与原因）</div>
-            <div className="flex flex-wrap gap-2">
-              <input type="date" value={makeupDate} max={fmtLocalDate(new Date())} onChange={ev => setMakeupDate(ev.target.value)} className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200"/>
-              <input type="text" value={makeupReason} onChange={ev => setMakeupReason(ev.target.value)} placeholder="补记原因（必填，如：闭店忘记录入）" className="flex-1 min-w-[180px] bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200"/>
-              <button onClick={() => {
-                if (!makeupDate) { alert('请选择补记日期'); return; }
-                if (!makeupReason.trim()) { alert('请填写补记原因'); return; }
-                onDrillCheckin(makeupTarget.dayKey, makeupTarget.itemIdx, makeupTarget.drillIdx, makeupDate, makeupReason);
-                setMakeupTarget(null);
-              }} className="px-3 py-1 rounded bg-amber-600/80 hover:bg-amber-500 text-white text-xs">确认补记</button>
-              <button onClick={() => setMakeupTarget(null)} className="px-3 py-1 rounded border border-gray-700 text-gray-400 text-xs">取消</button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setMakeupTarget(null)}>
+          <div className="w-full max-w-lg rounded-xl border border-amber-500/50 bg-gray-900 shadow-2xl p-4" onClick={ev => ev.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-sm font-semibold text-amber-300">补记练习</div>
+              <button onClick={() => setMakeupTarget(null)} className="text-gray-500 hover:text-gray-200 text-lg leading-none">×</button>
+            </div>
+            <div className="text-xs text-gray-400 mb-3">{makeupTarget.name} · 将记录补记人、补记时间与原因</div>
+            <div className="space-y-3">
+              <label className="block">
+                <div className="text-[11px] text-gray-500 mb-1">补记日期（实际练习日）</div>
+                <input type="date" value={makeupDate} max={fmtLocalDate(new Date())} onChange={ev => setMakeupDate(ev.target.value)} className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-200"/>
+              </label>
+              <label className="block">
+                <div className="text-[11px] text-gray-500 mb-1">补记原因（必填，如：闭店忘记录入）</div>
+                <input type="text" value={makeupReason} onChange={ev => setMakeupReason(ev.target.value)} placeholder="请说明为什么当天没记、现在补记" className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-200"/>
+              </label>
+              <div className="flex gap-2 justify-end pt-1">
+                <button onClick={() => setMakeupTarget(null)} className="px-3 py-1.5 rounded border border-gray-700 text-gray-400 text-xs">取消</button>
+                <button onClick={() => {
+                  if (!makeupDate) { alert('请选择补记日期'); return; }
+                  if (!makeupReason.trim()) { alert('请填写补记原因'); return; }
+                  onDrillCheckin(makeupTarget.dayKey, makeupTarget.itemIdx, makeupTarget.drillIdx, makeupDate, makeupReason);
+                  setMakeupTarget(null);
+                }} className="px-4 py-1.5 rounded bg-amber-600/80 hover:bg-amber-500 text-white text-xs">确认补记</button>
+              </div>
             </div>
           </div>
         </div>
@@ -1998,8 +2053,10 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
     dayProg.items = { ...dayProg.items };
     const st = { ...(dayProg.items[itemIdx] || {}) };
     st.drillRecords = { ...(st.drillRecords || {}) };
-    const recs = [...(st.drillRecords[drillIdx] || [])];
-    if (recs.some(r => r.date === d)) { alert('该日期已记过一次，同一天只算 1 次'); return; }
+    let recs = [...(st.drillRecords[drillIdx] || [])];
+    // 只把"有效记录"算作当天已记；墓碑=已撤销，允许重新打卡
+    if (recs.some(r => r.date === d && !r.deleted)) { alert('该日期已记过一次，同一天只算 1 次'); return; }
+    recs = recs.filter(r => r.date !== d); // 若同日存在旧墓碑，先移除，再用新记录覆盖
     const who = actor();
     const rec = { date: d, at: nowISO(), byId: who.id, byName: who.name };
     if (reason !== undefined) { rec.makeup = true; rec.reason = String(reason).trim(); rec.makeupAt = nowISO(); }
@@ -2033,8 +2090,13 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
     dayProg.items = { ...dayProg.items };
     const st = { ...(dayProg.items[itemIdx] || {}) };
     st.drillRecords = { ...(st.drillRecords || {}) };
-    const recs = (st.drillRecords[drillIdx] || []).filter(r => r.date !== date);
-    st.drillRecords[drillIdx] = recs;
+    // 撤销用墓碑标记而非物理删除：合并时墓碑保留，避免其他设备的旧打卡"复活"。
+    // 同日若已有墓碑则更新墓碑时间，否则新增一条 deleted 记录。
+    const recs = [...(st.drillRecords[drillIdx] || [])];
+    const existIdx = recs.findIndex(r => r.date === date);
+    const tomb = { date: date, deleted: true, at: nowISO(), byId: actor().id, byName: actor().name };
+    if (existIdx >= 0) recs[existIdx] = tomb; else recs.push(tomb);
+    st.drillRecords[drillIdx] = recs.sort((a, b) => a.date < b.date ? -1 : 1);
     const allDays = getAllDays(selected.route, selected.subRoute).filter(x => x.items.length > 0);
     const fday = allDays.find(x => x.key === dayKey);
     if (fday) {
@@ -5797,7 +5859,7 @@ function App() {
         <div className="p-3">
           <iframe
             key={currentUser && currentUser.id ? currentUser.id : 'anon'}
-            src="dashboard-v2.html?embed=1&v=20261122c"
+            src="dashboard-v2.html?embed=1&v=20261122d"
             title="管理看板 · 新版驾驶舱"
             className="w-full rounded-xl border border-gray-800 bg-gray-950"
             style={{ height: 'calc(100vh - 84px)', display: 'block' }}

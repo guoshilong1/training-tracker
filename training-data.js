@@ -933,7 +933,7 @@ const TRAINING_DATA = {
                     {
                       day: 2, shift: '早班',
                       items: [
-                      { content: '订货+收货+退货', student_hours: '1.5H', teacher_hours: '1.5H', note: '练习要求：完成当天订货任务5次；有质量问题执行商品问题反馈5次' },
+                      { content: '订货+收货+退货', student_hours: '1.5H', teacher_hours: '1.5H', note: '练习要求：完成当天订货任务5次；有质量问题执行商品问题反馈5次', drills: [{ name: '完成当天订货任务', count: 5 }, { name: '有质量问题执行商品问题反馈', count: 5 }] },
                       { content: '订货+收货+退货 认证（理论+实操）', student_hours: '0.5H', teacher_hours: '1.5H' }
                       ]
                     },
@@ -941,8 +941,8 @@ const TRAINING_DATA = {
                       day: 3, shift: '晚班',
                       items: [
                       { content: '外卖管理视频', student_hours: '1H', teacher_hours: '', note: '原表标注暂无指南' },
-                      { content: '调拨+报损', student_hours: '0.5H', teacher_hours: '0.5H', note: '练习要求：有借货情况完成调拨手续3次' },
-                      { content: '日盘', student_hours: '0.5H', teacher_hours: '0.5H', note: '练习要求：完成当天日盘5次；当班完成食材报损5次' },
+                      { content: '调拨+报损', student_hours: '0.5H', teacher_hours: '0.5H', note: '练习要求：有借货情况完成调拨手续3次', drills: [{ name: '有借货情况完成调拨手续', count: 3 }] },
+                      { content: '日盘', student_hours: '0.5H', teacher_hours: '0.5H', note: '练习要求：完成当天日盘5次；当班完成食材报损5次', drills: [{ name: '完成当天日盘', count: 5 }, { name: '当班完成食材报损', count: 5 }] },
                       { content: '调拨+报损 认证（理论+实操）', student_hours: '0.5H', teacher_hours: '0.5H' },
                       { content: '日盘 认证（理论+实操）', student_hours: '0.5H', teacher_hours: '0.5H' }
                       ]
@@ -950,21 +950,21 @@ const TRAINING_DATA = {
                     {
                       day: 4, shift: '随机',
                       items: [
-                      { content: '设备设施（清洁+保养）', student_hours: '2H', teacher_hours: '2H', note: '练习要求：按《清洁计划》分配执行并检查当天清洁5次；清洁不合格对伙伴辅导5次' },
+                      { content: '设备设施（清洁+保养）', student_hours: '2H', teacher_hours: '2H', note: '练习要求：按《清洁计划》分配执行并检查当天清洁5次；清洁不合格对伙伴辅导5次', drills: [{ name: '按《清洁计划》分配执行并检查当天清洁', count: 5 }, { name: '清洁不合格对伙伴辅导', count: 5 }] },
                       { content: '设备设施（清洁+保养）认证（理论+实操）', student_hours: '0.5H', teacher_hours: '0.5H' }
                       ]
                     },
                     {
                       day: 5, shift: '早班',
                       items: [
-                      { content: '行政工作（开票+考勤）', student_hours: '2H', teacher_hours: '2H', note: '练习要求：前一日考勤核对3次；发票开具3次；模拟开票并红冲3次；原表标注暂无指南' },
+                      { content: '行政工作（开票+考勤）', student_hours: '2H', teacher_hours: '2H', note: '练习要求：前一日考勤核对3次；发票开具3次；模拟开票并红冲3次；原表标注暂无指南', drills: [{ name: '前一日考勤核对', count: 3 }, { name: '发票开具', count: 3 }, { name: '模拟开票并红冲', count: 3 }] },
                       { content: '行政工作（开票+考勤）理论认证', student_hours: '0.5H', teacher_hours: '' }
                       ]
                     },
                     {
                       day: 6, shift: '晚班',
                       items: [
-                      { content: '生产管理（缓化+备份）', student_hours: '1H', teacher_hours: '1H', note: '练习要求：完成食材缓制+高峰期备份3次' },
+                      { content: '生产管理（缓化+备份）', student_hours: '1H', teacher_hours: '1H', note: '练习要求：完成食材缓制+高峰期备份3次', drills: [{ name: '完成食材缓制+高峰期备份', count: 3 }] },
                       { content: '生产管理（缓化+备份）认证（理论+实操）', student_hours: '0.5H', teacher_hours: '1H' }
                       ]
                     }
@@ -978,32 +978,32 @@ const TRAINING_DATA = {
                       day: 1, shift: '早班',
                       items: [
                       { content: '值班管理-师傅-早值班', student_hours: '4H', teacher_hours: '4H' },
-                      { content: '早值班 练习', student_hours: '4H', teacher_hours: '', note: '练习要求：按《能源管理》开关照明3次、设备状态3次' }
+                      { content: '早值班 练习', student_hours: '4H', teacher_hours: '', note: '练习要求：按《能源管理》开关照明3次、设备状态3次', drills: [{ name: '按《能源管理》开关照明', count: 3 }, { name: '设备状态', count: 3 }] }
                       ]
                     },
                     {
                       day: 2, shift: '早班',
                       items: [
-                      { content: '值班管理-师傅-早值班 练习', student_hours: '4H', teacher_hours: '', note: '练习要求：巡视驻足点发现问题及时辅导5次' }
+                      { content: '值班管理-师傅-早值班 练习', student_hours: '4H', teacher_hours: '', note: '练习要求：巡视驻足点发现问题及时辅导5次', drills: [{ name: '巡视驻足点发现问题及时辅导', count: 5 }] }
                       ]
                     },
                     {
                       day: 3, shift: '早班',
                       items: [
                       { content: '带训他人', student_hours: '2H', teacher_hours: '2H' },
-                      { content: '值班管理-师傅-早值班 练习', student_hours: '4H', teacher_hours: '', note: '练习要求：工作站压力大时做好人员协调5次' }
+                      { content: '值班管理-师傅-早值班 练习', student_hours: '4H', teacher_hours: '', note: '练习要求：工作站压力大时做好人员协调5次', drills: [{ name: '工作站压力大时做好人员协调', count: 5 }] }
                       ]
                     },
                     {
                       day: 4, shift: '早班',
                       items: [
-                      { content: '值班管理-师傅-早值班 练习', student_hours: '4H', teacher_hours: '', note: '练习要求：高峰期巡视完成正向激励5次' }
+                      { content: '值班管理-师傅-早值班 练习', student_hours: '4H', teacher_hours: '', note: '练习要求：高峰期巡视完成正向激励5次', drills: [{ name: '高峰期巡视完成正向激励', count: 5 }] }
                       ]
                     },
                     {
                       day: 5, shift: '早班',
                       items: [
-                      { content: '带训他人', student_hours: '2H', teacher_hours: '2H', note: '练习要求：带训新员工3次；无新员工需模拟带训' },
+                      { content: '带训他人', student_hours: '2H', teacher_hours: '2H', note: '练习要求：带训新员工3次；无新员工需模拟带训', drills: [{ name: '带训新员工', count: 3 }] },
                       { content: '值班管理-师傅-早值班 练习', student_hours: '4H', teacher_hours: '' }
                       ]
                     },
@@ -1030,7 +1030,7 @@ const TRAINING_DATA = {
                     {
                       day: 2, shift: '晚班',
                       items: [
-                      { content: '值班管理-师傅-晚值班 练习', student_hours: '4H', teacher_hours: '', note: '练习要求：巡视辅导5次；调度5次；预打烊+阶梯下班5次；打烊全流程5次；正向激励5次；打烊卫生5次；次日分工5次' }
+                      { content: '值班管理-师傅-晚值班 练习', student_hours: '4H', teacher_hours: '', note: '练习要求：巡视辅导5次；调度5次；预打烊+阶梯下班5次；打烊全流程5次；正向激励5次；打烊卫生5次；次日分工5次', drills: [{ name: '巡视辅导', count: 5 }, { name: '调度', count: 5 }, { name: '预打烊+阶梯下班', count: 5 }, { name: '打烊全流程', count: 5 }, { name: '正向激励', count: 5 }, { name: '打烊卫生', count: 5 }, { name: '次日分工', count: 5 }] }
                       ]
                     },
                     {
@@ -1093,20 +1093,20 @@ const TRAINING_DATA = {
                       day: 1, shift: '随机',
                       items: [
                       { content: '企业文化 / 角色职责', student_hours: '0.5H', teacher_hours: '0.5H' },
-                      { content: '周报（损耗）', student_hours: '2H', teacher_hours: '2H', note: '练习要求：撰写周报5次（须安排在周一学习、练习）' }
+                      { content: '周报（损耗）', student_hours: '2H', teacher_hours: '2H', note: '练习要求：撰写周报5次（须安排在周一学习、练习）', drills: [{ name: '撰写周报（须安排在周一学习、练习）', count: 5 }] }
                       ]
                     },
                     {
                       day: 2, shift: '随机',
                       items: [
-                      { content: '预估营业额', student_hours: '1.5H', teacher_hours: '1.5H', note: '练习要求：模拟练习预估营业额调整（时段+总营业额）5次；预估周营业额5次' },
+                      { content: '预估营业额', student_hours: '1.5H', teacher_hours: '1.5H', note: '练习要求：模拟练习预估营业额调整（时段+总营业额）5次；预估周营业额5次', drills: [{ name: '模拟练习预估营业额调整（时段+总营业额）', count: 5 }, { name: '预估周营业额', count: 5 }] },
                       { content: '广宣', student_hours: '1H', teacher_hours: '1H' }
                       ]
                     },
                     {
                       day: 3, shift: '随机',
                       items: [
-                      { content: '存放管理', student_hours: '3H', teacher_hours: '3H', note: '练习要求：整理冰箱定位库存3次；主动肯定伙伴规范操作5次' }
+                      { content: '存放管理', student_hours: '3H', teacher_hours: '3H', note: '练习要求：整理冰箱定位库存3次；主动肯定伙伴规范操作5次', drills: [{ name: '整理冰箱定位库存', count: 3 }, { name: '主动肯定伙伴规范操作', count: 5 }] }
                       ]
                     },
                     {
@@ -1118,13 +1118,13 @@ const TRAINING_DATA = {
                     {
                       day: 5, shift: '随机',
                       items: [
-                      { content: '设备设施（报修）', student_hours: '2H', teacher_hours: '2H', note: '练习要求：操作一次报修流程5次' }
+                      { content: '设备设施（报修）', student_hours: '2H', teacher_hours: '2H', note: '练习要求：操作一次报修流程5次', drills: [{ name: '操作一次报修流程', count: 5 }] }
                       ]
                     },
                     {
                       day: 6, shift: '晚班',
                       items: [
-                      { content: '货物管理（含周盘）', student_hours: '1.5H', teacher_hours: '1.5H', note: '练习要求：完成周盘任务5次（须安排在周日学习、练习）' },
+                      { content: '货物管理（含周盘）', student_hours: '1.5H', teacher_hours: '1.5H', note: '练习要求：完成周盘任务5次（须安排在周日学习、练习）', drills: [{ name: '完成周盘任务（须安排在周日学习、练习）', count: 5 }] },
                       { content: '预估营业额 理论认证', student_hours: '0.5H', teacher_hours: '' },
                       { content: '存放管理 理论认证', student_hours: '0.5H', teacher_hours: '' },
                       { content: '广宣 理论认证', student_hours: '0.5H', teacher_hours: '' },
@@ -1146,7 +1146,7 @@ const TRAINING_DATA = {
                     {
                       day: 4, shift: '随机',
                       items: [
-                      { content: '排班练习', student_hours: '2H', teacher_hours: '', note: '练习要求：值班练习6次（刻意练习表第二阶段）' }
+                      { content: '排班练习', student_hours: '2H', teacher_hours: '', note: '练习要求：值班练习6次（刻意练习表第二阶段）', drills: [{ name: '值班练习（刻意练习表第二阶段）', count: 6 }] }
                       ]
                     },
                     {

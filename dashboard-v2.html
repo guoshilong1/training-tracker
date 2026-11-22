@@ -7,7 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-<script src="training-data.js?v=20261122i"></script>
+<script src="training-data.js?v=20261122j"></script>
 <style>
 :root{
   --bg:#0a0b0f; --panel:#141620; --panel2:#1b1e2b; --line:#262a38;
@@ -27,8 +27,8 @@ body.embed .topbar{padding-top:2px;padding-bottom:14px;margin-bottom:14px}
 .brand{font-size:17px;font-weight:600;letter-spacing:.5px}
 .brand small{display:block;font-size:11px;color:var(--txt3);font-weight:400;letter-spacing:0}
 .badge{padding:3px 9px;border-radius:20px;font-size:11px;border:1px solid}
-.badge.live{color:var(--emerald);border-color:rgba(34,201,138,.35);background:rgba(34,201,138,.1)}
-.badge.demo{color:var(--amber);border-color:rgba(240,169,42,.35);background:rgba(240,169,42,.1)}
+.badge.live{color:var(--emerald);border-color:rgba(var(--emerald-rgb),.35);background:rgba(var(--emerald-rgb),.1)}
+.badge.demo{color:var(--amber);border-color:rgba(var(--amber-rgb),.35);background:rgba(var(--amber-rgb),.1)}
 .spacer{flex:1}
 .btn{padding:7px 13px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--txt);cursor:pointer;font-size:13px;font-family:inherit;transition:.15s}
 .btn:hover{border-color:#3a4055;background:#222636}
@@ -75,8 +75,8 @@ details.dd .ditem b{font-weight:500;color:var(--txt);flex-shrink:0;font-variant-
 details.dx{border-radius:9px}
 details.dx>summary{list-style:none;cursor:pointer;outline:none}
 details.dx>summary::-webkit-details-marker{display:none}
-details.dx>summary.prow:hover{background:#282d3d}
-details.dx[open]>summary.prow{background:#282d3d}
+details.dx>summary.prow:hover{background:var(--hover)}
+details.dx[open]>summary.prow{background:var(--hover)}
 details.dx>summary .tag::after{content:"▾";margin-left:5px;font-size:9px;opacity:.75}
 details.dx[open]>summary .tag::after{content:"▴"}
 details.dx .dxb{margin:5px 0 2px;padding:9px 11px;border-radius:9px;background:var(--panel2);border:1px solid var(--line);display:flex;flex-direction:column;gap:5px}
@@ -101,7 +101,7 @@ details.dx .dxb .full{white-space:normal;word-break:break-word}
 /* ---------- 待办清单 ---------- */
 .plist{display:flex;flex-direction:column;gap:7px;max-height:270px;overflow-y:auto}
 .prow{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;background:var(--panel2);border-left:3px solid var(--c,var(--line))}
-.prow .av{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;flex-shrink:0;background:rgba(255,255,255,.07)}
+.prow .av{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;flex-shrink:0;background:var(--wash7)}
 .prow .info{flex:1;min-width:0}
 .prow .nm{font-size:13px;font-weight:500}
 .prow .meta{font-size:11.5px;color:var(--txt3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -118,9 +118,9 @@ details.dx .dxb .full{white-space:normal;word-break:break-word}
 /* ---------- 门店榜 ---------- */
 .rowe{display:flex;align-items:center;gap:11px;padding:9px 0;border-bottom:1px solid rgba(38,42,56,.6)}
 .rowe:last-child{border-bottom:0}
-.rank{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0;background:rgba(255,255,255,.06);color:var(--txt2)}
+.rank{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0;background:var(--wash6);color:var(--txt2)}
 .rowe .nm{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mini{flex:0 0 84px;height:6px;border-radius:3px;background:#242835;overflow:hidden}
+.mini{flex:0 0 84px;height:6px;border-radius:3px;background:var(--track);overflow:hidden}
 .mini i{display:block;height:100%;border-radius:3px}
 .pc{flex:0 0 46px;text-align:right;font-size:12.5px;font-variant-numeric:tabular-nums}
 .num{flex:0 0 40px;text-align:right;font-size:11.5px;color:var(--txt3);font-variant-numeric:tabular-nums}
@@ -130,23 +130,23 @@ details.dx .dxb .full{white-space:normal;word-break:break-word}
 table{width:100%;border-collapse:collapse;font-size:12.5px}
 th{text-align:left;font-weight:500;color:var(--txt3);padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;font-size:11.5px}
 td{padding:9px 10px;border-bottom:1px solid rgba(38,42,56,.5);vertical-align:middle}
-tbody tr:hover{background:rgba(255,255,255,.025)}
+tbody tr:hover{background:var(--wash2)}
 td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .bar-cell{display:flex;align-items:center;gap:7px;min-width:100px}
-.bar-sm{flex:1;height:5px;border-radius:3px;background:#242835;overflow:hidden;min-width:36px}
+.bar-sm{flex:1;height:5px;border-radius:3px;background:var(--track);overflow:hidden;min-width:36px}
 .bar-sm i{display:block;height:100%;border-radius:3px}
 .pill{display:inline-block;padding:1.5px 7px;border-radius:5px;font-size:11px;white-space:nowrap}
-.cur-row{background:rgba(91,108,255,.08)}
-.cur-row td{border-bottom-color:rgba(91,108,255,.2)}
+.cur-row{background:rgba(var(--indigo-rgb),.08)}
+.cur-row td{border-bottom-color:rgba(var(--indigo-rgb),.2)}
 
 /* ---------- 月历热力图 ---------- */
 .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
 .cal .hd{text-align:center;font-size:11px;color:var(--txt3);padding-bottom:3px}
 .cal .cell{aspect-ratio:1/1;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;position:relative;min-height:38px}
-.cal .cell.out{background:transparent;color:#31364a}
+.cal .cell.out{background:transparent;color:var(--txt3)}
 .cal .cell .pc-t{font-size:11px;font-weight:500}
-.note{background:rgba(91,108,255,.08);border:1px solid rgba(91,108,255,.25);border-radius:9px;padding:10px 13px;font-size:12px;color:#b9c0e8;margin-bottom:16px}
-.warnnote{background:rgba(240,169,42,.08);border:1px solid rgba(240,169,42,.28);border-radius:9px;padding:9px 13px;font-size:12px;color:#e8c98a;margin-bottom:16px}
+.note{background:rgba(var(--indigo-rgb),.08);border:1px solid rgba(var(--indigo-rgb),.25);border-radius:9px;padding:10px 13px;font-size:12px;color:var(--txt2);margin-bottom:16px}
+.warnnote{background:rgba(var(--amber-rgb),.08);border:1px solid rgba(var(--amber-rgb),.28);border-radius:9px;padding:9px 13px;font-size:12px;color:var(--amber);margin-bottom:16px}
 
 @media(max-width:980px){
   .g4{grid-template-columns:repeat(2,1fr)}
@@ -196,8 +196,8 @@ td.tlink:hover{color:var(--sky)}
 .tk-name{font-size:18px;font-weight:600;display:flex;align-items:center;gap:8px}
 .tk-meta{font-size:12px;color:var(--txt2);margin-top:3px}
 .tk-banner{margin:12px 0;padding:11px 13px;border-radius:10px;font-size:13px;line-height:1.6}
-.tk-banner.red{background:rgba(240,82,82,.12);border:1px solid rgba(240,82,82,.4);color:#ffb4b4}
-.tk-banner.amber{background:rgba(240,169,42,.12);border:1px solid rgba(240,169,42,.4);color:#f6d28a}
+.tk-banner.red{background:rgba(var(--red-rgb),.12);border:1px solid rgba(var(--red-rgb),.4);color:var(--red)}
+.tk-banner.amber{background:rgba(var(--amber-rgb),.12);border:1px solid rgba(var(--amber-rgb),.4);color:var(--amber)}
 .tk-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:14px 0 10px}
 .tk-stat{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center}
 .tk-v{font-size:19px;font-weight:600;font-variant-numeric:tabular-nums}
@@ -210,21 +210,77 @@ td.tlink:hover{color:var(--sky)}
 .tl-dot{width:9px;height:9px;border-radius:50%;margin-top:6px;flex-shrink:0;background:var(--txt3)}
 .tl-done .tl-dot{background:var(--emerald)}
 .tl-delay .tl-dot{background:var(--amber)}
-.tl-rest .tl-dot{background:#5f6580}
+.tl-rest .tl-dot{background:var(--txt3)}
 .tl-part .tl-dot{background:var(--sky)}
 .tl-miss .tl-dot{background:var(--red)}
 .tl-main{flex:1;min-width:0}
 .tl-title{font-size:13px}
 .tl-sub{font-size:12px;color:var(--txt3);margin-top:1px;white-space:normal;word-break:break-word}
 .tl-st{flex-shrink:0;font-size:12px;padding:2px 9px;border-radius:20px;background:var(--panel2);color:var(--txt2)}
-.tl-st-done{color:var(--emerald);background:rgba(34,201,138,.12)}
-.tl-st-delay{color:var(--amber);background:rgba(240,169,42,.12)}
+.tl-st-done{color:var(--emerald);background:rgba(var(--emerald-rgb),.12)}
+.tl-st-delay{color:var(--amber);background:rgba(var(--amber-rgb),.12)}
 .tl-st-rest{color:var(--txt2)}
-.tl-st-part{color:var(--sky);background:rgba(56,168,240,.12)}
-.tl-st-miss{color:var(--red);background:rgba(240,82,82,.12)}
+.tl-st-part{color:var(--sky);background:rgba(var(--sky-rgb),.12)}
+.tl-st-miss{color:var(--red);background:rgba(var(--red-rgb),.12)}
 .tl-row.todo{opacity:.5}
 
+/* ==================== 看板主题覆盖（四套：深空紫 / 深海蓝 / 黑金 / 浅色商务） ==================== */
+/* 基础变量沿用 :root（深空紫＝原样），此处只做覆盖；--wash* 是白色叠加层的替身，浅色主题换成墨色叠加 */
+:root{
+  --wash2:rgba(255,255,255,.025); --wash3:rgba(255,255,255,.03); --wash6:rgba(255,255,255,.06);
+  --wash7:rgba(255,255,255,.07);  --wash8:rgba(255,255,255,.08);
+  --track:#242835; --hover:#282d3d;
+  --indigo-rgb:91,108,255; --emerald-rgb:34,201,138; --amber-rgb:240,169,42;
+  --red-rgb:240,82,82;     --sky-rgb:56,168,240;
+}
+html[data-theme="ocean"]{
+  --bg:#061220; --panel:#0d1f2f; --panel2:#162f45; --line:#22425e;
+  --txt:#e8f1f8; --txt2:#94b2cc; --txt3:#5f7f9c;
+  --indigo:#2f8fe0; --emerald:#22c98a; --amber:#f0a92a; --red:#f05252; --sky:#38a8f0; --purple:#9b7cf0;
+  --track:#17334b; --hover:#1b3a55;
+  --indigo-rgb:47,143,224;
+}
+html[data-theme="gold"]{
+  --bg:#0c0a07; --panel:#1a1610; --panel2:#2e2719; --line:#4a3f28;
+  --txt:#f3ecdd; --txt2:#b8a780; --txt3:#8a7a5a;
+  --indigo:#d4a437; --emerald:#2fb37a; --amber:#e8a72a; --red:#e2564f; --sky:#57a8d8; --purple:#b08ae0;
+  --track:#2a2418; --hover:#332c1d;
+  --indigo-rgb:212,164,55; --emerald-rgb:47,179,122; --amber-rgb:232,167,42; --red-rgb:226,86,79; --sky-rgb:87,168,216;
+}
+html[data-theme="light"]{
+  --bg:#f4f6fa; --panel:#ffffff; --panel2:#eef1f6; --line:#e0e6ef;
+  --txt:#16202f; --txt2:#5b6678; --txt3:#8b95a5;
+  --indigo:#4338ca; --emerald:#0f9d6b; --amber:#b45309; --red:#d92d20; --sky:#0b7ea8; --purple:#7c3aed;
+  --wash2:rgba(15,23,42,.03); --wash3:rgba(15,23,42,.04); --wash6:rgba(15,23,42,.05);
+  --wash7:rgba(15,23,42,.06);  --wash8:rgba(15,23,42,.07);
+  --track:#e4e9f1; --hover:#eef2f7;
+  --indigo-rgb:67,56,202; --emerald-rgb:15,157,107; --amber-rgb:180,83,9; --red-rgb:217,45,32; --sky-rgb:11,126,168;
+  color-scheme:light;
+}
+html[data-theme="light"] input[type=date]{color-scheme:light}
+html[data-theme="light"] .btn:hover{border-color:#c8d1de;background:#f1f4f9}
+html[data-theme="light"] .btn.pri:hover{background:#3730a3;color:#fff}
+html[data-theme="light"] select.btn{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M1 1l4 4 4-4' stroke='%235b6678' fill='none'/></svg>")}
+html[data-theme="light"] .panel,html[data-theme="light"] .kpi{box-shadow:0 1px 2px rgba(15,23,42,.04)}
+html[data-theme="gold"] .btn.pri:hover{background:#b98a26}
+html[data-theme="ocean"] .btn.pri:hover{background:#1d74c2}
+
 </style>
+<script>
+(function(){
+  function ttSet(id,noSave){
+    if(['deep','ocean','gold','light'].indexOf(id)<0) id='deep';
+    document.documentElement.setAttribute('data-theme',id);
+    if(!noSave){ try{localStorage.setItem('tt_theme_v1',id);}catch(e){} }
+  }
+  try{
+    var q=(location.search.match(/[?&]theme=(deep|ocean|gold|light)/)||[])[1];
+    if(q) ttSet(q,true); else { var v=localStorage.getItem('tt_theme_v1'); if(v) ttSet(v,true); }
+  }catch(e){}
+  window.addEventListener('message',function(ev){ if(ev.data&&ev.data.__ttTheme) ttSet(ev.data.__ttTheme); });
+  window.ttSetTheme=ttSet;
+})();
+</script>
 </head>
 <body>
 <div class="wrap">
@@ -896,7 +952,7 @@ function renderTrainee(t){
       <div class="tl-st tl-st-${cls}">${st}</div>
     </div>`;
   }).join(''):'<div class="empty">该路线暂无带训日定义</div>';
-  const warn=fk.level?`<span class="pill" style="background:rgba(240,82,82,.18);color:var(--red)">疑似假带训</span>`:'';
+  const warn=fk.level?`<span class="pill" style="background:rgba(var(--red-rgb),.18);color:var(--red)">疑似假带训</span>`:'';
   return `
   <div class="tk-info">
     <div class="tk-name">${esc(t.name)} ${warn}</div>
@@ -918,12 +974,12 @@ function renderTrainee(t){
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function rateStyle(r){ return r>=90?'var(--emerald)':r>=70?'var(--amber)':'var(--red)'; }
 function heatColor(r){
-  if(r==null) return 'rgba(255,255,255,.03)';
-  if(r>=95) return 'rgba(34,201,138,.85)';
-  if(r>=85) return 'rgba(34,201,138,.55)';
-  if(r>=70) return 'rgba(240,169,42,.6)';
-  if(r>=50) return 'rgba(240,169,42,.35)';
-  return 'rgba(240,82,82,.55)';
+  if(r==null) return 'var(--wash3)';
+  if(r>=95) return 'rgba(var(--emerald-rgb),.85)';
+  if(r>=85) return 'rgba(var(--emerald-rgb),.55)';
+  if(r>=70) return 'rgba(var(--amber-rgb),.6)';
+  if(r>=50) return 'rgba(var(--amber-rgb),.35)';
+  return 'rgba(var(--red-rgb),.55)';
 }
 
 /* ==================================================================
@@ -1107,7 +1163,7 @@ function mgmtMiniProws(ps){
     <div class="prow" style="--c:${p.deadline&&p.deadline.level==='bad'?'var(--red)':'var(--sky)'}">
       <div class="av">${esc(p.name.slice(0,1))}</div>
       <div class="info"><div class="nm tlink" onclick="openTrainee('${p.id}')">${esc(p.name)}</div><div class="meta">${esc(p.store)} · ${esc(p.routeName)} · 当前 ${esc(p.cur&&p.cur.name||'—')}</div></div>
-      <div class="tag" style="background:rgba(56,168,240,.15);color:var(--sky)">${p.progPct}%</div>
+      <div class="tag" style="background:rgba(var(--sky-rgb),.15);color:var(--sky)">${p.progPct}%</div>
     </div>`).join('')}</div>`;
 }
 
@@ -1115,7 +1171,7 @@ function mgmtMiniProws(ps){
 function mgmtViewPhases(){
   const ps=mgmtAllProfiles(rowsFiltered());
   const dlg=(p)=>p.deadline?`<span class="pill" style="background:rgba(${p.deadline.level==='bad'?'240,82,82':p.deadline.level==='warn'?'240,169,42':34,201,138},.15);color:var(--${p.deadline.level==='bad'?'red':p.deadline.level==='warn'?'amber':'emerald'})">${esc(p.deadline.label)}</span>`:'';
-  const signTag=(p)=>p.signed?'<span class="pill" style="background:rgba(34,201,138,.15);color:var(--emerald)">两级已确认</span>':(p.studentSigned?'<span class="pill" style="background:rgba(240,169,42,.15);color:var(--amber)">待上级确认</span>':'<span class="pill" style="background:rgba(255,255,255,.08);color:var(--txt2)">未确认</span>');
+  const signTag=(p)=>p.signed?'<span class="pill" style="background:rgba(var(--emerald-rgb),.15);color:var(--emerald)">两级已确认</span>':(p.studentSigned?'<span class="pill" style="background:rgba(var(--amber-rgb),.15);color:var(--amber)">待上级确认</span>':'<span class="pill" style="background:var(--wash8);color:var(--txt2)">未确认</span>');
   return `
   <div class="sec">
     <div class="sec-h"><h2>管理层阶段进度明细</h2><span class="hint">四阶段 · 每阶段 7 天学习 + 7 天刻意练习 · 起点按首次勾选 · 第一阶段可断档，第二、三阶段日期须逐日连续</span></div>
@@ -1129,7 +1185,7 @@ function mgmtViewPhases(){
         <td>${p.drillTotal?p.drillReached+'/'+p.drillTotal+'（'+p.drillPct+'%）':'—'}</td>
         <td>${signTag(p)}</td>
         <td>${dlg(p)||'—'}</td>
-        <td>${p.drillBroken>0?`<span class="pill" style="background:rgba(240,169,42,.15);color:var(--amber)">${p.drillBroken} 处</span>`:'—'}</td>
+        <td>${p.drillBroken>0?`<span class="pill" style="background:rgba(var(--amber-rgb),.15);color:var(--amber)">${p.drillBroken} 处</span>`:'—'}</td>
       </tr>`).join(''):'<tr><td colspan="9" class="empty">暂无管理层学员</td></tr>'}</tbody>
     </table></div></div>
   </div>`;
@@ -1285,7 +1341,7 @@ function viewDay(){
           <div class="prow" style="--c:var(--red)">
             <div class="av" style="color:var(--red)">${esc(t.name.slice(0,1))}</div>
             <div class="info"><div class="nm tlink" onclick="openTrainee('${t.id}')">${esc(t.name)}</div><div class="meta">${esc(t.store)} · ${esc(t.master||'无师傅')}</div></div>
-            <div class="tag" style="background:rgba(240,82,82,.15);color:var(--red)">进度 ${t._prog.percent}%</div>
+            <div class="tag" style="background:rgba(var(--red-rgb),.15);color:var(--red)">进度 ${t._prog.percent}%</div>
           </div>`).join('')}</div>`:'<div class="empty">全员已打卡</div>'}
       </div>
       <div class="panel">
@@ -1294,7 +1350,7 @@ function viewDay(){
           <div class="prow" style="--c:var(--amber)">
             <div class="av" style="color:var(--amber)">${esc(x.t.name.slice(0,1))}</div>
             <div class="info"><div class="nm tlink" onclick="openTrainee('${x.t.id}')">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · 距今 ${x.st.days} 天</div></div>
-            <div class="tag" style="background:rgba(240,169,42,.15);color:var(--amber)">${x.st.days>=9999?'从未打卡':x.st.days+'天'}</div>
+            <div class="tag" style="background:rgba(var(--amber-rgb),.15);color:var(--amber)">${x.st.days>=9999?'从未打卡':x.st.days+'天'}</div>
           </div>`).join('')}</div>`:'<div class="empty">没有长期停滞的学员</div>'}
       </div>
     </div>
@@ -1309,7 +1365,7 @@ function viewDay(){
           <div class="prow" style="--c:var(--sky)">
             <div class="av" style="color:var(--sky)">${esc(x.t.name.slice(0,1))}</div>
             <div class="info"><div class="nm tlink" onclick="openTrainee('${x.t.id}')">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · ${esc(x.t.master||'无师傅')}</div></div>
-            <div class="tag" style="background:rgba(56,168,240,.15);color:var(--sky)">勾了 ${x.n} 项</div>
+            <div class="tag" style="background:rgba(var(--sky-rgb),.15);color:var(--sky)">勾了 ${x.n} 项</div>
           </div>`)}
       </div>
       <div class="panel">
@@ -1318,7 +1374,7 @@ function viewDay(){
           <div class="prow" style="--c:var(--emerald)">
             <div class="av" style="color:var(--emerald)">${esc(x.t.name.slice(0,1))}</div>
             <div class="info"><div class="nm tlink" onclick="openTrainee('${x.t.id}')">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · ${x.info?`${esc(x.info.monthName||'')}${esc(x.info.phaseName||'')} 第${x.info.day}天`:'—'}</div></div>
-            <div class="tag" style="background:rgba(34,201,138,.15);color:var(--emerald)">已完成</div>
+            <div class="tag" style="background:rgba(var(--emerald-rgb),.15);color:var(--emerald)">已完成</div>
           </div>`)}
       </div>
       <div class="panel">
@@ -1337,7 +1393,7 @@ function viewDay(){
             <summary class="prow" style="--c:var(--amber)">
               <div class="av" style="color:var(--amber)">${esc(x.t.name.slice(0,1))}</div>
               <div class="info"><div class="nm tlink" onclick="openTrainee('${x.t.id}')">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · ${esc(x.t.master||'无师傅')}</div></div>
-              <div class="tag" style="background:rgba(240,169,42,.15);color:var(--amber)">延迟</div>
+              <div class="tag" style="background:rgba(var(--amber-rgb),.15);color:var(--amber)">延迟</div>
             </summary>
             <div class="dxb">
               <div class="rowd"><span class="k">延迟日期</span><span>${esc(SEL)}</span></div>
@@ -1350,10 +1406,10 @@ function viewDay(){
       <div class="panel">
         <div class="panel-h"><h3 style="color:var(--txt2)">● 休息</h3><span class="cnt">${dd.rest.length} 人</span></div>
         ${miniList(dd.rest,'不在','当天没有人休息',x=>`
-          <div class="prow" style="--c:#4a5068">
+          <div class="prow" style="--c:var(--txt3)">
             <div class="av">${esc(x.t.name.slice(0,1))}</div>
             <div class="info"><div class="nm tlink" onclick="openTrainee('${x.t.id}')">${esc(x.t.name)}</div><div class="meta">${esc(x.t.store)} · ${esc(x.t.master||'无师傅')}</div></div>
-            <div class="tag" style="background:rgba(255,255,255,.08);color:var(--txt2)">休息</div>
+            <div class="tag" style="background:var(--wash8);color:var(--txt2)">休息</div>
           </div>`)}
       </div>
     </div>
@@ -1388,7 +1444,7 @@ function viewWeek(){
     return `<tr class="${isCur?'cur-row':''}">
       <td style="font-weight:${isCur?'600':'400'}">${r.label}
         <div style="font-size:11px;color:var(--txt3);font-weight:400">${r.start.slice(5)} ~ ${r.end.slice(5)}</div>
-        ${isCur?'<span class="pill" style="background:rgba(91,108,255,.18);color:var(--indigo);margin-top:2px">进行中</span>':''}
+        ${isCur?'<span class="pill" style="background:rgba(var(--indigo-rgb),.18);color:var(--indigo);margin-top:2px">进行中</span>':''}
       </td>
       <td><div class="bar-cell"><span style="color:${rateStyle(r.avgRate)};font-variant-numeric:tabular-nums">${r.avgRate}%</span>
         <div class="bar-sm"><i style="width:${r.avgRate}%;background:${rateStyle(r.avgRate)}"></i></div></div></td>
@@ -1445,7 +1501,7 @@ function viewWeek(){
       <div class="prow" style="--c:var(--red)">
         <div class="av" style="color:var(--red)">${esc(t.name.slice(0,1))}</div>
         <div class="info"><div class="nm tlink" onclick="openTrainee('${t.id}')">${esc(t.name)}</div><div class="meta">${esc(t.store)} · ${esc(t.master||'无师傅')} · 进度 ${t._prog.percent}%</div></div>
-        <div class="tag" style="background:rgba(240,82,82,.15);color:var(--red)">${cur.days.length}天零打卡</div>
+        <div class="tag" style="background:rgba(var(--red-rgb),.15);color:var(--red)">${cur.days.length}天零打卡</div>
       </div>`).join('')}</div></div>
   </div>`:''}
 
@@ -1464,7 +1520,7 @@ function weekSpark(days){
   const yOf=r=>padY+(H-padY*2)*(1-Math.max(0,Math.min(100,r==null?0:r))/100);
   const pts=days.map((d,i)=>({x:xOf(i),y:yOf(d.rate),r:d.rate,ds:d.ds}));
   const ok=days.filter(d=>d.rate!=null);
-  const lineColor=ok.length?rateStyle(Math.round(ok.reduce((a,d)=>a+d.rate,0)/ok.length)):'#333849';
+  const lineColor=ok.length?rateStyle(Math.round(ok.reduce((a,d)=>a+d.rate,0)/ok.length)):'var(--txt3)';
   // 折线拆段：遇到无数据的点断开
   const segs=[]; let seg=[];
   pts.forEach(p=>{ if(p.r==null){ if(seg.length) segs.push(seg); seg=[]; } else seg.push(p); });
@@ -1473,7 +1529,7 @@ function weekSpark(days){
   const dLine=solid.map(s=>'M'+s.map(p=>p.x.toFixed(1)+' '+p.y.toFixed(1)).join(' L')).join(' ');
   const dArea=solid.map(s=>'M'+s.map(p=>p.x.toFixed(1)+' '+p.y.toFixed(1)).join(' L')+` L${s[s.length-1].x.toFixed(1)} ${H-padY} L${s[0].x.toFixed(1)} ${H-padY} Z`).join(' ');
   const dots=pts.map(p=>p.r==null
-    ?`<circle cx="${p.x.toFixed(1)}" cy="${H-padY}" r="1.8" fill="#333849"><title>${p.ds} 无数据</title></circle>`
+    ?`<circle cx="${p.x.toFixed(1)}" cy="${H-padY}" r="1.8" fill="var(--txt3)"><title>${p.ds} 无数据</title></circle>`
     :`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.6" fill="${rateStyle(p.r)}"><title>${p.ds} ${p.r}%</title></circle>`).join('');
   const gid='sg'+Math.random().toString(36).slice(2,8);
   return `<svg class="spark-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="每日打卡率走势">
@@ -1481,7 +1537,7 @@ function weekSpark(days){
       <stop offset="0" stop-color="${lineColor}" stop-opacity=".26"/>
       <stop offset="1" stop-color="${lineColor}" stop-opacity="0"/>
     </linearGradient></defs>
-    <line x1="${padX}" y1="${H-padY}" x2="${W-padX}" y2="${H-padY}" stroke="#242835" stroke-width="1"/>
+    <line x1="${padX}" y1="${H-padY}" x2="${W-padX}" y2="${H-padY}" stroke="var(--track)" stroke-width="1"/>
     ${dArea?`<path d="${dArea}" fill="url(#${gid})"/>`:''}
     ${dLine?`<path d="${dLine}" fill="none" stroke="${lineColor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`:''}
     ${dots}
@@ -1552,7 +1608,7 @@ function viewMonth(){
           <thead><tr><th>月份</th><th>平均打卡率</th><th class="n">零打卡</th><th class="n">完成带训日</th><th class="n">认证</th></tr></thead>
           <tbody>${months.map(r=>`
             <tr class="${r.isCur?'cur-row':''}">
-              <td style="font-weight:${r.isCur?'600':'400'}">${r.label}${r.isCur?' <span class="pill" style="background:rgba(91,108,255,.18);color:var(--indigo)">本月</span>':''}</td>
+              <td style="font-weight:${r.isCur?'600':'400'}">${r.label}${r.isCur?' <span class="pill" style="background:rgba(var(--indigo-rgb),.18);color:var(--indigo)">本月</span>':''}</td>
               <td><div class="bar-cell"><span style="color:${rateStyle(r.avgRate)};font-variant-numeric:tabular-nums">${r.avgRate}%</span>
                 <div class="bar-sm"><i style="width:${r.avgRate}%;background:${rateStyle(r.avgRate)}"></i></div></div></td>
               <td class="n" style="color:${r.zeroN?'var(--red)':'var(--txt3)'}">${r.zeroN||'-'}</td>
@@ -1602,7 +1658,7 @@ function viewMonth(){
         <div class="prow" style="--c:var(--red)">
           <div class="av" style="color:var(--red)">${esc(t.name.slice(0,1))}</div>
           <div class="info"><div class="nm tlink" onclick="openTrainee('${t.id}')">${esc(t.name)}</div><div class="meta">${esc(t.store)} · 打卡 ${fk.checked} 天 / 完成 ${fk.completed} 天</div></div>
-          <div class="tag" style="background:rgba(240,82,82,.15);color:var(--red)">${fk.level==='red'?'零进度':'低进度'}</div>
+          <div class="tag" style="background:rgba(var(--red-rgb),.15);color:var(--red)">${fk.level==='red'?'零进度':'低进度'}</div>
         </div>`).join('')}</div>`:'<div class="empty">没有发现假带训嫌疑，带训状态健康 👍</div>'}
     </div>
   </div>
@@ -1612,11 +1668,11 @@ function viewMonth(){
       <div class="panel">
         <div class="panel-h"><h3>本月休息名单</h3><span class="cnt">${rl.length} 人</span></div>
         ${rl.length?`<div class="plist">${rl.slice(0,15).map(x=>`
-          <div class="prow" style="--c:#4a5068">
+          <div class="prow" style="--c:var(--txt3)">
             <div class="av">${esc(x.t.name.slice(0,1))}</div>
             <div class="info"><div class="nm tlink" onclick="openTrainee('${x.t.id}')">${esc(x.t.name)}</div>
               <div class="meta">${esc(x.t.store)} · ${x.dates.map(d=>d.slice(5)).join('、')}</div></div>
-            <div class="tag" style="background:rgba(255,255,255,.08);color:var(--txt2)">休 ${x.n} 次</div>
+            <div class="tag" style="background:var(--wash8);color:var(--txt2)">休 ${x.n} 次</div>
           </div>`).join('')}</div>${rl.length>15?`<div class="empty" style="padding:8px 0">还有 ${rl.length-15} 人未显示</div>`:''}
           `:'<div class="empty">本月没有人休息</div>'}
       </div>
@@ -1793,15 +1849,15 @@ function monthCal(range,mw){
     html+=`<div class="cell" style="background:${heatColor(r)};${clickable?'cursor:pointer':''}"
       ${clickable?`onclick="openDay('${ds}')"`:''}
       title="${ds} ${r==null?'无数据':r+'%'}">
-      <span class="pc-t" style="color:${future?'#31364a':(r!=null&&r<70?'#fff':'var(--txt)')}">${d}</span>
+      <span class="pc-t" style="color:${future?'var(--txt3)':(r!=null&&r<70?'#fff':'var(--txt)')}">${d}</span>
     </div>`;
   }
   html+='</div>';
   html+=`<div class="legend">
-    <span><i class="dot" style="background:rgba(34,201,138,.85)"></i>≥95%</span>
-    <span><i class="dot" style="background:rgba(240,169,42,.6)"></i>70-94%</span>
-    <span><i class="dot" style="background:rgba(240,82,82,.55)"></i>&lt;70%</span>
-    <span><i class="dot" style="background:rgba(255,255,255,.06)"></i>未来/无数据</span>
+    <span><i class="dot" style="background:rgba(var(--emerald-rgb),.85)"></i>≥95%</span>
+    <span><i class="dot" style="background:rgba(var(--amber-rgb),.6)"></i>70-94%</span>
+    <span><i class="dot" style="background:rgba(var(--red-rgb),.55)"></i>&lt;70%</span>
+    <span><i class="dot" style="background:var(--wash6)"></i>未来/无数据</span>
   </div>`;
   return html;
 }
@@ -1998,7 +2054,7 @@ function exportXlsx(){
 function exportImage(){
   const el=document.getElementById('root');
   if(typeof html2canvas==='undefined'){ alert('截图组件未加载成功，请检查网络'); return; }
-  html2canvas(el,{backgroundColor:'#0a0b0f',scale:2,scrollY:-window.scrollY,windowWidth:document.documentElement.clientWidth})
+  html2canvas(el,{backgroundColor:(getComputedStyle(document.documentElement).getPropertyValue('--bg')||'#0a0b0f').trim(),scale:2,scrollY:-window.scrollY,windowWidth:document.documentElement.clientWidth})
     .then(cv=>{ const a=document.createElement('a'); a.href=cv.toDataURL('image/png');
       a.download='带训看板_'+(BASE?BASE.today:'')+'.png'; a.click(); })
     .catch(e=>alert('截图失败：'+e.message));
@@ -2044,13 +2100,13 @@ window.addEventListener('unhandledrejection',e=>{
   const sb=document.getElementById('scopeBadge');
   sb.style.display='inline-block';
   if(SCOPE.level==='manager'){
-    sb.style.cssText='color:#7fb2f0;border-color:rgba(56,168,240,.4);background:rgba(56,168,240,.12)';
+    sb.style.cssText='color:#7fb2f0;border-color:rgba(var(--sky-rgb),.4);background:rgba(var(--sky-rgb),.12)';
     sb.textContent='大区视角 · '+SCOPE.label+'（下辖 '+(SCOPE.subs||[]).length+' 个小区）';
   }else if(SCOPE.level==='area'){
-    sb.style.cssText='color:#22c98a;border-color:rgba(34,201,138,.4);background:rgba(34,201,138,.12)';
+    sb.style.cssText='color:#22c98a;border-color:rgba(var(--emerald-rgb),.4);background:rgba(var(--emerald-rgb),.12)';
     sb.textContent='本小区视角 · '+SCOPE.label;
   }else{
-    sb.style.cssText='color:#f0a92a;border-color:rgba(240,169,42,.4);background:rgba(240,169,42,.12)';
+    sb.style.cssText='color:#f0a92a;border-color:rgba(var(--amber-rgb),.4);background:rgba(var(--amber-rgb),.12)';
     sb.textContent='未识别登录账号 · 暂时显示全部';
   }
 

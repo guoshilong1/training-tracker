@@ -11,7 +11,7 @@
   <script src="https://cdn.jsdelivr.net/npm/lz-string@1.4.4/libs/lz-string.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="training-data.js?v=20261122b"></script>
+  <script src="training-data.js?v=20261122c"></script>
   <style>
     * { -webkit-tap-highlight-color: transparent; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
@@ -916,13 +916,31 @@ function getPhaseWindow(trainee, allDays, phaseIndex) {
 }
 // 阶段递进锁：第一阶段直接开放；上一阶段【全部项目】（学习 + 刻意练习 + 认证）勾完，才开放下一阶段。
 // 既有 day.completed 兜底（兼容历史数据），也逐项核对勾选状态，防止只勾部分项却误解锁。
+function phaseHasDrills(allDays, phaseIndex) {
+  return allDays.some(d => d.phaseIndex === phaseIndex && d.items.some(it => it.drills && it.drills.length));
+}
+function getPhaseSign(trainee, phaseIndex) {
+  const prog = (trainee && trainee.progress) || {};
+  return (prog._phaseSign && prog._phaseSign[phaseIndex]) || {};
+}
+function phaseSigned(trainee, phaseIndex) {
+  const s = getPhaseSign(trainee, phaseIndex);
+  return !!(s.student && s.student.at && s.manager && s.manager.at);
+}
+function phaseAnyCheckin(trainee, prevDays) {
+  const prog = (trainee && trainee.progress) || {};
+  return prevDays.some(d => {
+    const its = ((prog[d.key] || {}).items) || {};
+    return Object.keys(its).some(k => its[k] && its[k].drillRecords && Object.keys(its[k].drillRecords).length > 0);
+  });
+}
 function isPhaseUnlocked(trainee, allDays, phaseIndex) {
   if (!trainee || !allDays || !allDays.length) return false;
   if (phaseIndex <= 0) return true;
   const prevDays = allDays.filter(d => d.phaseIndex === phaseIndex - 1 && d.items.length > 0);
   if (!prevDays.length) return true;
   const prog = trainee.progress || {};
-  return prevDays.every(d => {
+  const allChecked = prevDays.every(d => {
     const dp = prog[d.key] || {};
     if (dp.completed) return true; // 兼容历史：整段已完成即视为达标
     return d.items.every((it, i) => {
@@ -930,6 +948,13 @@ function isPhaseUnlocked(trainee, allDays, phaseIndex) {
       return it.choices ? !!st.choice : !!st.checked;
     });
   });
+  if (!allChecked) return false;
+  // 有练习动作的阶段：全部项目达标 + 学员/上级两级账号确认齐全，才解锁下一阶段。
+  // 兼容：老数据没有任何打卡记录时，不强制两级确认（避免历史学员被卡住）。
+  if (phaseHasDrills(allDays, phaseIndex - 1) && phaseAnyCheckin(trainee, prevDays)) {
+    return phaseSigned(trainee, phaseIndex - 1);
+  }
+  return true;
 }
 function getStageDeadlineStatus(trainee) {
   if (!trainee || !trainee.route) return null;
@@ -944,6 +969,63 @@ function getStageDeadlineStatus(trainee) {
   if (w.learnLateDays > 0) return { label: '学习超期完成', level: 'warn' };
   if (!w.learnDone) return { label: '学习剩' + w.learnLeft + '天', level: w.learnLeft <= 2 ? 'warn' : 'ok' };
   return { label: '练习剩' + w.practiceLeft + '天', level: 'ok' };
+}
+
+// ===== 刻意练习打卡：补记留痕 / 两级账号确认 / 排班连续校验 =====
+const DRILL_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+function getDrillRecords(trainee, dayKey, itemIdx, drillIdx) {
+  const prog = (trainee && trainee.progress) || {};
+  const st = ((prog[dayKey] || {}).items || {})[itemIdx] || {};
+  return (st.drillRecords && st.drillRecords[drillIdx]) || [];
+}
+function getRestDays(trainee) {
+  const prog = (trainee && trainee.progress) || {};
+  return Array.isArray(prog._restDays) ? prog._restDays : [];
+}
+// 连续工作日校验：相邻两次打卡之间，若存在非休息日的自然日空档 → 判定断档
+function drillContinuity(records, restDays) {
+  const dates = (records || []).map(r => r.date).filter(DRILL_DATE_RE.test.bind(DRILL_DATE_RE)).sort();
+  if (dates.length < 2) return { broken: false, gapDays: 0, gaps: [] };
+  const gaps = [];
+  for (let i = 1; i < dates.length; i++) {
+    let miss = 0, d = addDaysStr(dates[i - 1], 1);
+    while (d < dates[i]) { if (restDays.indexOf(d) < 0) miss++; d = addDaysStr(d, 1); }
+    if (miss > 0) gaps.push({ from: dates[i - 1], to: dates[i], days: miss });
+  }
+  return { broken: gaps.length > 0, gapDays: gaps.reduce((s, g) => s + g.days, 0), gaps };
+}
+function getDrillStat(trainee, dayKey, itemIdx, drillIdx, need) {
+  const raw = getDrillRecords(trainee, dayKey, itemIdx, drillIdx);
+  const uniq = {};
+  raw.forEach(r => { if (r && DRILL_DATE_RE.test(r.date)) uniq[r.date] = r; });
+  const list = Object.keys(uniq).sort().map(k => uniq[k]);
+  const makeupCount = list.filter(r => r.makeup).length;
+  return {
+    records: list, doneCount: list.length, need: need, reached: list.length >= need,
+    makeupCount: makeupCount, continuity: drillContinuity(list, getRestDays(trainee))
+  };
+}
+// 某练习项（item）的所有 drill 是否全部达标
+function isPracticeItemReached(trainee, day, itemIdx, item) {
+  if (!item.drills || !item.drills.length) return true;
+  return item.drills.every((d, di) => {
+    const raw = getDrillRecords(trainee, day.key, itemIdx, di);
+    const uniq = {}; raw.forEach(r => { if (r && DRILL_DATE_RE.test(r.date)) uniq[r.date] = 1; });
+    return Object.keys(uniq).length >= d.count;
+  });
+}
+function getPhasePracticeStat(trainee, allDays, phaseIndex) {
+  let total = 0, reached = 0, makeup = 0, broken = 0;
+  allDays.filter(d => d.phaseIndex === phaseIndex).forEach(d => {
+    d.items.forEach((it, idx) => {
+      if (!it.drills || !it.drills.length) return;
+      it.drills.forEach((dr, di) => {
+        const s = getDrillStat(trainee, d.key, idx, di, dr.count);
+        total++; if (s.reached) reached++; makeup += s.makeupCount; if (s.continuity.broken) broken++;
+      });
+    });
+  });
+  return { total, reached, makeup, broken, pct: total ? Math.round(reached / total * 100) : 0 };
 }
 
 function isCertified(trainee) { return getCurrentDay(trainee) === null; }
@@ -1575,9 +1657,18 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, onDe
 // 一个阶段一张卡片，阶段内所有项目平铺展示、自由勾选；不显示「第X天」。
 // 阶段之间顺序递进：上一阶段全部项目（学习+刻意练习+认证）完成，才解锁下一阶段。
 // 进度仍存 day.key + itemIdx，勾完某天全部项目即自动完成该天，证书/时限/结业口径不变。
-function FreeStageCard({ phaseIndex, phaseDays, progressMap, trainee, onToggleItem }) {
+function FreeStageCard({ phaseIndex, phaseDays, progressMap, trainee, onToggleItem, onDrillCheckin, onDrillUndo, onPhaseSign, onSetRestDays }) {
+  const [makeupTarget, setMakeupTarget] = useState(null); // {dayKey, itemIdx, drillIdx, name}
+  const [makeupDate, setMakeupDate] = useState('');
+  const [makeupReason, setMakeupReason] = useState('');
+  const [showRest, setShowRest] = useState(false);
+  const [restInput, setRestInput] = useState('');
   const fullDays = getAllDays(trainee.route, trainee.subRoute).filter(d => d.items.length > 0);
   const phaseName = phaseDays[0].phaseName || ('阶段 ' + (phaseIndex + 1));
+  const pstat = getPhasePracticeStat(trainee, fullDays, phaseIndex);
+  const sign = getPhaseSign(trainee, phaseIndex);
+  const signed = phaseSigned(trainee, phaseIndex);
+  const restDays = getRestDays(trainee);
   const unlocked = isPhaseUnlocked(trainee, fullDays, phaseIndex);
   const prevDays = fullDays.filter(d => d.phaseIndex === phaseIndex - 1 && d.items.length > 0);
   const prevName = prevDays.length ? (prevDays[0].phaseName || ('阶段 ' + phaseIndex)) : '上一阶段';
@@ -1609,7 +1700,13 @@ function FreeStageCard({ phaseIndex, phaseDays, progressMap, trainee, onToggleIt
               <div className="text-[11px] text-gray-500">{phaseDays[0].phaseFocus || '按阶段自由学习'}</div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {pstat.total > 0 && (
+              <span className={`text-[11px] px-2 py-0.5 rounded ${pstat.broken ? 'bg-amber-500/15 text-amber-400' : pstat.reached === pstat.total ? 'bg-emerald-500/15 text-emerald-400' : 'bg-sky-500/15 text-sky-300'}`}>
+                练习 {pstat.reached}/{pstat.total} 动作{pstat.makeup ? ` · 补记${pstat.makeup}` : ''}{pstat.broken ? ` · 断档${pstat.broken}` : ''}
+              </span>
+            )}
+            {signed && <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400">两级已确认</span>}
             <span className="text-xs text-gray-400 tabular-nums">{doneCount}/{entries.length} 项</span>
             <div className="w-20 h-1.5 bg-gray-800 rounded-full overflow-hidden">
               <div className={`h-full rounded-full ${pct === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{width: pct + '%'}}></div>
@@ -1618,7 +1715,7 @@ function FreeStageCard({ phaseIndex, phaseDays, progressMap, trainee, onToggleIt
         </div>
         {!unlocked ? (
           <div className="mt-2 pt-2 border-t border-gray-800/60 text-[11px] text-amber-400/90">
-            完成「{prevName}」全部 {prevTotal} 项（含学习、刻意练习与认证）后解锁本阶段；解锁后勾选第一项才开始 7+7 计时
+            完成「{prevName}」全部 {prevTotal} 项（含学习、刻意练习与认证）并办完学员+上级两级确认后解锁本阶段
           </div>
         ) : w && w.notStarted ? (
           <div className="mt-2 pt-2 border-t border-gray-800/60 text-[11px] text-gray-500">
@@ -1675,17 +1772,131 @@ function FreeStageCard({ phaseIndex, phaseDays, progressMap, trainee, onToggleIt
                   {e.item.teacher_hours && <span>带教: {e.item.teacher_hours}</span>}
                 </div>
                 {e.item.note && <div className="mt-1.5 text-xs text-indigo-300/80 leading-relaxed">{e.item.note}</div>}
+
+                {/* 刻意练习打卡条：每个动作独立计数，支持补记留痕 */}
+                {e.item.drills && e.item.drills.length > 0 && (
+                  <div className="mt-2.5 pt-2.5 border-t border-gray-700/50 space-y-2.5">
+                    {e.item.drills.map((dr, di) => {
+                      const stt = getDrillStat(trainee, e.day.key, e.idx, di, dr.count);
+                      return (
+                        <div key={di} className="rounded-lg bg-gray-950/50 border border-gray-800/60 p-2">
+                          <div className="flex items-center justify-between gap-2 flex-wrap mb-1.5">
+                            <span className="text-xs text-gray-300">{dr.name}</span>
+                            <span className={`text-[11px] tabular-nums ${stt.reached ? 'text-emerald-400' : 'text-sky-300'}`}>{stt.doneCount}/{stt.need} 次</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {Array.from({length: stt.need}).map((_, n) => {
+                              const rec = stt.records[n];
+                              return rec ? (
+                                <button key={n} title={`${rec.date}${rec.makeup ? ` · 补记：${rec.reason}（${rec.byName} ${rec.makeupAt ? rec.makeupAt.slice(0,16).replace('T',' ') : ''}）` : ` · ${rec.byName}`}｜点击撤销`}
+                                  onClick={() => { if (!s.locked && window.confirm('撤销 ' + rec.date + ' 这次打卡？')) onDrillUndo(e.day.key, e.idx, di, rec.date); }}
+                                  className={`px-2 py-1 rounded text-[11px] tabular-nums border ${rec.makeup ? 'bg-amber-500/15 border-amber-500/40 text-amber-300' : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'} ${s.locked ? 'cursor-not-allowed' : 'hover:border-red-400/60'}`}>
+                                  {rec.date.slice(5)}{rec.makeup && <span className="ml-0.5 text-[9px]">补</span>}
+                                </button>
+                              ) : (
+                                <span key={n} className="px-2 py-1 rounded text-[11px] border border-dashed border-gray-700 text-gray-600">{n + 1}</span>
+                              );
+                            })}
+                          </div>
+                          {stt.continuity.broken && (
+                            <div className="mt-1.5 text-[10px] text-amber-400/90">⚠ 练习中断：{stt.continuity.gaps.map(g => `${g.from.slice(5)}→${g.to.slice(5)} 缺${g.days}天`).join('、')}，请对照门店排班表核实</div>
+                          )}
+                          {!s.locked && !stt.reached && (
+                            <div className="mt-1.5 flex gap-2">
+                              <button onClick={() => onDrillCheckin(e.day.key, e.idx, di)} className="px-2.5 py-1 rounded bg-sky-600/80 hover:bg-sky-500 text-white text-[11px]">记一次（今天）</button>
+                              <button onClick={() => { setMakeupTarget({dayKey: e.day.key, itemIdx: e.idx, drillIdx: di, name: dr.name}); setMakeupDate(''); setMakeupReason(''); }} className="px-2.5 py-1 rounded border border-amber-500/40 text-amber-300 hover:bg-amber-500/10 text-[11px]">补记</button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           );
         })}
+
+        {/* 两级账号确认 + 排班休息日维护：仅本阶段有练习动作时显示 */}
+        {pstat.total > 0 && (
+          <div className="mt-3 pt-3 border-t border-gray-700/60 space-y-3">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-xs font-medium text-gray-300">阶段两级确认</span>
+              <button onClick={() => setShowRest(!showRest)} className="text-[11px] text-gray-500 hover:text-gray-300">{showRest ? '收起' : '设置排班休息日'}（{restDays.length}）</button>
+            </div>
+            {showRest && (
+              <div className="rounded-lg bg-gray-950/50 border border-gray-800/60 p-2.5">
+                <div className="text-[11px] text-gray-500 mb-2">按门店排班表录入休息日，判连续时跳过这些日期（格式 YYYY-MM-DD，可批量粘贴用逗号/空格分隔）</div>
+                <div className="flex gap-2">
+                  <input type="text" value={restInput} onChange={ev => setRestInput(ev.target.value)} placeholder="2026-11-25, 2026-11-26" className="flex-1 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200"/>
+                  <button onClick={() => {
+                    const arr = restInput.split(/[,，\s]+/).map(x => x.trim()).filter(DRILL_DATE_RE.test.bind(DRILL_DATE_RE));
+                    if (!arr.length) { alert('请输入有效日期，格式 YYYY-MM-DD'); return; }
+                    onSetRestDays(Array.from(new Set(restDays.concat(arr)))); setRestInput('');
+                  }} className="px-2.5 py-1 rounded bg-indigo-600/80 hover:bg-indigo-500 text-white text-xs">添加</button>
+                </div>
+                {restDays.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {restDays.map(dt => (
+                      <button key={dt} title="点击删除" onClick={() => onSetRestDays(restDays.filter(x => x !== dt))} className="px-2 py-0.5 rounded bg-gray-800 border border-gray-700 text-[11px] text-gray-400 hover:border-red-400/60 hover:text-red-300">{dt} ×</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="rounded-lg border border-gray-800 bg-gray-950/40 p-2.5">
+                {sign.student ? (
+                  <div className="text-xs text-emerald-400">✓ 学员已确认 · {sign.student.name}（{sign.student.id}）· {sign.student.at ? sign.student.at.slice(0,16).replace('T',' ') : ''}</div>
+                ) : (
+                  <button disabled={!unlocked || pstat.reached < pstat.total}
+                    onClick={() => onPhaseSign(phaseIndex, 'student')}
+                    className={`w-full px-3 py-1.5 rounded text-xs ${!unlocked || pstat.reached < pstat.total ? 'bg-gray-800 text-gray-600 cursor-not-allowed' : 'bg-indigo-600/80 hover:bg-indigo-500 text-white'}`}>
+                    学员确认{pstat.reached < pstat.total ? `（还差 ${pstat.total - pstat.reached} 个动作）` : ''}
+                  </button>
+                )}
+              </div>
+              <div className="rounded-lg border border-gray-800 bg-gray-950/40 p-2.5">
+                {sign.manager ? (
+                  <div className="text-xs text-emerald-400">✓ 上级已确认 · {sign.manager.name}（{sign.manager.id}）· {sign.manager.at ? sign.manager.at.slice(0,16).replace('T',' ') : ''}</div>
+                ) : (
+                  <button disabled={!sign.student}
+                    onClick={() => onPhaseSign(phaseIndex, 'manager')}
+                    className={`w-full px-3 py-1.5 rounded text-xs ${!sign.student ? 'bg-gray-800 text-gray-600 cursor-not-allowed' : 'bg-emerald-600/80 hover:bg-emerald-500 text-white'}`}>
+                    上级确认（主管/店长账号）
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* 补记弹窗：日期 + 原因，留痕写入 */}
+      {makeupTarget && (
+        <div className="px-4 pb-4">
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+            <div className="text-xs text-amber-300 mb-2">补记练习：{makeupTarget.name}（将记录补记人、补记时间与原因）</div>
+            <div className="flex flex-wrap gap-2">
+              <input type="date" value={makeupDate} max={fmtLocalDate(new Date())} onChange={ev => setMakeupDate(ev.target.value)} className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200"/>
+              <input type="text" value={makeupReason} onChange={ev => setMakeupReason(ev.target.value)} placeholder="补记原因（必填，如：闭店忘记录入）" className="flex-1 min-w-[180px] bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200"/>
+              <button onClick={() => {
+                if (!makeupDate) { alert('请选择补记日期'); return; }
+                if (!makeupReason.trim()) { alert('请填写补记原因'); return; }
+                onDrillCheckin(makeupTarget.dayKey, makeupTarget.itemIdx, makeupTarget.drillIdx, makeupDate, makeupReason);
+                setMakeupTarget(null);
+              }} className="px-3 py-1 rounded bg-amber-600/80 hover:bg-amber-500 text-white text-xs">确认补记</button>
+              <button onClick={() => setMakeupTarget(null)} className="px-3 py-1 rounded border border-gray-700 text-gray-400 text-xs">取消</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ============ Trainee Tracker View ============
-function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEditTrainee, onResignTrainee, onRestoreTrainee, onUpdateProgress, stores, workHours }) {
+function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEditTrainee, onResignTrainee, onRestoreTrainee, onUpdateProgress, stores, workHours, currentUser }) {
   const [search, setSearch] = useState('');
   const [filterStore, setFilterStore] = useState('');
   const [filterRoute, setFilterRoute] = useState('');
@@ -1765,6 +1976,109 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
       onAddTrainee(data);
     }
     setEditingTrainee(null);
+  };
+
+  // ------- 刻意练习打卡（写入 progress，随云端自动同步） -------
+  const nowISO = () => new Date().toISOString();
+  const actor = () => currentUser ? { id: currentUser.id, name: (currentUser.name || '').replace(/区域带训追踪系统|大区带训追踪系统/g, '') } : { id: '', name: '未知' };
+
+  // 记一次练习；date 省略=今天；补记需带 reason + makeup=true
+  const handleDrillCheckin = (dayKey, itemIdx, drillIdx, date, reason) => {
+    if (!selected) return;
+    const d = date || fmtLocalDate(new Date());
+    if (!DRILL_DATE_RE.test(d)) { alert('日期格式应为 YYYY-MM-DD'); return; }
+    if (d > fmtLocalDate(new Date())) { alert('不能记未来的日期'); return; }
+    if (reason !== undefined && !String(reason).trim()) { alert('补记必须填写原因'); return; }
+    const progress = { ...(selected.progress || {}) };
+    const dayProg = { ...(progress[dayKey] || { items: {} }) };
+    if (isDelayActiveToday(dayProg) || isRestActiveToday(dayProg)) return;
+    const allDays = getAllDays(selected.route, selected.subRoute).filter(x => x.items.length > 0);
+    const fday = allDays.find(x => x.key === dayKey);
+    if (fday && !isPhaseUnlocked(selected, allDays, fday.phaseIndex)) { alert('请先完成上一阶段的两级确认'); return; }
+    dayProg.items = { ...dayProg.items };
+    const st = { ...(dayProg.items[itemIdx] || {}) };
+    st.drillRecords = { ...(st.drillRecords || {}) };
+    const recs = [...(st.drillRecords[drillIdx] || [])];
+    if (recs.some(r => r.date === d)) { alert('该日期已记过一次，同一天只算 1 次'); return; }
+    const who = actor();
+    const rec = { date: d, at: nowISO(), byId: who.id, byName: who.name };
+    if (reason !== undefined) { rec.makeup = true; rec.reason = String(reason).trim(); rec.makeupAt = nowISO(); }
+    recs.push(rec); recs.sort((a, b) => a.date < b.date ? -1 : 1);
+    st.drillRecords[drillIdx] = recs;
+    // 该练习项全部动作达标 → 自动勾选，沿用原完成/时限/证书口径
+    if (fday) {
+      const item = fday.items[itemIdx];
+      if (isPracticeItemReached({ progress: progress }, fday, itemIdx, item)) {
+        if (!st.checked) { st.checked = true; st.checkedAt = nowISO(); if (item.choices) st.choice = item.choices[0]; }
+      }
+    }
+    dayProg.items[itemIdx] = st;
+    dayProg._updatedAt = Date.now();
+    // 勾完本天全部项目即完成本天（与自由路线一致）
+    if (isFreeLearnRoute(selected) && fday && fday.items.length > 0) {
+      const allChecked = fday.items.every((it, i) => {
+        const s = (dayProg.items[i] || {}); return it.choices ? !!s.choice : !!s.checked;
+      });
+      if (allChecked && !dayProg.completed) { dayProg.completed = true; dayProg.completedAt = nowISO(); }
+    }
+    progress[dayKey] = dayProg;
+    onUpdateProgress(selected.id, progress);
+  };
+
+  // 撤销某次打卡（补记记录也一并删除，保留其余留痕）
+  const handleDrillUndo = (dayKey, itemIdx, drillIdx, date) => {
+    if (!selected) return;
+    const progress = { ...(selected.progress || {}) };
+    const dayProg = { ...(progress[dayKey] || { items: {} }) };
+    dayProg.items = { ...dayProg.items };
+    const st = { ...(dayProg.items[itemIdx] || {}) };
+    st.drillRecords = { ...(st.drillRecords || {}) };
+    const recs = (st.drillRecords[drillIdx] || []).filter(r => r.date !== date);
+    st.drillRecords[drillIdx] = recs;
+    const allDays = getAllDays(selected.route, selected.subRoute).filter(x => x.items.length > 0);
+    const fday = allDays.find(x => x.key === dayKey);
+    if (fday) {
+      const item = fday.items[itemIdx];
+      if (!isPracticeItemReached({ progress: progress }, fday, itemIdx, item) && st.checked) {
+        st.checked = false; st.checkedAt = nowISO(); delete st.choice;
+        if (dayProg.completed) { dayProg.completed = false; delete dayProg.completedAt; }
+      }
+    }
+    dayProg.items[itemIdx] = st;
+    dayProg._updatedAt = Date.now();
+    progress[dayKey] = dayProg;
+    onUpdateProgress(selected.id, progress);
+  };
+
+  // 两级账号确认：level = 'student' | 'manager'
+  const handlePhaseSign = (phaseIndex, level) => {
+    if (!selected) return;
+    const progress = { ...(selected.progress || {}) };
+    const signs = { ...(progress._phaseSign || {}) };
+    const cur = { ...(signs[phaseIndex] || {}) };
+    const who = actor();
+    if (level === 'student') {
+      const allDays = getAllDays(selected.route, selected.subRoute).filter(x => x.items.length > 0);
+      const phaseDays = allDays.filter(x => x.phaseIndex === phaseIndex);
+      let ok = true;
+      phaseDays.forEach(d => d.items.forEach((it, i) => { if (!isPracticeItemReached(selected, d, i, it)) ok = false; }));
+      if (!ok) { alert('本阶段全部练习动作达标后，学员才能确认'); return; }
+      cur.student = { id: who.id, name: who.name, at: nowISO() };
+    } else {
+      if (!cur.student) { alert('请先由学员确认'); return; }
+      cur.manager = { id: who.id, name: who.name, at: nowISO() };
+    }
+    signs[phaseIndex] = cur;
+    progress._phaseSign = signs;
+    onUpdateProgress(selected.id, progress);
+  };
+
+  // 休息日维护（按门店排班表录入，判连续时跳过这些日期）
+  const handleSetRestDays = (dates) => {
+    if (!selected) return;
+    const progress = { ...(selected.progress || {}) };
+    progress._restDays = dates.filter(DRILL_DATE_RE.test.bind(DRILL_DATE_RE)).sort();
+    onUpdateProgress(selected.id, progress);
   };
 
   const handleToggleItem = (dayKey, itemIdx, checked, choice) => {
@@ -2230,6 +2544,10 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
                       progressMap={selected.progress || {}}
                       trainee={selected}
                       onToggleItem={handleToggleItem}
+                      onDrillCheckin={handleDrillCheckin}
+                      onDrillUndo={handleDrillUndo}
+                      onPhaseSign={handlePhaseSign}
+                      onSetRestDays={handleSetRestDays}
                     />
                   ))}
                 </div>
@@ -5469,6 +5787,7 @@ function App() {
           onUpdateProgress={handleUpdateProgress}
           stores={stores}
           workHours={workHours}
+          currentUser={currentUser}
         />
       )}
       {/* 管理看板 = 新版驾驶舱（同源 dashboard-v2.html，iframe 嵌入，自动共享登录态与数据范围）。
@@ -5478,7 +5797,7 @@ function App() {
         <div className="p-3">
           <iframe
             key={currentUser && currentUser.id ? currentUser.id : 'anon'}
-            src="dashboard-v2.html?embed=1&v=20261122b"
+            src="dashboard-v2.html?embed=1&v=20261122c"
             title="管理看板 · 新版驾驶舱"
             className="w-full rounded-xl border border-gray-800 bg-gray-950"
             style={{ height: 'calc(100vh - 84px)', display: 'block' }}

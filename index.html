@@ -128,7 +128,7 @@ html[data-theme="ocean"] textarea:focus{accent-color:#2f8fe0}
   <script src="https://cdn.jsdelivr.net/npm/lz-string@1.4.4/libs/lz-string.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="training-data.js?v=20261122j"></script>
+  <script src="training-data.js?v=20261122k"></script>
   <style>
     * { -webkit-tap-highlight-color: transparent; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
@@ -152,6 +152,173 @@ html[data-theme="ocean"] textarea:focus{accent-color:#2f8fe0}
     }
     .progress-bar-fill { transition: width 0.5s ease-out; }
   </style>
+<style>
+/* ==================== 移动端 / 折叠屏自适应 ==================== */
+/* 顶栏实际高度由脚本写入 --tt-hdr，内容区高度全部按它计算：
+   展开折叠屏、横竖屏切换、微信内置浏览器地址栏收起，都能自动跟着变。
+   三档：≤639 单屏手机（两行顶栏 + 列表抽屉）；640~1023 折叠屏展开/平板（单行顶栏 + 窄侧栏双栏）；≥1024 桌面原样 */
+:root { --tt-hdr: 60px; }
+
+.tt-h-app {
+  height: calc(100vh - var(--tt-hdr, 60px));
+  height: calc(100dvh - var(--tt-hdr, 60px));
+}
+.tt-frame {
+  height: calc(100vh - 84px);
+  height: calc(100dvh - var(--tt-hdr, 60px) - 24px);
+}
+
+/* 桌面端顶栏高度保持原样（原 h-[60px] 已由本类接管） */
+.tt-hdr-row { height: 60px; }
+
+/* 顶栏单行：导航横向可滚，绝不换行挤压 */
+.tt-nav { scrollbar-width: none; -ms-overflow-style: none; }
+.tt-nav::-webkit-scrollbar { display: none; }
+
+/* 手机端学员列表入口条：默认隐藏，仅单屏手机显示 */
+.tt-mbar { display: none; }
+
+/* ---------- 640~1023：折叠屏展开 / 平板（单行顶栏 + 窄侧栏双栏） ---------- */
+@media (max-width: 1023px) {
+  :root { --tt-hdr: 58px; }
+
+  .tt-hdr-row {
+    height: 58px !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    gap: 8px !important;
+    flex-wrap: nowrap !important;
+  }
+  .tt-hl { flex: 1 1 auto !important; min-width: 0 !important; gap: 8px !important; }
+  .tt-logo { flex: 0 0 auto !important; gap: 7px !important; min-width: 0; }
+  .tt-logo-ico { width: 28px !important; height: 28px !important; }
+  .tt-logo-name { font-size: 14px !important; max-width: 7em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tt-logo-sub { display: none !important; }
+
+  .tt-hl { order: 1 !important; }
+  .tt-nav {
+    order: 2 !important;
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    gap: 2px !important;
+    -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 12px), transparent 100%);
+    mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 12px), transparent 100%);
+  }
+  .tt-nav > button {
+    flex: 0 0 auto !important;
+    white-space: nowrap;
+    padding: 7px 10px !important;
+    font-size: 13px !important;
+    gap: 5px !important;
+  }
+  .tt-hr { order: 3 !important; margin-left: auto; flex-shrink: 0 !important; gap: 8px !important; }
+  .tt-hide-sm { display: none !important; }
+  .tt-stat { display: none !important; }
+
+  /* 详情区留白收紧 */
+  .tt-detail { padding: 16px !important; }
+  .tt-detail-head { flex-wrap: wrap; row-gap: 10px; }
+  .tt-detail-head > div:first-child { flex: 1 1 auto; min-width: 0; }
+  .tt-actions { flex: 0 0 auto; margin-left: auto; }
+  .tt-actions button { white-space: nowrap; }
+  .tt-meta { flex-wrap: wrap !important; row-gap: 6px !important; column-gap: 12px !important; }
+}
+
+/* 折叠屏展开 / 平板：侧栏收窄，仍然并排 */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .tt-side { width: 260px !important; }
+}
+
+/* ---------- ≤639：单屏手机（两行顶栏 + 列表抽屉） ---------- */
+@media (max-width: 639px) {
+  :root { --tt-hdr: 96px; }
+
+  .tt-hdr-row {
+    height: auto !important;
+    min-height: 0 !important;
+    padding: 6px 10px 0 !important;
+    gap: 0 !important;
+    flex-wrap: wrap !important;
+  }
+  .tt-hl { flex: 0 1 auto !important; }
+  .tt-logo-ico { width: 27px !important; height: 27px !important; border-radius: 8px !important; }
+  .tt-hr { order: 2 !important; margin-left: auto; gap: 8px !important; }
+  .tt-nav {
+    order: 3 !important;
+    flex: 1 0 100% !important;
+    margin-top: 5px;
+    padding-bottom: 5px;
+    -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 14px), transparent 100%);
+    mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 14px), transparent 100%);
+  }
+  .tt-nav > button { padding: 6px 9px !important; font-size: 12.5px !important; }
+  /* 主题按钮只留色点 + 箭头，省出导航空间 */
+  .tt-btn span:nth-child(2) { display: none !important; }
+  .tt-btn { padding: 7px 9px !important; }
+
+  /* 学员列表：改为左侧抽屉 */
+  .tt-side {
+    position: fixed !important;
+    top: var(--tt-hdr, 96px);
+    bottom: 0;
+    left: 0;
+    z-index: 45;
+    width: min(86vw, 320px) !important;
+    background: rgb(var(--c-gray-950)) !important;
+    border-right: 1px solid rgb(var(--c-gray-800)) !important;
+    transform: translateX(-103%);
+    transition: transform .22s cubic-bezier(.4, 0, .2, 1);
+    box-shadow: 10px 0 28px rgba(0, 0, 0, .45);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .tt-side.tt-open { transform: none; }
+  .tt-side-mask {
+    position: fixed;
+    top: var(--tt-hdr, 96px);
+    left: 0; right: 0; bottom: 0;
+    z-index: 44;
+    background: rgba(0, 0, 0, .5);
+    -webkit-backdrop-filter: blur(2px);
+    backdrop-filter: blur(2px);
+  }
+
+  .tt-mbar {
+    display: flex;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    background: rgb(var(--c-gray-950) / .96);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+    border-bottom: 1px solid rgb(var(--c-gray-800));
+  }
+
+  .tt-detail { padding: 10px !important; }
+  .tt-hide-xs { display: none !important; }
+  /* 三列（路线/兼职选择等）在手机上改两列 */
+  .grid-cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}
+
+/* 详情区较窄（含折叠屏展开的双栏）时，四列统计改两列 */
+@media (max-width: 767px) {
+  .grid-cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}
+
+/* 横屏手机（高度很小）：压缩顶栏，避免内容区只剩一条缝 */
+@media (max-height: 460px) and (max-width: 1023px) {
+  :root { --tt-hdr: 84px; }
+  .tt-hdr-row { padding-top: 2px !important; }
+  .tt-logo-ico { width: 22px !important; height: 22px !important; }
+  .tt-nav { margin-top: 2px; padding-bottom: 3px; }
+  .tt-nav > button { padding: 5px 8px !important; font-size: 12px !important; }
+}
+</style>
 </head>
 <body class="bg-gray-950 text-gray-100">
   <div id="root"></div>
@@ -2086,6 +2253,7 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
   const [expandUnchecked, setExpandUnchecked] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingTrainee, setEditingTrainee] = useState(null);
+  const [sideOpen, setSideOpen] = useState(false); // 手机端学员列表抽屉
 
   // Refs for auto-scrolling to "next day to learn" when user switches trainee
   const dayRefs = useRef({});
@@ -2424,9 +2592,11 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
   const progressInfo = selected ? calcProgress(selected) : null;
 
   return (
-    <div className="flex h-[calc(100vh-60px)]">
+    <div className="tt-h-app flex">
+      {/* 窄屏：列表抽屉的遮罩 */}
+      {sideOpen && <div className="tt-side-mask" onClick={() => setSideOpen(false)}></div>}
       {/* Sidebar - Trainee List */}
-      <div className="w-72 flex-shrink-0 border-r border-gray-800 bg-gray-900/30 flex flex-col">
+      <div className={`tt-side w-72 flex-shrink-0 border-r border-gray-800 bg-gray-900/30 flex flex-col${sideOpen ? ' tt-open' : ''}`}>
         <div className="p-3 border-b border-gray-800 space-y-2">
           <button
             onClick={() => { setEditingTrainee(null); setShowModal(true); }}
@@ -2531,7 +2701,7 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
                 todayUnchecked.map(t => (
                   <button
                     key={t.id}
-                    onClick={() => onSelectTrainee(t.id)}
+                    onClick={() => { onSelectTrainee(t.id); setSideOpen(false); }}
                     className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition ${t.id === selectedId ? 'bg-red-500/20 border border-red-500/40' : 'bg-red-500/10 border border-red-500/20 hover:bg-red-500/15'}`}
                   >
                     <div className="w-6 h-6 rounded-full bg-red-500/20 text-red-300 flex items-center justify-center text-[10px] font-medium flex-shrink-0">
@@ -2574,7 +2744,7 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
             return (
               <button
                 key={t.id}
-                onClick={() => onSelectTrainee(t.id)}
+                onClick={() => { onSelectTrainee(t.id); setSideOpen(false); }}
                 className={`group w-full text-left p-3 rounded-lg transition ${cardClass}`}
               >
                   <div className="flex items-center justify-between">
@@ -2642,20 +2812,32 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
       </div>
 
       {/* Main Content - Training Calendar */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
+      <div className="flex-1 min-w-0 overflow-y-auto scrollbar-thin">
+        {/* 窄屏：学员列表入口 */}
+        <div className="tt-mbar">
+          <button onClick={() => setSideOpen(true)} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-xs text-gray-200 active:bg-gray-700">
+            <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+            学员列表
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">{filtered.length}</span>
+          </button>
+          <div className="flex-1 min-w-0 text-xs text-gray-400 truncate">
+            {selected ? <span className="font-medium text-white">{selected.name}</span> : '未选择学员'}
+            {selected && <span className="text-gray-500"> · {selected.store}</span>}
+          </div>
+        </div>
         {!selected ? (
           <div className="flex items-center justify-center h-full text-gray-500">
             <div className="text-center">
               <Icon.Calendar width={48} height={48} className="mx-auto mb-3 opacity-30"/>
-              <p className="text-lg">请从左侧选择学员</p>
+              <p className="text-lg">请从「学员列表」选择学员</p>
               <p className="text-sm mt-1">或点击「新增学员」开始带训追踪</p>
             </div>
           </div>
         ) : (
-          <div className="max-w-3xl mx-auto p-6">
+          <div className="tt-detail max-w-3xl mx-auto p-6">
             {/* Trainee Info Header */}
             <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-5 mb-5">
-              <div className="flex items-start justify-between">
+              <div className="tt-detail-head flex items-start justify-between">
                 <div>
                   <div className="flex items-center gap-3">
                     <h2 className="text-xl font-bold text-white">{selected.name}</h2>
@@ -2666,7 +2848,7 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
                       {getRouteName(selected.route, selected.subRoute)}
                     </span>
                   </div>
-                  <div className="flex items-center gap-4 mt-2 text-sm text-gray-400">
+                  <div className="tt-meta flex items-center gap-4 mt-2 text-sm text-gray-400">
                     <span className="flex items-center gap-1"><Icon.Store/> {selected.store}</span>
                     {selected.master && <span className="flex items-center gap-1"><Icon.User/> 师傅: {selected.master}</span>}
                     {selected.startDate && <span className="flex items-center gap-1"><Icon.Calendar width={14} height={14}/> 入职: {selected.startDate}</span>}
@@ -2678,7 +2860,7 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
                     )}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="tt-actions flex items-center gap-2">
                   <button onClick={() => { setEditingTrainee(selected); setShowModal(true); }} className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition">
                     <Icon.Edit/>
                   </button>
@@ -3159,7 +3341,7 @@ function DashboardView({ trainees: allTrainees, stores, workHours, onUpdateNote 
 
 
   return (
-    <div className="overflow-y-auto scrollbar-thin h-[calc(100vh-60px)]">
+    <div className="tt-h-app overflow-y-auto scrollbar-thin">
       <div className="max-w-6xl mx-auto p-6">
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
@@ -5942,95 +6124,26 @@ function App() {
     <div className="min-h-screen bg-gray-950">
       {/* Header */}
       <header className="sticky top-0 z-40 bg-gray-900/80 backdrop-blur-lg border-b border-gray-800">
-        <div className="flex items-center justify-between px-5 h-[60px]">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center">
+        <div className="tt-hdr-row flex items-center justify-between px-5">
+          <div className="tt-hl flex items-center gap-6">
+            <div className="tt-logo flex items-center gap-2.5">
+              <div className="tt-logo-ico w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center">
                 <Icon.Award width={18} height={18} className="text-white"/>
               </div>
               <div>
-                <h1 className="text-base font-bold text-white leading-tight">{currentUser.name}</h1>
-                <p className="text-xs text-gray-500 leading-tight">
+                <h1 className="tt-logo-name text-base font-bold text-white leading-tight">{currentUser.name}</h1>
+                <p className="tt-logo-sub text-xs text-gray-500 leading-tight">
                   {isManager ? '大区汇总看板 · 全区域数据总览' : '区域带训进度管理'}
                 </p>
               </div>
             </div>
-            <nav className="flex items-center gap-1">
-              {!isManager && (
-                <button
-                  onClick={() => setView('tracker')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'tracker' ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
-                >
-                  <Icon.Calendar width={16} height={16}/> 带训追踪
-                </button>
-              )}
-              <button
-                onClick={() => {
-                  if (dashboardUnlocked) {
-                    setView(isManager ? 'region_dashboard' : 'dashboard');
-                  } else {
-                    setShowPwdModal(true);
-                  }
-                }}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'dashboard' || view === 'region_dashboard' ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
-              >
-                <Icon.Dashboard width={16} height={16}/> 管理看板
-              </button>
-              {currentUser.id === '000' && (
-                <button
-                  onClick={() => { setPendingAdminAction('import_trainees'); setShowAdminPwdModal(true); }}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-gray-400 hover:text-white hover:bg-gray-800"
-                  title="用 Excel 一次性导入所有区域的学员"
-                >
-                  <Icon.User width={16} height={16}/> 导入学员
-                </button>
-              )}
-              {currentUser.id === '000' && (
-                <button
-                  onClick={() => { setPendingAdminAction('import_hours'); setShowAdminPwdModal(true); }}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-gray-400 hover:text-white hover:bg-gray-800"
-                >
-                  <Icon.Clock width={16} height={16}/> 导入工时
-                </button>
-              )}
-              {currentUser.id === '000' && (
-                <button
-                  onClick={() => { setPendingAdminAction('export_empids'); setShowAdminPwdModal(true); }}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-gray-400 hover:text-white hover:bg-gray-800"
-                  title="导出所有区域正在带训学员的工号表（已认证不导出）"
-                >
-                  <Icon.Download width={16} height={16}/> 导出工号
-                </button>
-              )}
-              <button
-                onClick={() => setShowSyncModal(true)}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-gray-400 hover:text-white hover:bg-gray-800"
-              >
-                <Icon.Cloud width={16} height={16}/> 数据同步
-                <span className={`w-2 h-2 rounded-full ${pushStatus.type === 'pushing' ? 'bg-blue-400 animate-pulse' : pushStatus.type === 'error' ? 'bg-red-400' : syncStatus === 'connected' ? 'bg-emerald-400' : syncStatus === 'error' ? 'bg-red-400' : 'bg-amber-400 animate-pulse'}`}></span>
-                {pushStatus.type === 'pushing' && <span className="text-xs text-blue-300">同步中...</span>}
-                {pushStatus.type === 'error' && <span className="text-xs text-red-300">推送失败</span>}
-              </button>
-              <button
-                onClick={() => setShowBotModal(true)}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-green-400 hover:text-green-300 hover:bg-green-500/10"
-                title="配置每个小区的企业微信机器人推送时间和 Webhook"
-              >
-                <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="11" width="18" height="10" rx="2"/>
-                  <circle cx="12" cy="5" r="2"/>
-                  <path d="M12 7v4"/>
-                  <path d="M8 16h.01M16 16h.01"/>
-                </svg> 企微机器人
-              </button>
-            </nav>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="tt-hr flex items-center gap-3">
             <ThemePicker />
-            <span className="text-xs text-gray-500">{visibleTrainees.length} 名学员</span>
-            <span className="text-xs text-gray-700">|</span>
-            <span className="text-xs text-gray-500">{stores.length} 家门店</span>
-            <span className="text-xs text-gray-700">|</span>
+            <span className="tt-stat text-xs text-gray-500">{visibleTrainees.length} 名学员</span>
+            <span className="tt-stat text-xs text-gray-700">|</span>
+            <span className="tt-stat text-xs text-gray-500">{stores.length} 家门店</span>
+            <span className="tt-stat text-xs text-gray-700">|</span>
             <button
               onClick={handleLogout}
               className="text-xs text-gray-400 hover:text-white transition flex items-center gap-1"
@@ -6038,6 +6151,75 @@ function App() {
               <Icon.LogOut width={12} height={12}/> 退出
             </button>
           </div>
+          <nav className="tt-nav flex items-center gap-1">
+            {!isManager && (
+              <button
+                onClick={() => setView('tracker')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'tracker' ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
+              >
+                <Icon.Calendar width={16} height={16}/> 带训追踪
+              </button>
+            )}
+            <button
+              onClick={() => {
+                if (dashboardUnlocked) {
+                  setView(isManager ? 'region_dashboard' : 'dashboard');
+                } else {
+                  setShowPwdModal(true);
+                }
+              }}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'dashboard' || view === 'region_dashboard' ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
+            >
+              <Icon.Dashboard width={16} height={16}/> 管理看板
+            </button>
+            {currentUser.id === '000' && (
+              <button
+                onClick={() => { setPendingAdminAction('import_trainees'); setShowAdminPwdModal(true); }}
+                className="tt-hide-sm flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-gray-400 hover:text-white hover:bg-gray-800"
+                title="用 Excel 一次性导入所有区域的学员"
+              >
+                <Icon.User width={16} height={16}/> 导入学员
+              </button>
+            )}
+            {currentUser.id === '000' && (
+              <button
+                onClick={() => { setPendingAdminAction('import_hours'); setShowAdminPwdModal(true); }}
+                className="tt-hide-sm flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-gray-400 hover:text-white hover:bg-gray-800"
+              >
+                <Icon.Clock width={16} height={16}/> 导入工时
+              </button>
+            )}
+            {currentUser.id === '000' && (
+              <button
+                onClick={() => { setPendingAdminAction('export_empids'); setShowAdminPwdModal(true); }}
+                className="tt-hide-sm flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-gray-400 hover:text-white hover:bg-gray-800"
+                title="导出所有区域正在带训学员的工号表（已认证不导出）"
+              >
+                <Icon.Download width={16} height={16}/> 导出工号
+              </button>
+            )}
+            <button
+              onClick={() => setShowSyncModal(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-gray-400 hover:text-white hover:bg-gray-800"
+            >
+              <Icon.Cloud width={16} height={16}/> 数据同步
+              <span className={`w-2 h-2 rounded-full ${pushStatus.type === 'pushing' ? 'bg-blue-400 animate-pulse' : pushStatus.type === 'error' ? 'bg-red-400' : syncStatus === 'connected' ? 'bg-emerald-400' : syncStatus === 'error' ? 'bg-red-400' : 'bg-amber-400 animate-pulse'}`}></span>
+              {pushStatus.type === 'pushing' && <span className="text-xs text-blue-300">同步中...</span>}
+              {pushStatus.type === 'error' && <span className="text-xs text-red-300">推送失败</span>}
+            </button>
+            <button
+              onClick={() => setShowBotModal(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition text-green-400 hover:text-green-300 hover:bg-green-500/10"
+              title="配置每个小区的企业微信机器人推送时间和 Webhook"
+            >
+              <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="10" rx="2"/>
+                <circle cx="12" cy="5" r="2"/>
+                <path d="M12 7v4"/>
+                <path d="M8 16h.01M16 16h.01"/>
+              </svg> 企微机器人
+            </button>
+          </nav>
         </div>
       </header>
 
@@ -6064,10 +6246,10 @@ function App() {
         <div className="p-3">
           <iframe
             key={currentUser && currentUser.id ? currentUser.id : 'anon'}
-            src="dashboard-v2.html?embed=1&v=20261122j"
+            src="dashboard-v2.html?embed=1&v=20261122k"
             title="管理看板 · 新版驾驶舱"
-            className="w-full rounded-xl border border-gray-800 bg-gray-950"
-            style={{ height: 'calc(100vh - 84px)', display: 'block' }}
+            className="tt-frame w-full rounded-xl border border-gray-800 bg-gray-950"
+            style={{ display: 'block' }}
           />
         </div>
       )}
@@ -6237,5 +6419,57 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
     resetIdle();
   })();
   </script>
+<script>
+/* 顶栏高度实时测量 → 写入 --tt-hdr：折叠屏展开/收起、横竖屏切换、地址栏收起都能自适应 */
+(function () {
+  var doc = document.documentElement;
+  var el = null;
+  var last = -1;
+
+  function pick() {
+    if (el && document.body.contains(el)) return el;
+    el = document.querySelector('header') || document.querySelector('.topbar');
+    return el;
+  }
+
+  function sync() {
+    var t = pick();
+    if (!t) return false;
+    var h = Math.round(t.getBoundingClientRect().height);
+    if (h > 0 && h !== last) {
+      last = h;
+      doc.style.setProperty('--tt-hdr', h + 'px');
+    }
+    return true;
+  }
+
+  function bindRO() {
+    if (!window.ResizeObserver) return;
+    var t = pick();
+    if (!t) return;
+    try { new ResizeObserver(sync).observe(t); } catch (e) {}
+  }
+
+  function boot() {
+    sync();
+    bindRO();
+    // React/Babel 首帧较晚，前 12 秒内轻量重试，直到拿到真实高度
+    var n = 0;
+    var iv = setInterval(function () {
+      if (sync() && n > 2) clearInterval(iv);
+      if (++n > 80) clearInterval(iv);
+    }, 150);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+  window.addEventListener('resize', sync);
+  window.addEventListener('orientationchange', function () { setTimeout(sync, 180); });
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', sync);
+})();
+</script>
 </body>
 </html>

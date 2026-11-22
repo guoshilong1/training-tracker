@@ -764,6 +764,8 @@ const SHIFT_COLORS = {
   '早班': { bg: 'bg-amber-500/15', text: 'text-amber-400', border: 'border-amber-500/30', dot: 'bg-amber-400' },
   '中班': { bg: 'bg-blue-500/15', text: 'text-blue-400', border: 'border-blue-500/30', dot: 'bg-blue-400' },
   '晚班': { bg: 'bg-purple-500/15', text: 'text-purple-400', border: 'border-purple-500/30', dot: 'bg-purple-400' },
+  // 原表班次为“随机”：独立配色，不强行映射成中班，方便店长对照纸面月历
+  '随机': { bg: 'bg-cyan-500/15', text: 'text-cyan-400', border: 'border-cyan-500/30', dot: 'bg-cyan-400' },
 };
 function getShiftStyle(shift) {
   return SHIFT_COLORS[shift] || { bg: 'bg-gray-500/15', text: 'text-gray-400', border: 'border-gray-500/30', dot: 'bg-gray-400' };
@@ -843,6 +845,80 @@ function getCurrentDay(trainee) {
     if (!dp || !dp.completed) return day;
   }
   return null; // All completed
+}
+
+
+// ===== 阶段时限：每阶段 7 天学习 + 7 天刻意练习/认证（自然日） =====
+function fmtLocalDate(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function addDaysStr(ds, n) {
+  const d = new Date(ds + 'T00:00:00');
+  d.setDate(d.getDate() + n);
+  return fmtLocalDate(d);
+}
+function getStageRule(routeId) {
+  const r = TRAINING_DATA.routes.find(x => x.id === routeId);
+  return (r && r.stageRule) ? r.stageRule : null;
+}
+function getPhaseWindow(trainee, allDays, phaseIndex) {
+  if (!trainee || !allDays || !allDays.length) return null;
+  const rule = getStageRule(trainee.route);
+  if (!rule) return null;
+  const phaseDays = allDays.filter(d => d.phaseIndex === phaseIndex);
+  if (!phaseDays.length) return null;
+  const prog = trainee.progress || {};
+  let start = '';
+  if (phaseIndex === 0) {
+    start = trainee.startDate || fmtLocalDate(new Date());
+  } else {
+    const prev = allDays.filter(d => d.phaseIndex === phaseIndex - 1).reverse();
+    const anchor = prev.find(d => prog[d.key] && prog[d.key].completedAt);
+    if (!anchor) return { phaseName: phaseDays[0].phaseName, notStarted: true };
+    start = localDateStr(prog[anchor.key].completedAt);
+  }
+  const learnEnd = addDaysStr(start, rule.learnDays - 1);
+  const isLearn = d => d.items.some(it => getItemType(it.content) === 'learn');
+  const isDrill = d => d.items.some(it => ['practice', 'cert', 'final_cert'].indexOf(getItemType(it.content)) >= 0);
+  const learnDays = phaseDays.filter(isLearn);
+  const drillDays = phaseDays.filter(isDrill);
+  const isDone = d => !!(prog[d.key] && prog[d.key].completed);
+  const lastDone = list => {
+    const arr = list.slice().reverse().find(d => prog[d.key] && prog[d.key].completedAt);
+    return arr ? localDateStr(prog[arr.key].completedAt) : '';
+  };
+  const learnDone = learnDays.length ? learnDays.every(isDone) : true;
+  const drillDone = drillDays.length ? drillDays.every(isDone) : true;
+  const done = learnDone && drillDone;
+  const learnCompletedAt = lastDone(learnDays) || (learnDays.length ? '' : start);
+  const practiceStart = addDaysStr(start, rule.learnDays);
+  const practiceEnd = addDaysStr(start, rule.learnDays + rule.practiceDays - 1);
+  const today = fmtLocalDate(new Date());
+  const learnLeft = Math.max(0, daysBetween(today, learnEnd));
+  const practiceLeft = Math.max(0, daysBetween(today, practiceEnd));
+  const learnOverdueDays = !learnDone ? Math.max(0, daysBetween(learnEnd, today)) : 0;
+  const practiceOverdueDays = !drillDone ? Math.max(0, daysBetween(practiceEnd, today)) : 0;
+  const learnLateDays = learnCompletedAt ? Math.max(0, daysBetween(learnEnd, learnCompletedAt)) : 0;
+  return {
+    phaseName: phaseDays[0].phaseName, rule, start, learnEnd, practiceStart, practiceEnd,
+    learnDone, drillDone, done, learnLeft, practiceLeft,
+    learnOverdue: learnOverdueDays > 0, learnOverdueDays,
+    practiceOverdue: practiceOverdueDays > 0, practiceOverdueDays, learnLateDays
+  };
+}
+function getStageDeadlineStatus(trainee) {
+  if (!trainee || !trainee.route) return null;
+  const allDays = getAllDays(trainee.route, trainee.subRoute).filter(d => d.items.length > 0);
+  if (!allDays.length) return null;
+  const cur = getCurrentDay(trainee);
+  const pi = cur ? cur.phaseIndex : allDays[allDays.length - 1].phaseIndex;
+  const w = getPhaseWindow(trainee, allDays, pi);
+  if (!w || w.notStarted || w.done) return null;
+  if (w.learnOverdue) return { label: '学习超期' + w.learnOverdueDays + '天', level: 'bad' };
+  if (w.practiceOverdue) return { label: '练习超期' + w.practiceOverdueDays + '天', level: 'bad' };
+  if (w.learnLateDays > 0) return { label: '学习超期完成', level: 'warn' };
+  if (!w.learnDone) return { label: '学习剩' + w.learnLeft + '天', level: w.learnLeft <= 2 ? 'warn' : 'ok' };
+  return { label: '练习剩' + w.practiceLeft + '天', level: 'ok' };
 }
 
 function isCertified(trainee) { return getCurrentDay(trainee) === null; }
@@ -1324,6 +1400,7 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, onDe
                       {item.teacher_hours && <span>师傅: {item.teacher_hours}</span>}
                     </div>
                   )}
+                  {item.note && <div className="mt-1.5 text-xs text-indigo-300/80 leading-relaxed">{item.note}</div>}
                 </div>
               </div>
             );
@@ -1987,11 +2064,35 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
                 const unlocked = isDayUnlocked(selected, day.key);
                 const dayProgress = selected.progress?.[day.key];
                 const isCurrent = currentDay?.key === day.key;
+                const showPhaseHeader = idx === 0 || allDays[idx - 1].phaseName !== day.phaseName;
                 return (
                   <div
                     key={selected.id + '_' + day.key}
                     ref={(el) => { dayRefs.current[day.key] = el; }}
                   >
+                    {showPhaseHeader && (() => {
+                      const w = getPhaseWindow(selected, allDays, day.phaseIndex);
+                      if (!w || w.notStarted) return null;
+                      const tone = (w.learnOverdue || w.practiceOverdue)
+                        ? 'bg-red-500/10 border-red-500/30 text-red-300'
+                        : (w.learnLateDays > 0 ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                        : 'bg-gray-800/50 border-gray-700 text-gray-300');
+                      return (
+                        <div className={`mb-3 rounded-lg border px-3 py-2 ${tone}`}>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="text-sm font-medium">{day.phaseName} · {w.rule.learnDays} 天学习 + {w.rule.practiceDays} 天刻意练习</div>
+                            <div className="text-xs opacity-80">起点 {w.start} · 学习截止 {w.learnEnd} · 练习截止 {w.practiceEnd}</div>
+                          </div>
+                          <div className="mt-1 text-xs opacity-90">
+                            {w.done ? '本阶段时限已达标' :
+                             w.learnOverdue ? `学习已超期 ${w.learnOverdueDays} 天，请补完并标注原因` :
+                             w.practiceOverdue ? `刻意练习已超期 ${w.practiceOverdueDays} 天，未达标不得进入下一阶段` :
+                             w.learnLateDays > 0 ? `学习超期 ${w.learnLateDays} 天完成，练习窗口仍截至 ${w.practiceEnd}` :
+                             (w.learnDone ? `练习剩 ${w.practiceLeft} 天` : `学习剩 ${w.learnLeft} 天`)}
+                          </div>
+                        </div>
+                      );
+                    })()}
                     {isCurrent && (
                       <div className="flex items-center gap-2 px-1 mb-2 text-xs text-amber-400">
                         <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
@@ -2702,6 +2803,7 @@ function DashboardView({ trainees: allTrainees, stores, workHours, onUpdateNote 
                         <td className="px-4 py-3 text-gray-400">{t.master || '-'}</td>
                         <td className="px-4 py-3 text-gray-400 text-xs">
                           {cd ? `${cd.monthName} · ${cd.phaseName} · 第${cd.day}天` : '已完成'}
+                          {(() => { const s = getStageDeadlineStatus(t); return s ? <div className="mt-1"><span className={`text-[10px] px-1.5 py-0.5 rounded ${s.level === 'bad' ? 'bg-red-500/15 text-red-400' : s.level === 'warn' ? 'bg-amber-500/15 text-amber-400' : 'bg-gray-700/50 text-gray-400'}`}>{s.label}</span></div> : null; })()}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
@@ -3835,7 +3937,7 @@ function PasswordModal({ password = DASHBOARD_PASSWORD, title = '管理看板验
 // ============ Sync Modal (Real-time) ============
 // ============ 工时导入弹窗（仅 000 账号可见） ============
 // ============ 学员批量导入（仅 000 账号） ============
-const ROUTE_LABELS = { front_to_back: '前厅→后厨', back_to_front: '后厨→前厅' };
+const ROUTE_LABELS = { front_to_back: '前厅→后厨', back_to_front: '后厨→前厅', master: '师傅带教', supervisor: '门店主管' };
 
 function TraineesImportModal({ existingTrainees, onClose, onImport }) {
   const [parseResult, setParseResult] = useState(null); // {valid, invalid, total}
@@ -3865,7 +3967,9 @@ function TraineesImportModal({ existingTrainees, onClose, onImport }) {
     const aoa = [
       ['区域账号', '学员姓名', '门店', '工号', '带训路线', '兼职岗位', '入职日期', '带训师傅'],
       ['0026', '王小明（示例，可删）', '太原万达店', '10086', '前厅→后厨', '', '2026/8/25', '张师傅'],
-      ['0105', '李小红（示例，可删）', '长治八一店', '10087', '兼职', '后厨兼职', '2026/8/25', '王师傅']
+      ['0105', '李小红（示例，可删）', '长治八一店', '10087', '兼职', '后厨兼职', '2026/8/25', '王师傅'],
+      ['0026', '赵师傅（示例，可删）', '太原万达店', '10088', '师傅带教', '', '2026/8/25', '孙主管'],
+      ['0105', '钱主管（示例，可删）', '长治八一店', '10089', '门店主管', '', '2026/8/25', '周店长']
     ];
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     ws['!cols'] = [{ wch: 10 }, { wch: 20 }, { wch: 16 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 10 }];
@@ -3874,13 +3978,14 @@ function TraineesImportModal({ existingTrainees, onClose, onImport }) {
 
     const tips = [
       ['填写说明'],
-      ['1. 带训路线只能填：前厅→后厨 / 后厨→前厅 / 兼职'],
+      ['1. 带训路线只能填：前厅→后厨 / 后厨→前厅 / 兼职 / 师傅带教 / 门店主管'],
       ['2. 路线填「兼职」时，请在「兼职岗位」填：前厅兼职 或 后厨兼职（不填默认前厅兼职）'],
       ['3. 区域账号必填（0001-0147 新体系小区，或老区域 000-007），完整对照见「区域账号对照」sheet'],
       ['4. 学员姓名、门店必填；同一区域同名学员会自动跳过（视为重复）'],
       ['5. 工号必填（用于工时匹配），且不能与已有学员重复'],
       ['6. 入职日期格式：2026/8/25 或 2026-08-25，不填默认今天'],
-      ['7. 带训师傅选填']
+      ['7. 带训师傅选填'],
+      ['8. “带训师傅”列：师傅带教填门店主管姓名；门店主管填店长姓名（主管缺岗/饱和时师傅路线由店长替补）']
     ];
     const ws2 = XLSX.utils.aoa_to_sheet(tips);
     ws2['!cols'] = [{ wch: 80 }];
@@ -3932,7 +4037,7 @@ function TraineesImportModal({ existingTrainees, onClose, onImport }) {
     return s;
   };
 
-  // 带训路线识别：前厅→后厨 / 后厨→前厅 / 兼职（含子路线）
+  // 带训路线识别：前厅→后厨 / 后厨→前厅 / 兼职（含子路线）/ 师傅带教 / 门店主管
   const resolveRoute = (rawRoute, rawSub) => {
     const s = String(rawRoute || '').replace(/[\s\-—→\/]/g, '');
     if (s.indexOf('兼职') >= 0) {
@@ -3943,6 +4048,8 @@ function TraineesImportModal({ existingTrainees, onClose, onImport }) {
     if (s.indexOf('前厅') >= 0 && s.indexOf('后厨') >= 0) {
       return { route: s.indexOf('前厅') < s.indexOf('后厨') ? 'front_to_back' : 'back_to_front', subRoute: '' };
     }
+    if (s.indexOf('师傅') >= 0) return { route: 'master', subRoute: '' };
+    if (s.indexOf('主管') >= 0) return { route: 'supervisor', subRoute: '' };
     return { route: '', subRoute: '' };
   };
 
@@ -4004,7 +4111,7 @@ function TraineesImportModal({ existingTrainees, onClose, onImport }) {
           const routeRaw = routeKey ? String(r[routeKey] ?? '').trim() : '';
           const subRaw = subKey ? String(r[subKey] ?? '').trim() : '';
           const { route, subRoute } = resolveRoute(routeRaw, subRaw);
-          if (!route) { invalid.push({ line, area, name, reason: `带训路线「${routeRaw}」无法识别，只能填：前厅→后厨 / 后厨→前厅 / 兼职` }); continue; }
+          if (!route) { invalid.push({ line, area, name, reason: `带训路线「${routeRaw}」无法识别，只能填：前厅→后厨 / 后厨→前厅 / 兼职 / 师傅带教 / 门店主管` }); continue; }
           const empId = empKey ? String(r[empKey] ?? '').trim() : '';
           if (empId && existingByEmp.has(empId)) {
             const dup = existingByEmp.get(empId);

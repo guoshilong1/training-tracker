@@ -7,7 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-<script src="training-data.js?v=20261122j"></script>
+<script src="training-data.js?v=20261122k"></script>
 <style>
 :root{
   --bg:#0a0b0f; --panel:#141620; --panel2:#1b1e2b; --line:#262a38;
@@ -265,6 +265,91 @@ html[data-theme="light"] .panel,html[data-theme="light"] .kpi{box-shadow:0 1px 2
 html[data-theme="gold"] .btn.pri:hover{background:#b98a26}
 html[data-theme="ocean"] .btn.pri:hover{background:#1d74c2}
 
+/* ==================== 看板：移动端 / 折叠屏自适应 ==================== */
+/* 关键修复：grid 子项默认 min-width:auto，窄屏会被内容撑破导致整页横向溢出 */
+.grid > *, .panel, .kpi { min-width: 0; }
+.exp-row { display: flex; align-items: center; gap: 11px; }
+.prow .info, .prow .meta { min-width: 0; }
+.plist { overflow-x: hidden; }
+
+/* ---------- 折叠屏展开 / 平板 ---------- */
+@media (max-width: 1024px) {
+  .g4 { grid-template-columns: repeat(2, 1fr); }
+  .g3, .g2 { grid-template-columns: 1fr; }
+  .g-auto { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .topbar { gap: 9px; }
+}
+
+/* ---------- 单屏手机 ---------- */
+@media (max-width: 640px) {
+  .wrap { padding: 10px; }
+  body.embed .wrap { padding: 8px 10px 16px; }
+
+  /* 顶栏：品牌 + 层级标签一行，筛选三件套两两一行，导出按钮紧凑 */
+  .topbar { gap: 7px; padding: 8px 0 12px; margin-bottom: 12px; }
+  .topbar .brand { font-size: 16px; }
+  .topbar .spacer { display: none; }
+  /* 三个筛选等宽一行，三个导出按钮等宽一行，排整齐 */
+  .topbar select.btn { flex: 1 1 calc(33.33% - 5px); min-width: 0; }
+  .exp-row { width: 100%; gap: 7px; }
+  .exp-row .btn { flex: 1 1 0; min-width: 0; }
+  .btn { padding: 6px 10px; font-size: 12.5px; }
+  .tab { padding: 6px 11px; font-size: 12.5px; }
+  .badge { font-size: 10.5px; padding: 2px 7px; }
+  .sec-h { margin-bottom: 9px; }
+  .sec-h h2 { font-size: 13.5px; }
+
+  /* 卡片与网格 */
+  .g4 { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .g3, .g2, .g-auto { grid-template-columns: 1fr; }
+  .panel { padding: 12px; }
+  .panel-h { flex-wrap: wrap; row-gap: 6px; margin-bottom: 9px; }
+  .kpi { padding: 11px; }
+  .kpi .vl { font-size: 22px; }
+  .kpi .lb { font-size: 11px; }
+  .kpi .sub { font-size: 10.5px; }
+
+  /* 学员行：头像 + 姓名 + 阶段标签，标签收窄 */
+  .prow { padding: 8px; gap: 8px; }
+  .prow .nm { font-size: 12.5px; }
+  .prow .meta { font-size: 11px; }
+  .prow .tag { font-size: 10px; padding: 2px 6px; }
+  .plist { max-height: none; }
+
+  /* 单人下钻：5 项统计改 3 列 */
+  .tk-stats { grid-template-columns: repeat(3, 1fr); gap: 7px; }
+  .tk-v { font-size: 17px; }
+  .tk-l { font-size: 10px; }
+  .tk-name { font-size: 16px; }
+  .tk-banner { font-size: 12px; padding: 9px 11px; }
+
+  /* 表格：允许横向滑动，不撑破页面 */
+  .tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tbl-wrap table { min-width: 480px; }
+
+  /* 管理层阶段明细：9 列在手机上读不了，只留 5 个关键信号，其余点姓名下钻看 */
+  .tbl-wrap table.t-mgmt-phase { min-width: 0; }
+  .t-mgmt-phase th, .t-mgmt-phase td { padding: 7px 3px; font-size: 11px; text-align: center; }
+  .t-mgmt-phase th:first-child, .t-mgmt-phase td:first-child { text-align: left; padding-left: 8px; }
+  .t-mgmt-phase th { white-space: normal; line-height: 1.25; }
+  .t-mgmt-phase .pill { font-size: 9.5px; padding: 1px 4px; white-space: nowrap; }
+  .t-mgmt-phase th:nth-child(2), .t-mgmt-phase td:nth-child(2),
+  .t-mgmt-phase th:nth-child(3), .t-mgmt-phase td:nth-child(3),
+  .t-mgmt-phase th:nth-child(5), .t-mgmt-phase td:nth-child(5),
+  .t-mgmt-phase th:nth-child(8), .t-mgmt-phase td:nth-child(8) { display: none; }
+  .t-mgmt-phase td:first-child { white-space: nowrap; }
+  .cal { gap: 4px; }
+  .cal .cell { min-height: 30px; font-size: 9.5px; }
+  .note, .warnnote { font-size: 11.5px; padding: 8px 11px; }
+}
+
+/* 横屏手机：进一步压缩纵向留白 */
+@media (max-height: 460px) and (max-width: 1024px) {
+  .topbar { padding: 4px 0 8px; margin-bottom: 8px; }
+  .kpi { padding: 9px; }
+  .kpi .vl { font-size: 18px; }
+}
+
 </style>
 <script>
 (function(){
@@ -294,9 +379,7 @@ html[data-theme="ocean"] .btn.pri:hover{background:#1d74c2}
     <select id="areaSel" class="btn"><option value="">全部区域</option></select>
     <select id="storeSel" class="btn"><option value="">全部门店</option></select>
     <select id="routeSel" class="btn"><option value="">全部路线</option></select>
-    <button class="btn" onclick="exportImage()">导出长图</button>
-    <button class="btn" onclick="exportPdf()">导出 PDF</button>
-    <button class="btn pri" onclick="exportXlsx()">导出 xlsx</button>
+    <div class="exp-row"><button class="btn" onclick="exportImage()">导出长图</button><button class="btn" onclick="exportPdf()">导出 PDF</button><button class="btn pri" onclick="exportXlsx()">导出 xlsx</button></div>
   </div>
 
   <div id="ctrlbar" class="ctrlbar no-print"></div>
@@ -1175,7 +1258,7 @@ function mgmtViewPhases(){
   return `
   <div class="sec">
     <div class="sec-h"><h2>管理层阶段进度明细</h2><span class="hint">四阶段 · 每阶段 7 天学习 + 7 天刻意练习 · 起点按首次勾选 · 第一阶段可断档，第二、三阶段日期须逐日连续</span></div>
-    <div class="panel"><div class="tbl-wrap"><table>
+    <div class="panel"><div class="tbl-wrap"><table class="t-mgmt-phase">
       <thead><tr><th>姓名</th><th>路径</th><th>门店</th><th>当前阶段</th><th>阶段进度</th><th>练习达标</th><th>两级确认</th><th>时限</th><th>断档</th></tr></thead>
       <tbody>${ps.length?ps.map(p=>`<tr>
         <td class="tlink" onclick="openTrainee('${p.id}')">${esc(p.name)}</td>

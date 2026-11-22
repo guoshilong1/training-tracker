@@ -7,7 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-<script src="training-data.js?v=20261122h"></script>
+<script src="training-data.js?v=20261122i"></script>
 <style>
 :root{
   --bg:#0a0b0f; --panel:#141620; --panel2:#1b1e2b; --line:#262a38;
@@ -993,7 +993,8 @@ function mgmtDrillRecords(t,dayKey,itemIdx,drillIdx){
   return Object.keys(uniq).sort().map(k=>uniq[k]);
 }
 function mgmtRestDays(t){ const p=t.progress||{}; return Array.isArray(p._restDays)?p._restDays:[]; }
-/* 第一阶段(phaseIndex=0)允许断档；第二、三阶段(phaseIndex>0)必须按排班表连续 */
+/* 第一阶段(phaseIndex=0)允许断档；第二、三阶段(phaseIndex>0)只认日期逐日连续，不按排班表豁免 */
+/* restDays 保留兼容旧数据（仅作备注，不参与连续判定） */
 function mgmtContinuity(records,restDays,phaseIndex){
   const required=phaseIndex!==0;
   const dates=records.map(r=>r.date);
@@ -1001,7 +1002,7 @@ function mgmtContinuity(records,restDays,phaseIndex){
   let gap=0;
   for(let i=1;i<dates.length;i++){
     let d=mgmtAddDays(dates[i-1],1);
-    while(d<dates[i]){ if(restDays.indexOf(d)<0) gap++; d=mgmtAddDays(d,1); }
+    while(d<dates[i]){ gap++; d=mgmtAddDays(d,1); }
   }
   return {required, broken:required&&gap>0, gapDays:gap};
 }
@@ -1085,7 +1086,7 @@ function mgmtViewOverview(){
     </div>
     <div class="grid g4" style="margin-top:12px">
       ${kpi('emerald','两级确认齐全',signed,`共 ${n} 人，齐全后阶段才解锁`,'var(--emerald)')}
-      ${kpi('amber','练习断档预警',broken,broken>0?'仅二、三阶段 · 对照排班表核实':'无断档','var(--amber)')}
+      ${kpi('amber','练习断档预警',broken,broken>0?'仅二、三阶段 · 日期不连续即预警':'无断档','var(--amber)')}
       ${kpi('amber','补记次数合计',ps.reduce((s,p)=>s+p.drillMakeup,0),'带留痕的补记打卡')}
       ${kpi('indigo','全部项目完成',ps.filter(p=>p.doneDays===p.totalDays&&p.totalDays>0).length,'已完成全部带训日')}
     </div>
@@ -1117,7 +1118,7 @@ function mgmtViewPhases(){
   const signTag=(p)=>p.signed?'<span class="pill" style="background:rgba(34,201,138,.15);color:var(--emerald)">两级已确认</span>':(p.studentSigned?'<span class="pill" style="background:rgba(240,169,42,.15);color:var(--amber)">待上级确认</span>':'<span class="pill" style="background:rgba(255,255,255,.08);color:var(--txt2)">未确认</span>');
   return `
   <div class="sec">
-    <div class="sec-h"><h2>管理层阶段进度明细</h2><span class="hint">四阶段 · 每阶段 7 天学习 + 7 天刻意练习 · 起点按首次勾选 · 第一阶段可断档，第二、三阶段须连续</span></div>
+    <div class="sec-h"><h2>管理层阶段进度明细</h2><span class="hint">四阶段 · 每阶段 7 天学习 + 7 天刻意练习 · 起点按首次勾选 · 第一阶段可断档，第二、三阶段日期须逐日连续</span></div>
     <div class="panel"><div class="tbl-wrap"><table>
       <thead><tr><th>姓名</th><th>路径</th><th>门店</th><th>当前阶段</th><th>阶段进度</th><th>练习达标</th><th>两级确认</th><th>时限</th><th>断档</th></tr></thead>
       <tbody>${ps.length?ps.map(p=>`<tr>
@@ -1152,7 +1153,7 @@ function mgmtViewAlerts(){
     <div class="grid g2">
       <div class="panel"><div class="panel-h"><h3 style="color:var(--red)">● 时限超期</h3><span class="cnt">${overdue.length} 人</span></div>
         ${list(overdue,p=>p.deadline.label,'red','无超期学员')}</div>
-      <div class="panel"><div class="panel-h"><h3 style="color:var(--amber)">● 练习断档（对照排班）</h3><span class="cnt">${broken.length} 人</span></div>
+      <div class="panel"><div class="panel-h"><h3 style="color:var(--amber)">● 练习断档（日期不连续，不按排班表）</h3><span class="cnt">${broken.length} 人</span></div>
         ${list(broken,p=>p.drillBroken+' 处','amber','无断档')}</div>
     </div>
     <div class="panel" style="margin-top:14px"><div class="panel-h"><h3 style="color:var(--purple)">● 练习已达标、待上级确认</h3><span class="cnt">${unsigned.length} 人</span></div>

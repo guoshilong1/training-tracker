@@ -11,7 +11,7 @@
   <script src="https://cdn.jsdelivr.net/npm/lz-string@1.4.4/libs/lz-string.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="training-data.js?v=20261122"></script>
+  <script src="training-data.js?v=20261122b"></script>
   <style>
     * { -webkit-tap-highlight-color: transparent; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
@@ -862,7 +862,7 @@ function getStageRule(routeId) {
   return (r && r.stageRule) ? r.stageRule : null;
 }
 // 自由学习路线（师傅带教/门店主管）：数据里写了 stageRule 即为自由线
-// 按阶段聚合展示、阶段内自由勾选，无「第X天」、无顺序锁
+// 按阶段聚合展示、阶段内自由勾选，无「第X天」；阶段之间按顺序递进：上一阶段全部项目完成才解锁下一阶段
 function isFreeLearnRoute(trainee) { return !!getStageRule(trainee && trainee.route); }
 function getPhaseWindow(trainee, allDays, phaseIndex) {
   if (!trainee || !allDays || !allDays.length) return null;
@@ -913,6 +913,23 @@ function getPhaseWindow(trainee, allDays, phaseIndex) {
     learnOverdue: learnOverdueDays > 0, learnOverdueDays,
     practiceOverdue: practiceOverdueDays > 0, practiceOverdueDays, learnLateDays
   };
+}
+// 阶段递进锁：第一阶段直接开放；上一阶段【全部项目】（学习 + 刻意练习 + 认证）勾完，才开放下一阶段。
+// 既有 day.completed 兜底（兼容历史数据），也逐项核对勾选状态，防止只勾部分项却误解锁。
+function isPhaseUnlocked(trainee, allDays, phaseIndex) {
+  if (!trainee || !allDays || !allDays.length) return false;
+  if (phaseIndex <= 0) return true;
+  const prevDays = allDays.filter(d => d.phaseIndex === phaseIndex - 1 && d.items.length > 0);
+  if (!prevDays.length) return true;
+  const prog = trainee.progress || {};
+  return prevDays.every(d => {
+    const dp = prog[d.key] || {};
+    if (dp.completed) return true; // 兼容历史：整段已完成即视为达标
+    return d.items.every((it, i) => {
+      const st = (dp.items || {})[i] || {};
+      return it.choices ? !!st.choice : !!st.checked;
+    });
+  });
 }
 function getStageDeadlineStatus(trainee) {
   if (!trainee || !trainee.route) return null;
@@ -991,7 +1008,7 @@ function isCertifiedThisMonth(trainee) {
 }
 
 function isDayUnlocked(trainee, dayKey) {
-  if (isFreeLearnRoute(trainee)) return true; // 师傅带教/门店主管：无顺序锁，所有阶段直接可勾
+  if (isFreeLearnRoute(trainee)) return true; // 师傅带教/门店主管：按天不锁；阶段递进由 isPhaseUnlocked 控制
   const allDays = getAllDays(trainee.route, trainee.subRoute).filter(d => d.items.length > 0);
   const idx = allDays.findIndex(d => d.key === dayKey);
   if (idx === 0) return true;
@@ -1555,22 +1572,28 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, onDe
 
 
 // ============ 自由学习路线：阶段聚合卡片（师傅带教 / 门店主管） ============
-// 一个阶段一张卡片，阶段内所有项目平铺展示、直接勾选；不显示「第X天」与顺序锁。
+// 一个阶段一张卡片，阶段内所有项目平铺展示、自由勾选；不显示「第X天」。
+// 阶段之间顺序递进：上一阶段全部项目（学习+刻意练习+认证）完成，才解锁下一阶段。
 // 进度仍存 day.key + itemIdx，勾完某天全部项目即自动完成该天，证书/时限/结业口径不变。
 function FreeStageCard({ phaseIndex, phaseDays, progressMap, trainee, onToggleItem }) {
   const fullDays = getAllDays(trainee.route, trainee.subRoute).filter(d => d.items.length > 0);
   const phaseName = phaseDays[0].phaseName || ('阶段 ' + (phaseIndex + 1));
+  const unlocked = isPhaseUnlocked(trainee, fullDays, phaseIndex);
+  const prevDays = fullDays.filter(d => d.phaseIndex === phaseIndex - 1 && d.items.length > 0);
+  const prevName = prevDays.length ? (prevDays[0].phaseName || ('阶段 ' + phaseIndex)) : '上一阶段';
+  const prevTotal = prevDays.reduce((n, d) => n + d.items.length, 0);
   const entries = [];
   phaseDays.forEach(d => d.items.forEach((item, idx) => entries.push({ day: d, item: item, idx: idx, key: d.key + '_' + idx })));
   const stateOf = e => {
     const dp = progressMap[e.day.key] || {};
     const st = (dp.items || {})[e.idx] || {};
-    return { st: st, done: e.item.choices ? !!st.choice : !!st.checked, locked: isDelayActiveToday(dp) || isRestActiveToday(dp) };
+    return { st: st, done: e.item.choices ? !!st.choice : !!st.checked, locked: !unlocked || isDelayActiveToday(dp) || isRestActiveToday(dp) };
   };
   const doneCount = entries.filter(e => stateOf(e).done).length;
   const pct = entries.length ? Math.round(doneCount / entries.length * 100) : 0;
   const w = getPhaseWindow(trainee, fullDays, phaseIndex);
-  const tone = (w && !w.notStarted && (w.learnOverdue || w.practiceOverdue))
+  const tone = !unlocked ? 'border-gray-800'
+    : (w && !w.notStarted && (w.learnOverdue || w.practiceOverdue))
     ? 'border-red-500/40'
     : (pct === 100 ? 'border-emerald-500/40' : 'border-gray-700');
   return (
@@ -1578,8 +1601,8 @@ function FreeStageCard({ phaseIndex, phaseDays, progressMap, trainee, onToggleIt
       <div className="px-4 py-3 border-b border-gray-800/70 bg-gray-800/30">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
-            <span className={`flex items-center justify-center w-8 h-8 rounded-lg text-sm font-bold ${pct === 100 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-indigo-500/20 text-indigo-300'}`}>
-              {pct === 100 ? <Icon.Check width={15} height={15}/> : (phaseIndex + 1)}
+            <span className={`flex items-center justify-center w-8 h-8 rounded-lg text-sm font-bold ${!unlocked ? 'bg-gray-700/50 text-gray-500' : pct === 100 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-indigo-500/20 text-indigo-300'}`}>
+              {!unlocked ? <Icon.Lock width={14} height={14}/> : pct === 100 ? <Icon.Check width={15} height={15}/> : (phaseIndex + 1)}
             </span>
             <div>
               <div className="text-sm font-semibold text-white">{phaseName}</div>
@@ -1593,7 +1616,11 @@ function FreeStageCard({ phaseIndex, phaseDays, progressMap, trainee, onToggleIt
             </div>
           </div>
         </div>
-        {w && w.notStarted ? (
+        {!unlocked ? (
+          <div className="mt-2 pt-2 border-t border-gray-800/60 text-[11px] text-amber-400/90">
+            完成「{prevName}」全部 {prevTotal} 项（含学习、刻意练习与认证）后解锁本阶段；解锁后勾选第一项才开始 7+7 计时
+          </div>
+        ) : w && w.notStarted ? (
           <div className="mt-2 pt-2 border-t border-gray-800/60 text-[11px] text-gray-500">
             勾选本阶段第一项后开始计时：{w.rule.learnDays} 天学习 + {w.rule.practiceDays} 天刻意练习（起点按首次勾选日计算）
           </div>
@@ -1610,7 +1637,7 @@ function FreeStageCard({ phaseIndex, phaseDays, progressMap, trainee, onToggleIt
           </div>
         ) : null}
       </div>
-      <div className="px-4 py-3 space-y-2">
+      <div className={"px-4 py-3 space-y-2" + (!unlocked ? " opacity-60" : "")}>
         {entries.map(e => {
           const s = stateOf(e);
           const itemType = getItemType(e.item.content);
@@ -1762,7 +1789,10 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
     dayProg.items[itemIdx] = prev;
     // 自由学习路线：勾完本天全部项目即自动完成；取消任一项即撤销完成
     if (isFreeLearnRoute(selected)) {
-      const fday = getAllDays(selected.route, selected.subRoute).filter(d => d.items.length > 0).find(d => d.key === dayKey);
+      const fall = getAllDays(selected.route, selected.subRoute).filter(d => d.items.length > 0);
+      const fday = fall.find(d => d.key === dayKey);
+      // 双保险：阶段未解锁时即使绕过界面按钮也不写入进度
+      if (fday && !isPhaseUnlocked(selected, fall, fday.phaseIndex)) return;
       if (fday && fday.items.length > 0) {
         const allChecked = fday.items.every((it, i) => {
           const st = (dayProg.items[i] || {});
@@ -5448,7 +5478,7 @@ function App() {
         <div className="p-3">
           <iframe
             key={currentUser && currentUser.id ? currentUser.id : 'anon'}
-            src="dashboard-v2.html?embed=1&v=20261122"
+            src="dashboard-v2.html?embed=1&v=20261122b"
             title="管理看板 · 新版驾驶舱"
             className="w-full rounded-xl border border-gray-800 bg-gray-950"
             style={{ height: 'calc(100vh - 84px)', display: 'block' }}

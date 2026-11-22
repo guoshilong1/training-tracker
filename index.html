@@ -5,13 +5,130 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>门店带训追踪系统</title>
   <script src="https://cdn.tailwindcss.com"></script>
+<script>
+(function(){try{var q=(location.search.match(/[?&]theme=(deep|ocean|gold|light)/)||[])[1];var v=q||localStorage.getItem('tt_theme_v1');if(v&&['deep','ocean','gold','light'].indexOf(v)>=0){document.documentElement.setAttribute('data-theme',v);}}catch(e){}})();
+if(window.tailwind){tailwind.config={theme:{extend:{colors:{gray:{50:'rgb(var(--c-gray-50) / <alpha-value>)',100:'rgb(var(--c-gray-100) / <alpha-value>)',200:'rgb(var(--c-gray-200) / <alpha-value>)',300:'rgb(var(--c-gray-300) / <alpha-value>)',400:'rgb(var(--c-gray-400) / <alpha-value>)',500:'rgb(var(--c-gray-500) / <alpha-value>)',600:'rgb(var(--c-gray-600) / <alpha-value>)',700:'rgb(var(--c-gray-700) / <alpha-value>)',800:'rgb(var(--c-gray-800) / <alpha-value>)',900:'rgb(var(--c-gray-900) / <alpha-value>)',950:'rgb(var(--c-gray-950) / <alpha-value>)'},indigo:{300:'rgb(var(--c-indigo-300) / <alpha-value>)',400:'rgb(var(--c-indigo-400) / <alpha-value>)',500:'rgb(var(--c-indigo-500) / <alpha-value>)',600:'rgb(var(--c-indigo-600) / <alpha-value>)',700:'rgb(var(--c-indigo-700) / <alpha-value>)',800:'rgb(var(--c-indigo-800) / <alpha-value>)',900:'rgb(var(--c-indigo-900) / <alpha-value>)'}}}}};}
+</script>
+<style>
+/* ==================== 主题变量（四套：深空紫 / 深海蓝 / 黑金 / 浅色商务） ==================== */
+/* 变量存 RGB 通道，Tailwind 侧用 rgb(var(--c-x) / <alpha-value>) 取值，天然支持 /50 透明度 */
+:root,html[data-theme="deep"]{
+  --c-gray-50:249 250 251; --c-gray-100:243 244 246; --c-gray-200:229 231 235;
+  --c-gray-300:209 213 219; --c-gray-400:156 163 175; --c-gray-500:107 114 128;
+  --c-gray-600:75 85 99;    --c-gray-700:55 65 81;    --c-gray-800:31 41 55;
+  --c-gray-900:17 24 39;    --c-gray-950:3 7 18;
+  --c-indigo-300:165 180 252; --c-indigo-400:129 140 248; --c-indigo-500:99 102 241;
+  --c-indigo-600:79 70 229;   --c-indigo-700:67 56 202;  --c-indigo-800:55 48 163; --c-indigo-900:49 46 129;
+  color-scheme:dark;
+}
+html[data-theme="ocean"]{
+  --c-gray-50:238 246 252; --c-gray-100:220 235 247; --c-gray-200:188 216 236;
+  --c-gray-300:143 184 214; --c-gray-400:106 148 181; --c-gray-500:74 116 149;
+  --c-gray-600:51 89 122;   --c-gray-700:34 66 94;    --c-gray-800:22 47 69;
+  --c-gray-900:13 31 47;    --c-gray-950:6 18 32;
+  --c-indigo-300:142 205 247; --c-indigo-400:95 179 240; --c-indigo-500:47 143 224;
+  --c-indigo-600:29 116 194;  --c-indigo-700:24 98 168;  --c-indigo-800:18 77 134; --c-indigo-900:11 58 102;
+  color-scheme:dark;
+}
+html[data-theme="gold"]{
+  --c-gray-50:250 246 234; --c-gray-100:243 236 216; --c-gray-200:230 217 182;
+  --c-gray-300:210 190 140; --c-gray-400:179 157 106; --c-gray-500:141 122 78;
+  --c-gray-600:106 91 57;   --c-gray-700:74 63 40;    --c-gray-800:46 39 25;
+  --c-gray-900:26 22 16;    --c-gray-950:12 10 7;
+  --c-indigo-300:242 221 166; --c-indigo-400:230 196 118; --c-indigo-500:212 164 55;
+  --c-indigo-600:185 138 38;  --c-indigo-700:150 112 26;  --c-indigo-800:110 82 18; --c-indigo-900:74 54 8;
+  color-scheme:dark;
+}
+html[data-theme="light"]{
+  --c-gray-50:11 18 32;    --c-gray-100:26 36 52;   --c-gray-200:43 54 72;
+  --c-gray-300:61 74 94;   --c-gray-400:91 104 121; --c-gray-500:148 163 184;
+  --c-gray-600:183 193 207; --c-gray-700:207 216 228; --c-gray-800:232 237 244;
+  --c-gray-900:255 255 255; --c-gray-950:244 246 250;
+  --c-indigo-300:79 70 229; --c-indigo-400:79 70 229; --c-indigo-500:67 56 202;
+  --c-indigo-600:55 48 163; --c-indigo-700:49 46 129; --c-indigo-800:49 46 129; --c-indigo-900:30 27 75;
+  color-scheme:light;
+}
+/* 浅色主题：灰阶深浅是颠倒的，文字类需单独校正，避免「浅底浅字」 */
+html[data-theme="light"] .text-gray-300{color:#2f3b4d}
+html[data-theme="light"] .text-gray-400{color:#5d6a7d}
+html[data-theme="light"] .text-gray-500{color:#6b7789}
+html[data-theme="light"] .text-gray-600{color:#55637a}
+html[data-theme="light"] .text-gray-700{color:#414d60}
+/* 标题用的 text-white：浅色主题改为墨色；带深色底（bg-/from-/to-）的按钮保持白字 */
+html[data-theme="light"] .text-white:not([class*="bg-"]):not([class*="from-"]):not([class*="to-"]){color:#101827}
+/* 浅色主题：彩色文字整体加深一档，保证对比度 */
+html[data-theme="light"] .text-emerald-300,
+html[data-theme="light"] .text-emerald-400,
+html[data-theme="light"] .text-emerald-500{color:#047857}
+html[data-theme="light"] .text-amber-300,
+html[data-theme="light"] .text-amber-400{color:#a16207}
+html[data-theme="light"] .text-red-200,
+html[data-theme="light"] .text-red-300,
+html[data-theme="light"] .text-red-400{color:#c02626}
+html[data-theme="light"] .text-rose-300,
+html[data-theme="light"] .text-rose-400{color:#be123c}
+html[data-theme="light"] .text-sky-300,
+html[data-theme="light"] .text-sky-400{color:#0369a1}
+html[data-theme="light"] .text-blue-300,
+html[data-theme="light"] .text-blue-400{color:#1d4ed8}
+html[data-theme="light"] .text-cyan-400{color:#0e7490}
+html[data-theme="light"] .text-green-300,
+html[data-theme="light"] .text-green-400{color:#15803d}
+html[data-theme="light"] .text-orange-300{color:#c2410c}
+html[data-theme="light"] .text-purple-300,
+html[data-theme="light"] .text-purple-400{color:#6b21a8}
+html[data-theme="light"] .text-yellow-200{color:#92400e}
+html[data-theme="light"] .text-yellow-300,
+html[data-theme="light"] .text-yellow-500{color:#a16207}
+html[data-theme="light"] .text-indigo-300,
+html[data-theme="light"] .text-indigo-400{color:#4338ca}
+html[data-theme="light"] .scrollbar-thin::-webkit-scrollbar-thumb{background:rgba(15,23,42,.16)}
+html[data-theme="light"] .scrollbar-thin::-webkit-scrollbar-thumb:hover{background:rgba(15,23,42,.26)}
+html[data-theme="light"] input[type="date"]{color-scheme:light}
+html[data-theme="gold"] .day-card:hover{border-color:rgba(212,164,55,.45)}
+html[data-theme="ocean"] .day-card:hover{border-color:rgba(47,143,224,.45)}
+html[data-theme="gold"] input[type="checkbox"],
+html[data-theme="gold"] input[type="text"]:focus,
+html[data-theme="gold"] input[type="date"]:focus,
+html[data-theme="gold"] select:focus,
+html[data-theme="gold"] textarea:focus{accent-color:#d4a437}
+html[data-theme="ocean"] input[type="checkbox"],
+html[data-theme="ocean"] input[type="text"]:focus,
+html[data-theme="ocean"] input[type="date"]:focus,
+html[data-theme="ocean"] select:focus,
+html[data-theme="ocean"] textarea:focus{accent-color:#2f8fe0}
+
+/* ==================== 顶部主题切换器 ==================== */
+#tt-theme-host{position:relative;display:flex;align-items:center;flex-shrink:0}
+.tt-btn{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:8px;font-size:13px;font-weight:500;
+  border:1px solid rgb(var(--c-gray-800));background:transparent;color:rgb(var(--c-gray-400));cursor:pointer;
+  font-family:inherit;transition:.15s;white-space:nowrap;flex-shrink:0}
+.tt-btn:hover{background:rgb(var(--c-gray-800));color:rgb(var(--c-gray-100))}
+.tt-btn .tt-dot{width:11px;height:11px;border-radius:50%;flex-shrink:0;box-shadow:0 0 0 1px rgba(127,127,127,.35)}
+.tt-pop{position:absolute;right:0;top:calc(100% + 10px);width:256px;background:rgb(var(--c-gray-900));
+  border:1px solid rgb(var(--c-gray-800));border-radius:12px;padding:7px;
+  box-shadow:0 20px 45px rgba(0,0,0,.45);z-index:90;display:none}
+.tt-pop.on{display:block}
+.tt-pop .tt-hd{font-size:11px;color:rgb(var(--c-gray-500));padding:4px 9px 7px;letter-spacing:.6px}
+.tt-opt{display:flex;align-items:center;gap:9px;width:100%;padding:8px 9px;border:0;border-radius:9px;
+  background:transparent;cursor:pointer;font-family:inherit;text-align:left;transition:.12s}
+.tt-opt:hover{background:rgb(var(--c-gray-800))}
+.tt-opt.on{background:rgb(var(--c-gray-800))}
+.tt-sw{display:flex;flex-shrink:0}
+.tt-sw i{display:block;width:13px;height:13px;border-radius:4px;margin-left:-4px;box-shadow:0 0 0 1px rgba(127,127,127,.3)}
+.tt-sw i:first-child{margin-left:0}
+.tt-nm{flex:1;font-size:13px;color:rgb(var(--c-gray-100));line-height:1.25}
+.tt-nm small{display:block;font-size:11px;color:rgb(var(--c-gray-500));font-weight:400}
+.tt-ck{font-size:12px;color:rgb(var(--c-indigo-500));opacity:0}
+.tt-opt.on .tt-ck{opacity:1}
+</style>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/lz-string@1.4.4/libs/lz-string.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="training-data.js?v=20261122i"></script>
+  <script src="training-data.js?v=20261122j"></script>
   <style>
     * { -webkit-tap-highlight-color: transparent; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
@@ -26,12 +143,12 @@
     .checkbox-custom { transition: all 0.15s ease; }
     .checkbox-custom:hover { transform: scale(1.1); }
     .day-card { transition: all 0.2s ease; }
-    .day-card:hover { border-color: rgba(99,102,241,0.4); }
-    input[type="checkbox"] { accent-color: #6366f1; cursor: pointer; }
+    .day-card:hover { border-color: rgb(var(--c-indigo-500) / .40); }
+    input[type="checkbox"] { accent-color: rgb(var(--c-indigo-500)); cursor: pointer; }
     input[type="text"]:focus, input[type="date"]:focus, select:focus, textarea:focus {
       outline: none;
-      border-color: #6366f1;
-      box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+      border-color: rgb(var(--c-indigo-500));
+      box-shadow: 0 0 0 3px rgb(var(--c-indigo-500) / .15);
     }
     .progress-bar-fill { transition: width 0.5s ease-out; }
   </style>
@@ -5268,6 +5385,77 @@ function SyncModal({ data, syncStatus, lastSyncTime, setLastSyncTime, onClose, o
 }
 
 // ============ Login Screen ============
+/* ==================== 界面主题切换器：四套配色（深空紫 / 深海蓝 / 黑金 / 浅色商务） ==================== */
+const TT_THEMES = [
+  {id:'deep',  name:'深空紫',   hint:'默认 · 夜间久看不累',     sw:['#0a0b0f','#141620','#5b6cff']},
+  {id:'ocean', name:'深海蓝',   hint:'对比最稳 · 长时间盯数据', sw:['#061220','#0d1f2f','#2f8fe0']},
+  {id:'gold',  name:'黑金',     hint:'层级强 · 认证结业醒目',   sw:['#0c0a07','#1a1610','#d4a437']},
+  {id:'light', name:'浅色商务', hint:'投屏 · 打印 · 白天最清',  sw:['#f4f6fa','#ffffff','#4338ca']}
+];
+const TT_KEY = 'tt_theme_v1';
+function ttHasTheme(id) { return TT_THEMES.some(t => t.id === id); }
+function ttCurrentTheme() {
+  try {
+    const dom = document.documentElement.getAttribute('data-theme');
+    if (ttHasTheme(dom)) return dom;
+    const v = localStorage.getItem(TT_KEY);
+    return ttHasTheme(v) ? v : 'deep';
+  } catch (e) { return 'deep'; }
+}
+function ttApplyTheme(id) {
+  if (!ttHasTheme(id)) id = 'deep';
+  document.documentElement.setAttribute('data-theme', id);
+  try { localStorage.setItem(TT_KEY, id); } catch (e) {}
+  try {
+    Array.prototype.forEach.call(document.querySelectorAll('iframe'), f => {
+      try { f.contentWindow.postMessage({ __ttTheme: id }, '*'); } catch (e) {}
+    });
+  } catch (e) {}
+}
+function ThemePicker() {
+  const [open, setOpen] = React.useState(false);
+  const [th, setTh] = React.useState(ttCurrentTheme);
+  const box = React.useRef(null);
+  React.useEffect(() => {
+    const onMsg = ev => { if (ev.data && ev.data.__ttTheme) setTh(ev.data.__ttTheme); };
+    const onDown = ev => { if (box.current && !box.current.contains(ev.target)) setOpen(false); };
+    const onKey = ev => { if (ev.key === 'Escape') setOpen(false); };
+    window.addEventListener('message', onMsg);
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('message', onMsg);
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, []);
+  const cur = TT_THEMES.filter(t => t.id === th)[0] || TT_THEMES[0];
+  return (
+    <div id="tt-theme-host" ref={box} className="relative flex items-center">
+      <button onClick={() => setOpen(v => !v)} className="tt-btn" title={'切换界面主题（当前：' + cur.name + '）'}>
+        <span className="tt-dot" style={{ background: cur.sw[2] }}></span>
+        <span>主题</span>
+        <svg width={10} height={6} viewBox="0 0 10 6" fill="none" style={{ opacity: .65 }}>
+          <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+      </button>
+      {open && (
+        <div className="tt-pop on">
+          <div className="tt-hd">界面主题 · 四套任选（换设备需重选）</div>
+          {TT_THEMES.map(t => (
+            <button key={t.id} className={'tt-opt' + (t.id === th ? ' on' : '')}
+              onClick={() => { setTh(t.id); ttApplyTheme(t.id); setOpen(false); }}>
+              <span className="tt-sw">{t.sw.map((c, i) => <i key={i} style={{ background: c }}></i>)}</span>
+              <span className="tt-nm">{t.name}<small>{t.hint}</small></span>
+              <span className="tt-ck">{'\u2713'}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LoginScreen({ onLogin }) {
   const [account, setAccount] = useState('');
   const [password, setPassword] = useState('');
@@ -5838,6 +6026,7 @@ function App() {
             </nav>
           </div>
           <div className="flex items-center gap-3">
+            <ThemePicker />
             <span className="text-xs text-gray-500">{visibleTrainees.length} 名学员</span>
             <span className="text-xs text-gray-700">|</span>
             <span className="text-xs text-gray-500">{stores.length} 家门店</span>
@@ -5875,7 +6064,7 @@ function App() {
         <div className="p-3">
           <iframe
             key={currentUser && currentUser.id ? currentUser.id : 'anon'}
-            src="dashboard-v2.html?embed=1&v=20261122i"
+            src="dashboard-v2.html?embed=1&v=20261122j"
             title="管理看板 · 新版驾驶舱"
             className="w-full rounded-xl border border-gray-800 bg-gray-950"
             style={{ height: 'calc(100vh - 84px)', display: 'block' }}

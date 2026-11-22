@@ -11,7 +11,7 @@
   <script src="https://cdn.jsdelivr.net/npm/lz-string@1.4.4/libs/lz-string.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="training-data.js?v=20261122h"></script>
+  <script src="training-data.js?v=20261122i"></script>
   <style>
     * { -webkit-tap-highlight-color: transparent; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
@@ -1012,7 +1012,7 @@ function getStageDeadlineStatus(trainee) {
   return { label: '练习剩' + w.practiceLeft + '天', level: 'ok' };
 }
 
-// ===== 刻意练习打卡：补记留痕 / 两级账号确认 / 排班连续校验 =====
+// ===== 刻意练习打卡：补记留痕 / 两级账号确认 / 自然日连续校验 =====
 const DRILL_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 function getDrillRecords(trainee, dayKey, itemIdx, drillIdx) {
   const prog = (trainee && trainee.progress) || {};
@@ -1025,8 +1025,9 @@ function getRestDays(trainee) {
   const prog = (trainee && trainee.progress) || {};
   return Array.isArray(prog._restDays) ? prog._restDays : [];
 }
-// 连续工作日校验：相邻两次打卡之间，若存在非休息日的自然日空档 → 判定断档
-// 规则：第一阶段(phaseIndex=0)允许断档；第二、三阶段(phaseIndex>0)必须按排班表连续
+// 自然日连续校验：相邻两次打卡之间，只要日历日期不逐日相连 → 判定断档
+// 规则：第一阶段(phaseIndex=0)允许断档；第二、三阶段(phaseIndex>0)只认日期连续，不按排班表豁免休息日
+// restDays 参数保留兼容旧数据（休息日仅作备注，不参与连续判定）
 function isContinuityRequired(phaseIndex) { return phaseIndex !== 0; }
 function drillContinuity(records, restDays, phaseIndex) {
   const required = isContinuityRequired(phaseIndex);
@@ -1035,7 +1036,7 @@ function drillContinuity(records, restDays, phaseIndex) {
   const gaps = [];
   for (let i = 1; i < dates.length; i++) {
     let miss = 0, d = addDaysStr(dates[i - 1], 1);
-    while (d < dates[i]) { if (restDays.indexOf(d) < 0) miss++; d = addDaysStr(d, 1); }
+    while (d < dates[i]) { miss++; d = addDaysStr(d, 1); }
     if (miss > 0) gaps.push({ from: dates[i - 1], to: dates[i], days: miss });
   }
   return { required, broken: required && gaps.length > 0, gapDays: gaps.reduce((s, g) => s + g.days, 0), gaps };
@@ -1781,7 +1782,7 @@ function FreeStageCard({ phaseIndex, phaseDays, progressMap, trainee, onToggleIt
         ) : null}
         {pstat.total > 0 && (
           <div className="mt-1 text-[10px] text-gray-500">
-            {phaseIndex === 0 ? '第一阶段练习允许断档；第二、三阶段须按排班表连续打卡，断档将拦截阶段确认' : '本阶段练习须按排班表连续打卡，断档会拦截阶段确认；休息日请录入下方排班表'}
+            {phaseIndex === 0 ? '第一阶段练习允许断档；第二、三阶段练习日期须逐日连续（不按排班表），断档将拦截阶段确认' : '本阶段练习日期须逐日连续（不按排班表豁免休息日），断档会拦截阶段确认'}
           </div>
         )}
       </div>
@@ -1851,7 +1852,7 @@ function FreeStageCard({ phaseIndex, phaseDays, progressMap, trainee, onToggleIt
                             })}
                           </div>
                           {stt.continuity.broken && (
-                            <div className="mt-1.5 text-[10px] text-amber-400/90">⚠ 练习中断：{stt.continuity.gaps.map(g => `${g.from.slice(5)}→${g.to.slice(5)} 缺${g.days}天`).join('、')}，请对照门店排班表核实</div>
+                            <div className="mt-1.5 text-[10px] text-amber-400/90">⚠ 练习中断：{stt.continuity.gaps.map(g => `${g.from.slice(5)}→${g.to.slice(5)} 缺${g.days}天`).join('、')}，请补记缺失日期（休息日不豁免）</div>
                           )}
                           {!s.locked && !stt.reached && (
                             <div className="mt-1.5 flex gap-2">
@@ -1869,16 +1870,16 @@ function FreeStageCard({ phaseIndex, phaseDays, progressMap, trainee, onToggleIt
           );
         })}
 
-        {/* 两级账号确认 + 排班休息日维护：仅本阶段有练习动作时显示 */}
+        {/* 两级账号确认 + 排班休息日备注：仅本阶段有练习动作时显示 */}
         {pstat.total > 0 && (
           <div className="mt-3 pt-3 border-t border-gray-700/60 space-y-3">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <span className="text-xs font-medium text-gray-300">阶段两级确认</span>
-              <button onClick={() => setShowRest(!showRest)} className="text-[11px] text-gray-500 hover:text-gray-300">{showRest ? '收起' : '设置排班休息日'}（{restDays.length}）</button>
+              <button onClick={() => setShowRest(!showRest)} className="text-[11px] text-gray-500 hover:text-gray-300">{showRest ? '收起' : '排班休息日备注'}（{restDays.length}）</button>
             </div>
             {showRest && (
               <div className="rounded-lg bg-gray-950/50 border border-gray-800/60 p-2.5">
-                <div className="text-[11px] text-gray-500 mb-2">按门店排班表录入休息日，判连续时跳过这些日期（格式 YYYY-MM-DD，可批量粘贴用逗号/空格分隔）</div>
+                <div className="text-[11px] text-gray-500 mb-2">按门店排班表录入休息日，仅作备注；第二、三阶段连续判定不再豁免休息日（格式 YYYY-MM-DD，可批量粘贴用逗号/空格分隔）</div>
                 <div className="flex gap-2">
                   <input type="text" value={restInput} onChange={ev => setRestInput(ev.target.value)} placeholder="2026-11-25, 2026-11-26" className="flex-1 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200"/>
                   <button onClick={() => {
@@ -2139,7 +2140,7 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
         });
       }));
       if (!ok) { alert('本阶段全部练习动作达标后，学员才能确认'); return; }
-      if (brokenCnt) { alert('第二、三阶段练习必须按排班表连续，当前有 ' + brokenCnt + ' 处断档。请补记或核对排班休息日后再确认'); return; }
+      if (brokenCnt) { alert('第二、三阶段练习日期必须逐日连续（不按排班表豁免），当前有 ' + brokenCnt + ' 处断档。请补记缺失日期后再确认'); return; }
       cur.student = { id: who.id, name: who.name, at: nowISO() };
     } else {
       if (!cur.student) { alert('请先由学员确认'); return; }
@@ -2150,7 +2151,7 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
     onUpdateProgress(selected.id, progress);
   };
 
-  // 休息日维护（按门店排班表录入，判连续时跳过这些日期）
+  // 休息日备注（按门店排班表录入，仅作备注；连续判定不再豁免休息日）
   const handleSetRestDays = (dates) => {
     if (!selected) return;
     const progress = { ...(selected.progress || {}) };
@@ -5874,7 +5875,7 @@ function App() {
         <div className="p-3">
           <iframe
             key={currentUser && currentUser.id ? currentUser.id : 'anon'}
-            src="dashboard-v2.html?embed=1&v=20261122h"
+            src="dashboard-v2.html?embed=1&v=20261122i"
             title="管理看板 · 新版驾驶舱"
             className="w-full rounded-xl border border-gray-800 bg-gray-950"
             style={{ height: 'calc(100vh - 84px)', display: 'block' }}

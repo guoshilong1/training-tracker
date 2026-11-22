@@ -7,7 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-<script src="training-data.js?v=20261122f"></script>
+<script src="training-data.js?v=20261122g"></script>
 <style>
 :root{
   --bg:#0a0b0f; --panel:#141620; --panel2:#1b1e2b; --line:#262a38;
@@ -43,6 +43,8 @@ input[type=date]{background:var(--panel2);border:1px solid var(--line);color:var
 .tab{padding:6px 15px;border-radius:8px;font-size:13px;cursor:pointer;color:var(--txt2);border:0;background:transparent;font-family:inherit;transition:.15s}
 .tab:hover{color:var(--txt)}
 .tab.on{background:var(--indigo);color:#fff}
+.layer-tabs{border:1px solid var(--line)}
+.layer-tabs .tab.on{background:var(--emerald);color:#fff;font-weight:600}
 .ctrlbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 14px;margin-bottom:16px}
 .ctrlbar .lb{font-size:12px;color:var(--txt3)}
 .navgrp{display:flex;align-items:center;gap:6px}
@@ -229,6 +231,7 @@ td.tlink:hover{color:var(--sky)}
 
   <div class="topbar no-print">
     <div class="brand">带训看板<small id="brandSub">新版原型</small></div>
+    <div class="tabs layer-tabs" id="layerTabs"><button class="tab on" onclick="setLayer('staff')">员工层</button><button class="tab" onclick="setLayer('mgmt')">管理层</button></div>
     <span id="scopeBadge" class="badge" style="display:none"></span>
     <span id="dataBadge" class="badge demo">加载中</span>
     <div class="spacer"></div>
@@ -827,6 +830,7 @@ function storeStats(base,days){
 
 /* ---------- 全局状态 ---------- */
 let BASE=null, VIEW=null, MODE='week', SEL=today(), WEEK_OFF=0, MONTH_OFF=0;
+let LAYER='staff', MMODE='overview'; // staff=员工层 / mgmt=管理层（师傅·主管）
 const DELAY_TOP=10;   // 月度延迟明细默认展示人数，其余点按钮展开
 const MASTER_TOP=10;  // 师傅排名默认展示人数，其余点按钮展开
 const STORE_TOP=10;   // 门店表现表（日/周/月共用）默认展示行数，其余点按钮展开
@@ -922,9 +926,245 @@ function heatColor(r){
   return 'rgba(240,82,82,.55)';
 }
 
+/* ==================================================================
+   管理层看板（师傅带教 / 门店主管）—— 与学员页口径逐行对齐
+   数据范围：仅 route=master / supervisor
+   指标：阶段完成进度 / 练习动作打卡(3/5/6次) / 两级确认 / 7+7时限 / 断档预警
+   ================================================================== */
+const MGMT_ROUTES = ['master','supervisor'];
+function isMgmtTrainee(t){ return !!t && MGMT_ROUTES.indexOf(t.route) >= 0; }
+function mgmtStageRule(t){
+  const r = (typeof TRAINING_DATA!=='undefined' && TRAINING_DATA.routes||[]).find(x=>x.id===t.route);
+  return (r && r.stageRule) || {learnDays:7, practiceDays:7};
+}
+function mgmtItemType(content){
+  const s = String(content||'');
+  if (s.indexOf('认证') >= 0) return s.indexOf('理论') >= 0 ? 'cert' : 'final_cert';
+  if (s.indexOf('练习') >= 0 || s.indexOf('刻意') >= 0) return 'practice';
+  return 'learn';
+}
+function mgmtAddDays(ds,n){ const d=new Date(ds+'T00:00:00'); d.setDate(d.getDate()+n); return dateStrOf(d); }
+function mgmtDaysBetween(a,b){ return Math.round((new Date(b+'T00:00:00')-new Date(a+'T00:00:00'))/86400000); }
+
+/* 某学员某阶段的窗口（起点=本阶段首次勾选日期；7天学习+7天练习） */
+function mgmtPhaseWindow(t, allDays, phaseIndex){
+  const phaseDays = allDays.filter(d=>d.phaseIndex===phaseIndex);
+  if(!phaseDays.length) return null;
+  const rule = mgmtStageRule(t);
+  const prog = t.progress||{};
+  let first='';
+  phaseDays.forEach(d=>{
+    const its=(prog[d.key]&&prog[d.key].items)||{};
+    Object.keys(its).forEach(k=>{
+      const st=its[k]||{};
+      if((st.checked||st.choice)&&st.checkedAt&&(!first||st.checkedAt<first)) first=st.checkedAt;
+    });
+  });
+  const name=phaseDays[0].phaseName||('阶段 '+(phaseIndex+1));
+  if(!first) return {phaseIndex, name, rule, notStarted:true};
+  const start=localDateStr(first);
+  const learnEnd=mgmtAddDays(start,rule.learnDays-1);
+  const practiceStart=mgmtAddDays(start,rule.learnDays);
+  const practiceEnd=mgmtAddDays(start,rule.learnDays+rule.practiceDays-1);
+  const isLearn=d=>d.items.some(it=>mgmtItemType(it.content)==='learn');
+  const isDrill=d=>d.items.some(it=>['practice','cert','final_cert'].indexOf(mgmtItemType(it.content))>=0);
+  const isDone=d=>!!(prog[d.key]&&prog[d.key].completed);
+  const learnDays=phaseDays.filter(isLearn), drillDays=phaseDays.filter(isDrill);
+  const learnDone=learnDays.length?learnDays.every(isDone):true;
+  const drillDone=drillDays.length?drillDays.every(isDone):true;
+  const todayStr=today();
+  const learnOverdue=!learnDone?Math.max(0,mgmtDaysBetween(learnEnd,todayStr)):0;
+  const practiceOverdue=!drillDone?Math.max(0,mgmtDaysBetween(practiceEnd,todayStr)):0;
+  return {
+    phaseIndex, name, rule, start, learnEnd, practiceStart, practiceEnd,
+    learnDone, drillDone, done:learnDone&&drillDone,
+    learnLeft:Math.max(0,mgmtDaysBetween(todayStr,learnEnd)),
+    practiceLeft:Math.max(0,mgmtDaysBetween(todayStr,practiceEnd)),
+    learnOverdue, practiceOverdue
+  };
+}
+
+/* 练习动作打卡明细（过滤撤销墓碑 + 同一天去重） */
+function mgmtDrillRecords(t,dayKey,itemIdx,drillIdx){
+  const st=(((t.progress||{})[dayKey]||{}).items||{})[itemIdx]||{};
+  const raw=(st.drillRecords&&st.drillRecords[drillIdx])||[];
+  const uniq={};
+  raw.forEach(r=>{ if(r&&!r.deleted&&/^\d{4}-\d{2}-\d{2}$/.test(r.date)) uniq[r.date]=r; });
+  return Object.keys(uniq).sort().map(k=>uniq[k]);
+}
+function mgmtRestDays(t){ const p=t.progress||{}; return Array.isArray(p._restDays)?p._restDays:[]; }
+function mgmtContinuity(records,restDays){
+  const dates=records.map(r=>r.date);
+  if(dates.length<2) return {broken:false, gapDays:0};
+  let gap=0;
+  for(let i=1;i<dates.length;i++){
+    let d=mgmtAddDays(dates[i-1],1);
+    while(d<dates[i]){ if(restDays.indexOf(d)<0) gap++; d=mgmtAddDays(d,1); }
+  }
+  return {broken:gap>0, gapDays:gap};
+}
+/* 某学员完整的管理层进度画像 */
+function mgmtProfile(t){
+  const allDays=(typeof getAllDaysSafe==='function'?getAllDaysSafe(t.route,t.subRoute):getAllDays(t.route,t.subRoute)||[]).filter(d=>d.items&&d.items.length);
+  const prog=t.progress||{};
+  const phases=[];
+  const phaseIdxList=[...new Set(allDays.map(d=>d.phaseIndex))].sort((a,b)=>a-b);
+  let drillTotal=0, drillReached=0, drillMakeup=0, drillBroken=0;
+  phaseIdxList.forEach(pi=>{
+    const w=mgmtPhaseWindow(t,allDays,pi);
+    const pdays=allDays.filter(d=>d.phaseIndex===pi);
+    let pTotal=0,pReached=0;
+    pdays.forEach(d=>d.items.forEach((it,idx)=>{
+      if(!it.drills||!it.drills.length) return;
+      it.drills.forEach((dr,di)=>{
+        const recs=mgmtDrillRecords(t,d.key,idx,di);
+        const cont=mgmtContinuity(recs,mgmtRestDays(t));
+        const reached=recs.length>=dr.count;
+        drillTotal++; pTotal++;
+        if(reached){ drillReached++; pReached++; }
+        drillMakeup+=recs.filter(r=>r.makeup).length;
+        if(cont.broken) drillBroken++;
+      });
+    }));
+    const sign=(prog._phaseSign&&prog._phaseSign[pi])||{};
+    const signed=!!(sign.student&&sign.student.at&&sign.manager&&sign.manager.at);
+    phases.push({...w, drillTotal:pTotal, drillReached:pReached,
+      drillPct:pTotal?Math.round(pReached/pTotal*100):0,
+      studentSigned:!!(sign.student&&sign.student.at),
+      managerSigned:!!(sign.manager&&sign.manager.at), signed});
+  });
+  // 带训进度（按天完成数）
+  const doneDays=allDays.filter(d=>prog[d.key]&&prog[d.key].completed).length;
+  const progPct=allDays.length?Math.round(doneDays/allDays.length*100):0;
+  // 当前阶段：第一个未完成阶段，若全完成则最后一个
+  let cur=phases.find(p=>!p.done)||phases[phases.length-1]||null;
+  // 时限预警
+  let deadline=null;
+  if(cur&&!cur.notStarted&&!cur.done){
+    if(cur.learnOverdue>0) deadline={label:'学习超期'+cur.learnOverdue+'天',level:'bad'};
+    else if(cur.practiceOverdue>0) deadline={label:'练习超期'+cur.practiceOverdue+'天',level:'bad'};
+    else if(!cur.learnDone) deadline={label:'学习剩'+cur.learnLeft+'天',level:cur.learnLeft<=2?'warn':'ok'};
+    else deadline={label:'练习剩'+cur.practiceLeft+'天',level:'ok'};
+  }
+  const allSigned=phases.length>0&&phases.every(p=>p.signed);
+  return {
+    name:t.name, store:t.store, area:t.area, route:t.route,
+    routeName:(typeof getRouteName==='function')?getRouteName(t.route,t.subRoute):t.route,
+    master:t.master||'', id:t.id, empId:t.empId||'',
+    phases, cur, deadline, allSigned,
+    doneDays, totalDays:allDays.length, progPct,
+    drillTotal, drillReached, drillMakeup, drillBroken,
+    drillPct:drillTotal?Math.round(drillReached/drillTotal*100):0,
+    notStarted:phases.length>0&&phases.every(p=>p.notStarted)
+  };
+}
+function mgmtAllProfiles(rows){ return rows.filter(isMgmtTrainee).map(mgmtProfile); }
+
+/* ---------- 管理层视图：当前进展 ---------- */
+function mgmtViewOverview(){
+  const rows=rowsFiltered();
+  const ps=mgmtAllProfiles(rows);
+  const byRoute={'master':ps.filter(p=>p.route==='master'),'supervisor':ps.filter(p=>p.route==='supervisor')};
+  const n=ps.length;
+  const signed=ps.filter(p=>p.allSigned).length;
+  const overdue=ps.filter(p=>p.deadline&&p.deadline.level==='bad').length;
+  const broken=ps.filter(p=>p.drillBroken>0).length;
+  const practicing=ps.filter(p=>p.drillTotal>0&&p.drillReached<p.drillTotal).length;
+  const avg=p=>n?Math.round(ps.reduce((s,x)=>s+p(x),0)/n):0;
+  const kpi=(accent,lb,vl,sub,vcolor)=>`<div class="kpi" style="--accent:var(--${accent})"><div class="lb">${lb}</div><div class="vl"${vcolor?` style="color:${vcolor}"`:''}>${vl}</div><div class="sub">${sub}</div></div>`;
+  return `
+  <div class="sec">
+    <div class="sec-h"><h2>管理层带训总览</h2><span class="hint">仅统计师傅(master) / 主管(supervisor) 学员 · 共 ${n} 人</span></div>
+    <div class="grid g4">
+      ${kpi('indigo','管理层在训',n,`师傅 ${byRoute.master.length} 人 · 主管 ${byRoute.supervisor.length} 人`)}
+      ${kpi('sky','平均阶段进度',avg(x=>x.progPct)+'%',`已完成带训日均值`,'var(--sky)')}
+      ${kpi('purple','练习达标率',avg(x=>x.drillPct)+'%',`正在练习 ${practicing} 人`,'var(--purple)')}
+      ${kpi(overdue>0?'red':'emerald','时限超期',overdue,overdue>0?'需立即跟进':'全部按期','var(--red)')}
+    </div>
+    <div class="grid g4" style="margin-top:12px">
+      ${kpi('emerald','两级确认齐全',signed,`共 ${n} 人，齐全后阶段才解锁`,'var(--emerald)')}
+      ${kpi('amber','练习断档预警',broken,broken>0?'对照排班表核实':'无断档','var(--amber)')}
+      ${kpi('amber','补记次数合计',ps.reduce((s,p)=>s+p.drillMakeup,0),'带留痕的补记打卡')}
+      ${kpi('indigo','全部项目完成',ps.filter(p=>p.doneDays===p.totalDays&&p.totalDays>0).length,'已完成全部带训日')}
+    </div>
+  </div>
+  <div class="sec">
+    <div class="sec-h"><h2>分层人数</h2><span class="hint">师傅 / 主管 两条独立路径</span></div>
+    <div class="grid g2">
+      <div class="panel"><div class="panel-h"><h3>师傅带教（master）</h3><span class="cnt">${byRoute.master.length} 人</span></div>
+        ${mgmtMiniProws(byRoute.master.slice(0,10))}</div>
+      <div class="panel"><div class="panel-h"><h3>门店主管（supervisor）</h3><span class="cnt">${byRoute.supervisor.length} 人</span></div>
+        ${mgmtMiniProws(byRoute.supervisor.slice(0,10))}</div>
+    </div>
+  </div>`;
+}
+function mgmtMiniProws(ps){
+  if(!ps.length) return '<div class="empty">暂无学员</div>';
+  return `<div class="plist">${ps.map(p=>`
+    <div class="prow" style="--c:${p.deadline&&p.deadline.level==='bad'?'var(--red)':'var(--sky)'}">
+      <div class="av">${esc(p.name.slice(0,1))}</div>
+      <div class="info"><div class="nm tlink" onclick="openTrainee('${p.id}')">${esc(p.name)}</div><div class="meta">${esc(p.store)} · ${esc(p.routeName)} · 当前 ${esc(p.cur&&p.cur.name||'—')}</div></div>
+      <div class="tag" style="background:rgba(56,168,240,.15);color:var(--sky)">${p.progPct}%</div>
+    </div>`).join('')}</div>`;
+}
+
+/* ---------- 管理层视图：阶段明细 ---------- */
+function mgmtViewPhases(){
+  const ps=mgmtAllProfiles(rowsFiltered());
+  const dlg=(p)=>p.deadline?`<span class="pill" style="background:rgba(${p.deadline.level==='bad'?'240,82,82':p.deadline.level==='warn'?'240,169,42':34,201,138},.15);color:var(--${p.deadline.level==='bad'?'red':p.deadline.level==='warn'?'amber':'emerald'})">${esc(p.deadline.label)}</span>`:'';
+  const signTag=(p)=>p.signed?'<span class="pill" style="background:rgba(34,201,138,.15);color:var(--emerald)">两级已确认</span>':(p.studentSigned?'<span class="pill" style="background:rgba(240,169,42,.15);color:var(--amber)">待上级确认</span>':'<span class="pill" style="background:rgba(255,255,255,.08);color:var(--txt2)">未确认</span>');
+  return `
+  <div class="sec">
+    <div class="sec-h"><h2>管理层阶段进度明细</h2><span class="hint">四阶段 · 每阶段 7 天学习 + 7 天刻意练习 · 起点按首次勾选</span></div>
+    <div class="panel"><div class="tbl-wrap"><table>
+      <thead><tr><th>姓名</th><th>路径</th><th>门店</th><th>当前阶段</th><th>阶段进度</th><th>练习达标</th><th>两级确认</th><th>时限</th><th>断档</th></tr></thead>
+      <tbody>${ps.length?ps.map(p=>`<tr>
+        <td class="tlink" onclick="openTrainee('${p.id}')">${esc(p.name)}</td>
+        <td>${esc(p.routeName)}</td><td>${esc(p.store)}</td>
+        <td>${esc(p.cur&&p.cur.name||'—')}</td>
+        <td>${p.progPct}%</td>
+        <td>${p.drillTotal?p.drillReached+'/'+p.drillTotal+'（'+p.drillPct+'%）':'—'}</td>
+        <td>${signTag(p)}</td>
+        <td>${dlg(p)||'—'}</td>
+        <td>${p.drillBroken>0?`<span class="pill" style="background:rgba(240,169,42,.15);color:var(--amber)">${p.drillBroken} 处</span>`:'—'}</td>
+      </tr>`).join(''):'<tr><td colspan="9" class="empty">暂无管理层学员</td></tr>'}</tbody>
+    </table></div></div>
+  </div>`;
+}
+
+/* ---------- 管理层视图：预警 ---------- */
+function mgmtViewAlerts(){
+  const ps=mgmtAllProfiles(rowsFiltered());
+  const overdue=ps.filter(p=>p.deadline&&p.deadline.level==='bad');
+  const broken=ps.filter(p=>p.drillBroken>0);
+  const unsigned=ps.filter(p=>!p.allSigned&&p.cur&&p.cur.drillTotal>0&&p.cur.drillReached===p.cur.drillTotal);
+  const list=(arr,fmt,color,empty)=>arr.length?`<div class="plist">${arr.slice(0,20).map(p=>`
+    <div class="prow" style="--c:var(--${color})">
+      <div class="av" style="color:var(--${color})">${esc(p.name.slice(0,1))}</div>
+      <div class="info"><div class="nm tlink" onclick="openTrainee('${p.id}')">${esc(p.name)}</div><div class="meta">${esc(p.store)} · ${esc(p.routeName)} · ${esc(p.cur&&p.cur.name||'—')}</div></div>
+      <div class="tag" style="background:rgba(${color==='red'?'240,82,82':color==='amber'?'240,169,42':'155,124,240'},.15);color:var(--${color})">${fmt(p)}</div>
+    </div>`).join('')}</div>`:`<div class="empty">${empty}</div>`;
+  return `
+  <div class="sec">
+    <div class="sec-h"><h2>管理层预警</h2><span class="hint">时限超期 / 练习断档 / 练习已达标待确认</span></div>
+    <div class="grid g2">
+      <div class="panel"><div class="panel-h"><h3 style="color:var(--red)">● 时限超期</h3><span class="cnt">${overdue.length} 人</span></div>
+        ${list(overdue,p=>p.deadline.label,'red','无超期学员')}</div>
+      <div class="panel"><div class="panel-h"><h3 style="color:var(--amber)">● 练习断档（对照排班）</h3><span class="cnt">${broken.length} 人</span></div>
+        ${list(broken,p=>p.drillBroken+' 处','amber','无断档')}</div>
+    </div>
+    <div class="panel" style="margin-top:14px"><div class="panel-h"><h3 style="color:var(--purple)">● 练习已达标、待上级确认</h3><span class="cnt">${unsigned.length} 人</span></div>
+      ${list(unsigned,p=>p.studentSigned?'待上级':'待学员签','purple','无待确认学员')}</div>
+  </div>`;
+}
+
 /* ---------- 控制条 ---------- */
 function renderCtrl(){
   const el=document.getElementById('ctrlbar');
+  if(LAYER==='mgmt'){
+    el.innerHTML=`<div class="tabs"><button class="tab ${MMODE==='overview'?'on':''}" onclick="setMMode('overview')">当前进展</button><button class="tab ${MMODE==='phases'?'on':''}" onclick="setMMode('phases')">阶段明细</button><button class="tab ${MMODE==='alerts'?'on':''}" onclick="setMMode('alerts')">预警</button></div><div class="spacer"></div><span class="lb">管理层口径：阶段进度 / 练习打卡 / 两级确认 / 7+7时限</span>`;
+    return;
+  }
   const tabs=`<div class="tabs">
     <button class="tab ${MODE==='day'?'on':''}" onclick="setMode('day')">指定某天</button>
     <button class="tab ${MODE==='week'?'on':''}" onclick="setMode('week')">周对比</button>
@@ -963,6 +1203,16 @@ function clampDate(v){
   if(v<DATA_START) return DATA_START;
   return v;
 }
+function setLayer(l){
+  LAYER=l;
+  const tabs=document.getElementById('layerTabs');
+  if(tabs) Array.from(tabs.querySelectorAll('.tab')).forEach(b=>b.classList.toggle('on',
+    (l==='mgmt'&&b.textContent.indexOf('管理')>=0)||(l==='staff'&&b.textContent.indexOf('员工')>=0)));
+  // 管理层隐藏路线下拉（已限定 master/supervisor），员工层恢复
+  const rSel=document.getElementById('routeSel'); if(rSel) rSel.style.display=(l==='mgmt')?'none':'';
+  renderCtrl(); refresh();
+}
+function setMMode(m){ MMODE=m; renderCtrl(); refresh(); }
 function setMode(m){ MODE=m; if(m==='day'){ const c=clampDate(SEL); if(c) SEL=c; } renderCtrl(); refresh(); }
 function setDate(v){ const c=clampDate(v); if(!c) return; SEL=c; renderCtrl(); refresh(); }
 function setWeekOff(n){ WEEK_OFF=Math.max(weekMinOffset(),Math.min(0,n)); renderCtrl(); refresh(); }
@@ -974,6 +1224,7 @@ function rowsFiltered(){
   const store=document.getElementById('storeSel')?.value||'';
   const route=document.getElementById('routeSel')?.value||'';
   return BASE.rows.filter(t=>{
+    if(LAYER==='mgmt' && !isMgmtTrainee(t)) return false;
     if(area&&String(t.area)!==area) return false;
     if(store&&t.store!==store) return false;
     if(route&&t.route!==route) return false;
@@ -1646,15 +1897,46 @@ function viewDays(){
 function refresh(){
   if(!BASE) return;
   const warn=BASE.real?'':`<div class="note no-print">当前为<b>演示数据</b>（原因：${esc(BASE.reason||'未登录')}）。在生产站点已登录状态下打开本页面，会自动切换成你的真实学员数据。</div>`;
-  const hm=`<div class="warnnote no-print"><b>统计范围自 ${DATA_START} 起</b>（系统启用日，更早的日期没有数据，也不计入任何统计）。历史视图中的<b>「工时」一律是当前累计值</b>（库里没有每日工时快照，无法还原历史某天的工时）；打卡、完成带训日、认证三项均带时间戳，可精确回溯。</div>`;
-  const body = MODE==='day'?viewDay():(MODE==='week'?viewWeek():(MODE==='month'?viewMonth():viewMaster()));
+  const hm = LAYER==='mgmt'
+    ? `<div class="warnnote no-print"><b>管理层口径</b>：仅统计师傅 / 主管学员。每阶段 7 天学习 + 7 天刻意练习，起点按本阶段首次勾选计算；练习动作记满原表次数(3/5/6)才达标；学员与上级两级账号确认齐全，下一阶段才解锁。</div>`
+    : `<div class="warnnote no-print"><b>统计范围自 ${DATA_START} 起</b>（系统启用日，更早的日期没有数据，也不计入任何统计）。历史视图中的<b>「工时」一律是当前累计值</b>（库里没有每日工时快照，无法还原历史某天的工时）；打卡、完成带训日、认证三项均带时间戳，可精确回溯。</div>`;
+  const body = LAYER==='mgmt'
+    ? (MMODE==='phases'?mgmtViewPhases():(MMODE==='alerts'?mgmtViewAlerts():mgmtViewOverview()))
+    : (MODE==='day'?viewDay():(MODE==='week'?viewWeek():(MODE==='month'?viewMonth():viewMaster())));
   const el=document.getElementById('root');
-  el.innerHTML=warn+hm+body+areaBlock(viewDays());
+  el.innerHTML=warn+hm+body+(LAYER==='mgmt'?'':areaBlock(viewDays()));
   el.dataset.rendered='1';
   VIEW={mode:MODE};
 }
 
 /* ---------- 导出 ---------- */
+function exportMgmtXlsx(){
+  if(typeof XLSX==='undefined'){ alert('导出组件未加载成功，请检查网络'); return; }
+  const ps=mgmtAllProfiles(rowsFiltered());
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(ps.map(p=>({
+    '姓名':p.name,'路径':p.routeName,'门店':p.store,'区域':areaName(p.area),
+    '工号':p.empId,'带教师傅':p.master,'当前阶段':(p.cur&&p.cur.name)||'',
+    '阶段进度':p.progPct+'%','完成带训日':p.doneDays+'/'+p.totalDays,
+    '练习达标':(p.drillTotal?p.drillReached+'/'+p.drillTotal:''),
+    '练习达标率':p.drillTotal?p.drillPct+'%':'',
+    '补记次数':p.drillMakeup,'断档处数':p.drillBroken,
+    '两级确认':p.allSigned?'齐全':(p.studentSigned?'待上级确认':'未确认'),
+    '时限状态':(p.deadline&&p.deadline.label)||'正常'
+  }))),'管理层汇总');
+  const details=[];
+  ps.forEach(p=>p.phases.forEach(ph=>details.push({
+    '姓名':p.name,'路径':p.routeName,'阶段':ph.name,
+    '起点':ph.notStarted?'':ph.start,'学习截止':ph.notStarted?'':ph.learnEnd,
+    '练习截止':ph.notStarted?'':ph.practiceEnd,
+    '阶段完成':ph.done?'是':'否',
+    '练习达标':ph.drillTotal?ph.drillReached+'/'+ph.drillTotal:'',
+    '学员确认':ph.studentSigned?'是':'否','上级确认':ph.managerSigned?'是':'否',
+    '时限':ph.learnOverdue>0?('学习超期'+ph.learnOverdue+'天'):(ph.practiceOverdue>0?('练习超期'+ph.practiceOverdue+'天'):'')
+  })));
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(details),'阶段明细');
+  XLSX.writeFile(wb,'管理层带训看板_'+(BASE?BASE.today:'')+'.xlsx');
+}
 function exportCtx(){
   const rows=rowsFiltered();
   if(MODE==='day'){ const s=snapDay({...BASE,rows},SEL); return {tag:SEL+'_当日',rows,snap:s}; }
@@ -1664,6 +1946,7 @@ function exportCtx(){
 }
 function exportXlsx(){
   if(!BASE){ alert('数据尚未加载完成'); return; }
+  if(LAYER==='mgmt'){ exportMgmtXlsx(); return; }
   if(typeof XLSX==='undefined'){ alert('导出组件未加载成功，请检查网络'); return; }
   const ctx=exportCtx();
   const wb=XLSX.utils.book_new();

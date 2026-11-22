@@ -883,7 +883,7 @@ function getPhaseWindow(trainee, allDays, phaseIndex) {
       }
     });
   });
-  if (!firstCheckedAt) return { phaseName: phaseDays[0].phaseName, notStarted: true };
+  if (!firstCheckedAt) return { phaseName: phaseDays[0].phaseName, rule, notStarted: true };
   const start = localDateStr(firstCheckedAt);
   const learnEnd = addDaysStr(start, rule.learnDays - 1);
   const isLearn = d => d.items.some(it => getItemType(it.content) === 'learn');

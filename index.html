@@ -871,15 +871,20 @@ function getPhaseWindow(trainee, allDays, phaseIndex) {
   const phaseDays = allDays.filter(d => d.phaseIndex === phaseIndex);
   if (!phaseDays.length) return null;
   const prog = trainee.progress || {};
-  let start = '';
-  if (phaseIndex === 0) {
-    start = trainee.startDate || fmtLocalDate(new Date());
-  } else {
-    const prev = allDays.filter(d => d.phaseIndex === phaseIndex - 1).reverse();
-    const anchor = prev.find(d => prog[d.key] && prog[d.key].completedAt);
-    if (!anchor) return { phaseName: phaseDays[0].phaseName, notStarted: true };
-    start = localDateStr(prog[anchor.key].completedAt);
-  }
+  // 起点 = 本阶段第一个勾选项的时间（checkedAt）；未勾选任何项则尚未开始计时。
+  // 不再用入职日期 startDate，也不再依赖上一阶段的完成时间——自由学习各阶段独立起算。
+  let firstCheckedAt = '';
+  phaseDays.forEach(d => {
+    const its = (prog[d.key] && prog[d.key].items) || {};
+    Object.keys(its).forEach(k => {
+      const st = its[k] || {};
+      if ((st.checked || st.choice) && st.checkedAt && (!firstCheckedAt || st.checkedAt < firstCheckedAt)) {
+        firstCheckedAt = st.checkedAt;
+      }
+    });
+  });
+  if (!firstCheckedAt) return { phaseName: phaseDays[0].phaseName, notStarted: true };
+  const start = localDateStr(firstCheckedAt);
   const learnEnd = addDaysStr(start, rule.learnDays - 1);
   const isLearn = d => d.items.some(it => getItemType(it.content) === 'learn');
   const isDrill = d => d.items.some(it => ['practice', 'cert', 'final_cert'].indexOf(getItemType(it.content)) >= 0);
@@ -1588,9 +1593,13 @@ function FreeStageCard({ phaseIndex, phaseDays, progressMap, trainee, onToggleIt
             </div>
           </div>
         </div>
-        {w && !w.notStarted && (
+        {w && w.notStarted ? (
+          <div className="mt-2 pt-2 border-t border-gray-800/60 text-[11px] text-gray-500">
+            勾选本阶段第一项后开始计时：{w.rule.learnDays} 天学习 + {w.rule.practiceDays} 天刻意练习（起点按首次勾选日计算）
+          </div>
+        ) : w ? (
           <div className="mt-2 pt-2 border-t border-gray-800/60 text-[11px] text-gray-400 space-y-0.5">
-            <div>{w.rule.learnDays} 天学习 + {w.rule.practiceDays} 天刻意练习 · 起点 {w.start} · 学习截止 {w.learnEnd} · 练习截止 {w.practiceEnd}</div>
+            <div>{w.rule.learnDays} 天学习 + {w.rule.practiceDays} 天刻意练习 · 起点 {w.start}（首项勾选）· 学习截止 {w.learnEnd} · 练习截止 {w.practiceEnd}</div>
             <div className={(w.learnOverdue || w.practiceOverdue) ? 'text-red-400' : (w.learnLateDays > 0 ? 'text-amber-400' : 'text-gray-500')}>
               {w.done ? '本阶段时限已达标' :
                w.learnOverdue ? `学习已超期 ${w.learnOverdueDays} 天，请补完并标注原因` :
@@ -1599,7 +1608,7 @@ function FreeStageCard({ phaseIndex, phaseDays, progressMap, trainee, onToggleIt
                (w.learnDone ? `练习剩 ${w.practiceLeft} 天` : `学习剩 ${w.learnLeft} 天`)}
             </div>
           </div>
-        )}
+        ) : null}
       </div>
       <div className="px-4 py-3 space-y-2">
         {entries.map(e => {

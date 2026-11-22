@@ -861,6 +861,9 @@ function getStageRule(routeId) {
   const r = TRAINING_DATA.routes.find(x => x.id === routeId);
   return (r && r.stageRule) ? r.stageRule : null;
 }
+// 自由学习路线（师傅带教/门店主管）：数据里写了 stageRule 即为自由线
+// 按阶段聚合展示、阶段内自由勾选，无「第X天」、无顺序锁
+function isFreeLearnRoute(trainee) { return !!getStageRule(trainee && trainee.route); }
 function getPhaseWindow(trainee, allDays, phaseIndex) {
   if (!trainee || !allDays || !allDays.length) return null;
   const rule = getStageRule(trainee.route);
@@ -983,6 +986,7 @@ function isCertifiedThisMonth(trainee) {
 }
 
 function isDayUnlocked(trainee, dayKey) {
+  if (isFreeLearnRoute(trainee)) return true; // 师傅带教/门店主管：无顺序锁，所有阶段直接可勾
   const allDays = getAllDays(trainee.route, trainee.subRoute).filter(d => d.items.length > 0);
   const idx = allDays.findIndex(d => d.key === dayKey);
   if (idx === 0) return true;
@@ -1544,6 +1548,106 @@ function DayCard({ day, dayProgress, unlocked, onToggleItem, onCompleteDay, onDe
   );
 }
 
+
+// ============ 自由学习路线：阶段聚合卡片（师傅带教 / 门店主管） ============
+// 一个阶段一张卡片，阶段内所有项目平铺展示、直接勾选；不显示「第X天」与顺序锁。
+// 进度仍存 day.key + itemIdx，勾完某天全部项目即自动完成该天，证书/时限/结业口径不变。
+function FreeStageCard({ phaseIndex, phaseDays, progressMap, trainee, onToggleItem }) {
+  const fullDays = getAllDays(trainee.route, trainee.subRoute).filter(d => d.items.length > 0);
+  const phaseName = phaseDays[0].phaseName || ('阶段 ' + (phaseIndex + 1));
+  const entries = [];
+  phaseDays.forEach(d => d.items.forEach((item, idx) => entries.push({ day: d, item: item, idx: idx, key: d.key + '_' + idx })));
+  const stateOf = e => {
+    const dp = progressMap[e.day.key] || {};
+    const st = (dp.items || {})[e.idx] || {};
+    return { st: st, done: e.item.choices ? !!st.choice : !!st.checked, locked: isDelayActiveToday(dp) || isRestActiveToday(dp) };
+  };
+  const doneCount = entries.filter(e => stateOf(e).done).length;
+  const pct = entries.length ? Math.round(doneCount / entries.length * 100) : 0;
+  const w = getPhaseWindow(trainee, fullDays, phaseIndex);
+  const tone = (w && !w.notStarted && (w.learnOverdue || w.practiceOverdue))
+    ? 'border-red-500/40'
+    : (pct === 100 ? 'border-emerald-500/40' : 'border-gray-700');
+  return (
+    <div className={`rounded-xl border ${tone} bg-gray-900/50 overflow-hidden`}>
+      <div className="px-4 py-3 border-b border-gray-800/70 bg-gray-800/30">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className={`flex items-center justify-center w-8 h-8 rounded-lg text-sm font-bold ${pct === 100 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-indigo-500/20 text-indigo-300'}`}>
+              {pct === 100 ? <Icon.Check width={15} height={15}/> : (phaseIndex + 1)}
+            </span>
+            <div>
+              <div className="text-sm font-semibold text-white">{phaseName}</div>
+              <div className="text-[11px] text-gray-500">{phaseDays[0].phaseFocus || '按阶段自由学习'}</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-400 tabular-nums">{doneCount}/{entries.length} 项</span>
+            <div className="w-20 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+              <div className={`h-full rounded-full ${pct === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{width: pct + '%'}}></div>
+            </div>
+          </div>
+        </div>
+        {w && !w.notStarted && (
+          <div className="mt-2 pt-2 border-t border-gray-800/60 text-[11px] text-gray-400 space-y-0.5">
+            <div>{w.rule.learnDays} 天学习 + {w.rule.practiceDays} 天刻意练习 · 起点 {w.start} · 学习截止 {w.learnEnd} · 练习截止 {w.practiceEnd}</div>
+            <div className={(w.learnOverdue || w.practiceOverdue) ? 'text-red-400' : (w.learnLateDays > 0 ? 'text-amber-400' : 'text-gray-500')}>
+              {w.done ? '本阶段时限已达标' :
+               w.learnOverdue ? `学习已超期 ${w.learnOverdueDays} 天，请补完并标注原因` :
+               w.practiceOverdue ? `刻意练习已超期 ${w.practiceOverdueDays} 天，未达标不得进入下一阶段` :
+               w.learnLateDays > 0 ? `学习超期 ${w.learnLateDays} 天完成，练习窗口仍截至 ${w.practiceEnd}` :
+               (w.learnDone ? `练习剩 ${w.practiceLeft} 天` : `学习剩 ${w.learnLeft} 天`)}
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="px-4 py-3 space-y-2">
+        {entries.map(e => {
+          const s = stateOf(e);
+          const itemType = getItemType(e.item.content);
+          const itemStyle = ITEM_STYLES[itemType] || ITEM_STYLES.learn;
+          const typeLabel = itemType === 'learn' ? '学习' : itemType === 'practice' ? '练习' : itemType === 'cert' ? '认证' : '终审';
+          return (
+            <div key={e.key} className={`flex items-start gap-3 p-2.5 rounded-lg border border-gray-800/50 ${s.done ? 'bg-gray-800/40' : 'bg-gray-800/20'}`}>
+              {!e.item.choices && (
+                <button
+                  disabled={s.locked}
+                  onClick={() => { if (!s.locked) onToggleItem(e.day.key, e.idx, !s.st.checked); }}
+                  className={`checkbox-custom mt-0.5 flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition ${s.done ? 'bg-indigo-600 border-indigo-600' : 'border-gray-600 hover:border-indigo-500'} ${s.locked ? 'opacity-40 cursor-not-allowed' : ''}`}
+                >
+                  {s.done && <Icon.Check width={12} height={12} className="text-white"/>}
+                </button>
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`text-sm ${s.done ? 'text-gray-400 line-through' : 'text-gray-200'}`}>{e.item.content}</span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded ${itemStyle.bg} ${itemStyle.text}`}>{typeLabel}</span>
+                  {itemType === 'final_cert' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-300">岗位认证</span>}
+                </div>
+                {e.item.choices && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {e.item.choices.map(ch => (
+                      <button key={ch} disabled={s.locked}
+                        onClick={() => { if (!s.locked) onToggleItem(e.day.key, e.idx, true, ch); }}
+                        className={`px-3 py-1.5 rounded-lg text-xs border transition ${s.st.choice === ch ? 'bg-indigo-600 border-indigo-500 text-white' : 'border-gray-700 text-gray-400'} ${s.locked ? 'opacity-40 cursor-not-allowed' : 'hover:border-indigo-500 hover:text-indigo-300'}`}
+                      >{ch}</button>
+                    ))}
+                  </div>
+                )}
+                <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                  <span>学员: {e.item.student_hours || '-'}</span>
+                  {e.item.teacher_hours && <span>带教: {e.item.teacher_hours}</span>}
+                </div>
+                {e.item.note && <div className="mt-1.5 text-xs text-indigo-300/80 leading-relaxed">{e.item.note}</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ============ Trainee Tracker View ============
 function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEditTrainee, onResignTrainee, onRestoreTrainee, onUpdateProgress, stores, workHours }) {
   const [search, setSearch] = useState('');
@@ -1647,6 +1751,23 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
       delete prev.choice;
     }
     dayProg.items[itemIdx] = prev;
+    // 自由学习路线：勾完本天全部项目即自动完成；取消任一项即撤销完成
+    if (isFreeLearnRoute(selected)) {
+      const fday = getAllDays(selected.route, selected.subRoute).filter(d => d.items.length > 0).find(d => d.key === dayKey);
+      if (fday && fday.items.length > 0) {
+        const allChecked = fday.items.every((it, i) => {
+          const st = (dayProg.items[i] || {});
+          return it.choices ? !!st.choice : !!st.checked;
+        });
+        if (allChecked && !dayProg.completed) {
+          dayProg.completed = true;
+          dayProg.completedAt = new Date().toISOString();
+        } else if (!allChecked && dayProg.completed) {
+          dayProg.completed = false;
+          delete dayProg.completedAt;
+        }
+      }
+    }
     dayProg._updatedAt = Date.now();
     progress[dayKey] = dayProg;
     onUpdateProgress(selected.id, progress);
@@ -2060,7 +2181,20 @@ function TrackerView({ trainees, onSelectTrainee, selectedId, onAddTrainee, onEd
 
             {/* Day Cards */}
             <div className="space-y-3">
-              {allDays.map((day, idx) => {
+              {isFreeLearnRoute(selected) ? (
+                <div className="space-y-4">
+                  {Array.from(new Set(allDays.map(d => d.phaseIndex))).map(pi => (
+                    <FreeStageCard
+                      key={selected.id + '_phase_' + pi}
+                      phaseIndex={pi}
+                      phaseDays={allDays.filter(d => d.phaseIndex === pi)}
+                      progressMap={selected.progress || {}}
+                      trainee={selected}
+                      onToggleItem={handleToggleItem}
+                    />
+                  ))}
+                </div>
+              ) : allDays.map((day, idx) => {
                 const unlocked = isDayUnlocked(selected, day.key);
                 const dayProgress = selected.progress?.[day.key];
                 const isCurrent = currentDay?.key === day.key;
